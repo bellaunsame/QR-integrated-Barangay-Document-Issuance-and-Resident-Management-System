@@ -1,0 +1,55 @@
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+/* 1. Define variables for LIGHT mode */
+:root {
+  --bg-main: #f8fafc;       /* Dashboard background (light gray) */
+  --surface-bg: #ffffff;    /* Cards and panels (pure white) */
+  --text-main: #1e293b;     /* Main text (dark gray/black) */
+  --border-color: #e2e8f0;  /* Lines and borders */
+  --primary-color: #3b82f6; /* Default Blue */
+}
+
+/* 2. Define variables for DARK mode */
+[data-theme='dark'] {
+  --bg-main: #0f172a;       /* Deep dark blue/black background */
+  --surface-bg: #1e293b;    /* Slightly lighter dark color for cards */
+  --text-main: #f8fafc;     /* White/light gray text */
+  --border-color: #334155;  /* Dark borders */
+}
+
+/* 3. Apply to the base body */
+body {
+  background-color: var(--bg-main);
+  color: var(--text-main);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* 4. THE FIX: Apply to all your containers! */
+/* Add any other container classes you use here (like .modal, .sidebar, etc.) */
+.card, 
+.settings-section, 
+.appearance-settings, 
+.preview-card {
+  background-color: var(--surface-bg);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Fix inputs and buttons so they don't stay bright white in dark mode */
+input, select, textarea {
+  background-color: var(--surface-bg);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+}
+
+.btn-primary {
+  background-color: var(--primary-color);
+}
+
+/* ... keep the rest of your logo and animation CSS below this ... */

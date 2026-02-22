@@ -1,0 +1,41 @@
+.users-page {
+  padding: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.user-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.user-icon {
+  color: var(--primary-600);
+}
+
+.badge-small {
+  font-size: 0.6875rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.btn-warning {
+  color: #f59e0b !important;
+}
+
+.btn-warning:hover {
+  background: #fef3c7 !important;
+  color: #d97706 !important;
+}
+
+.form-group small {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  margin-top: 0.25rem;
+}
+
+@media (max-width: 640px) {
+  .users-page {
+    padding: 1rem;
+  }
+}

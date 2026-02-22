@@ -1,0 +1,41 @@
+/* --- Added Password Strength Meter Styles --- */
+.password-strength-container {
+  margin-top: 0.625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.strength-bar-bg {
+  width: 100%;
+  height: 6px;
+  background-color: var(--neutral-200, #e5e7eb); /* Falls back to light gray if var is missing */
+  border-radius: var(--radius-full, 10px);
+  overflow: hidden;
+}
+
+.strength-bar-fill {
+  height: 100%;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease;
+  border-radius: var(--radius-full, 10px);
+}
+
+.strength-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  display: flex;
+  align-items: center;
+}
+
+/* Ensure strength container hides when not in use to maintain layout spacing */
+.password-strength-container:empty {
+  display: none;
+}
+
+/* Dark mode adjustment for strength bar background */
+@media (prefers-color-scheme: dark) {
+  .strength-bar-bg {
+    background-color: #374151;
+  }
+}

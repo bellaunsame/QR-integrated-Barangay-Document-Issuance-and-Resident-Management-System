@@ -1,0 +1,143 @@
+.settings-page {
+  padding: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+.header-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--primary-700);
+}
+
+.card-info {
+  background: linear-gradient(135deg, var(--primary-50) 0%, var(--primary-100) 100%);
+  border: 2px solid var(--primary-200);
+}
+
+.info-box {
+  background: white;
+  padding: 1.5rem;
+  border-radius: var(--radius-md);
+  line-height: 1.6;
+}
+
+.info-box p {
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+}
+
+.info-box ul {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+}
+
+.info-box ul li {
+  padding: 0.5rem 0;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.info-box ul li::before {
+  content: '•';
+  color: var(--primary-600);
+  font-weight: bold;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.info-box code {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  padding: 0.25rem 0.5rem;
+  background: var(--neutral-100);
+  border-radius: var(--radius-sm);
+  color: var(--primary-700);
+}
+
+.info-box .note {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--primary-50);
+  border-left: 4px solid var(--primary-500);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+}
+
+.settings-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 2rem;
+  border-top: 2px solid var(--border);
+}
+
+.btn-large {
+  padding: 1rem 2rem;
+  font-size: 1rem;
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  padding-bottom: 1px;
+}
+
+.tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary, #64748b);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-btn:hover {
+  color: var(--primary-color, #3b82f6);
+  background: var(--bg-subtle, #f8fafc);
+}
+
+.tab-btn.active {
+  color: var(--primary-color, #3b82f6);
+  border-bottom-color: var(--primary-color, #3b82f6);
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 640px) {
+  .settings-page {
+    padding: 1rem;
+  }
+
+  .settings-footer {
+    justify-content: stretch;
+  }
+
+  .btn-large {
+    width: 100%;
+  }
+}
+

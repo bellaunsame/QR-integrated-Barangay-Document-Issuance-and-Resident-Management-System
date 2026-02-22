@@ -1,0 +1,577 @@
+.qr-scanner-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 50%, #bfdbfe 100%);
+  padding: 2rem 1rem;
+}
+
+/* ── Header ───────────────────────────────────────── */
+.scanner-header {
+  max-width: 900px;
+  margin: 0 auto 2.5rem;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  background: white;
+  padding: 2rem;
+  border-radius: 20px;
+  box-shadow: 0 4px 20px rgba(9, 58, 137, 0.15);
+}
+
+.header-icon {
+  width: 64px;
+  height: 64px;
+  background: linear-gradient(135deg, #3b83f600, #2563eb);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3);
+}
+
+.header-text h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #1e3a8a;
+  margin: 0 0 0.4rem;
+}
+
+.header-text p {
+  font-size: 1rem;
+  color: #64748b;
+  margin: 0;
+}
+
+/* ── Container ────────────────────────────────────── */
+.scanner-container {
+  max-width: 900px;
+  margin: 0 auto;
+  position: relative;
+}
+
+/* ── Start screen ─────────────────────────────────── */
+.start-section { animation: fadeIn 0.4s ease; }
+
+.start-card {
+  background: white;
+  border-radius: 24px;
+  padding: 4rem 3rem;
+  text-align: center;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+}
+
+.start-icon {
+  width: 120px;
+  height: 120px;
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 2rem;
+  color: #3b82f6;
+}
+
+.start-card h2 {
+  font-size: 2rem;
+  color: #1e3a8a;
+  margin: 0 0 0.75rem;
+}
+
+.start-card p {
+  font-size: 1.05rem;
+  color: #64748b;
+  margin: 0 auto 2.5rem;
+  max-width: 420px;
+}
+
+.start-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.btn-large {
+  padding: 1rem 2rem;
+  font-size: 1.1rem;
+  min-width: 190px;
+}
+
+/* ── Scanning view ────────────────────────────────── */
+.scanning-section { animation: fadeIn 0.4s ease; }
+
+.scanner-card {
+  background: white;
+  border-radius: 24px;
+  padding: 2.5rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+}
+
+.scanner-instructions {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: #eff6ff;
+  border-radius: 12px;
+  color: #2563eb;
+  margin-bottom: 1.5rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.scanner-instructions svg { flex-shrink: 0; margin-top: 2px; }
+
+.scanner-wrapper {
+  border-radius: 16px;
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+  background: #000;
+}
+
+/* ── html5-qrcode overrides ───────────────────────── */
+/* Main Container */
+#qr-reader {
+  border: none !important;
+  width: 100% !important;
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* The Top Control Area (Background behind buttons) */
+#qr-reader__dashboard_section_csr,
+#qr-reader__dashboard_section_swaplink {
+  padding: 20px;
+  background: #f8fafc !important; 
+  border-bottom: 1px solid #e2e8f0;
+}
+
+/* "Select Camera" Text */
+#qr-reader__dashboard_section_csr span {
+  font-family: inherit !important;
+  color: #475569 !important;
+  font-weight: 500;
+  font-size: 14px;
+  margin-bottom: 10px;
+  display: block;
+}
+
+/* Camera Dropdown Select */
+#html5-qrcode-select-camera {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: white;
+  color: #1e293b;
+  font-family: inherit;
+  font-size: 14px;
+  margin-bottom: 15px;
+  cursor: pointer;
+}
+
+/* "Start Scanning" & "Stop" Buttons */
+#html5-qrcode-button-camera-start,
+#html5-qrcode-button-camera-stop,
+#html5-qrcode-button-file-selection {
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+  color: white !important;
+  border: none !important;
+  padding: 10px 24px !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  font-size: 14px;
+  cursor: pointer !important;
+  font-family: inherit !important;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+#html5-qrcode-button-camera-start:hover,
+#html5-qrcode-button-camera-stop:hover,
+#html5-qrcode-button-file-selection:hover {
+  background: linear-gradient(135deg, #2563eb, #1e40af) !important;
+}
+
+/* Hidden File Input Styling */
+#qr-reader__dashboard_section_csr input[type="file"] {
+  margin-top: 10px;
+  margin-bottom: 15px;
+  display: block;
+  width: 100%;
+  color: #475569;
+}
+
+/* "Scan an Image File" / "Scan using camera directly" link */
+#html5-qrcode-anchor-scan-type-change {
+  color: #2563eb !important;
+  text-decoration: none !important;
+  font-weight: 600 !important;
+  display: inline-block;
+  margin-top: 15px;
+  font-size: 14px;
+}
+
+#html5-qrcode-anchor-scan-type-change:hover {
+  text-decoration: underline !important;
+}
+
+/* The actual Camera Video Feed */
+#qr-reader__scan_region {
+  background: black;
+  border-radius: 0 0 12px 12px;
+  overflow: hidden;
+}
+
+#qr-reader__scan_region img {
+  display: none !important; /* Hides the default ugly scanner icon */
+}
+
+#qr-reader__scan_region video {
+  object-fit: cover;
+  width: 100% !important;
+  border-radius: 0 0 12px 12px;
+}
+
+/* Hide the red error banners from the library */
+#qr-reader div[style*="color: red"],
+#qr-reader div[style*="background: rgba(255, 0, 0"],
+#qr-reader span[style*="color: red"] {
+  display: none !important;
+}
+
+.scanner-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 1.5rem;
+}
+
+/* ── Loading overlay ──────────────────────────────── */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.95);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  z-index: 1000;
+}
+
+.loading-spinner {
+  width: 60px;
+  height: 60px;
+  border: 4px solid #dbeafe;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+
+.loading-overlay p {
+  font-size: 1.1rem;
+  color: #1e3a8a;
+  font-weight: 600;
+}
+
+/* ── Error card ───────────────────────────────────── */
+.error-section { animation: fadeIn 0.4s ease; }
+
+.error-card {
+  background: white;
+  border-radius: 24px;
+  padding: 3rem;
+  text-align: center;
+  box-shadow: 0 10px 40px rgba(239, 68, 68, 0.15);
+  border: 2px solid #fee2e2;
+}
+
+.error-icon { color: #ef4444; margin-bottom: 1.25rem; }
+
+.error-card p {
+  color: #64748b;
+  font-size: 1rem;
+  margin-bottom: 2rem;
+}
+
+/* ── Result / form section ────────────────────────── */
+.result-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  animation: fadeIn 0.4s ease;
+}
+
+.resident-card,
+.request-card {
+  background: white;
+  border-radius: 24px;
+  padding: 2.5rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  margin-bottom: 2rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 2px solid #eff6ff;
+}
+
+.card-header h2 {
+  font-size: 1.4rem;
+  color: #1e3a8a;
+  margin: 0;
+}
+
+.success-icon { color: #10b981; }
+
+/* Resident info rows */
+.resident-info { display: flex; flex-direction: column; gap: 1rem; }
+
+.info-row {
+  display: flex;
+  gap: 1rem;
+  padding: 1.125rem 1.25rem;
+  background: linear-gradient(135deg, #f8fafc, #eff6ff);
+  border-radius: 12px;
+  border-left: 4px solid #3b82f6;
+  align-items: flex-start;
+}
+
+.info-row svg { color: #3b82f6; flex-shrink: 0; margin-top: 3px; }
+
+.info-content { flex: 1; min-width: 0; }
+
+.info-content label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #94a3b8;
+  margin-bottom: 0.3rem;
+}
+
+.info-content .value {
+  font-size: 1rem;
+  color: #1e293b;
+  font-weight: 600;
+  display: block;
+  word-break: break-word;
+}
+
+/* Request form */
+.request-form { display: flex; flex-direction: column; gap: 1.25rem; }
+
+.form-control {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  font-size: 1rem;
+  color: #1e293b;
+  background: white;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+textarea.form-control {
+  resize: vertical;
+  min-height: 110px;
+  font-family: inherit;
+}
+
+.inline-error {
+  color: #ef4444;
+  font-size: 0.9rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  background: #fef2f2;
+  border-radius: 8px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 0.5rem;
+}
+
+.form-actions .btn { flex: 1; }
+
+/* ── Success screen ───────────────────────────────── */
+.success-section { animation: fadeIn 0.4s ease; }
+
+.success-card {
+  background: white;
+  border-radius: 24px;
+  padding: 4rem 3rem;
+  text-align: center;
+  box-shadow: 0 10px 40px rgba(16, 185, 129, 0.15);
+  border: 2px solid #d1fae5;
+}
+
+.success-icon-large {
+  color: #10b981;
+  filter: drop-shadow(0 4px 12px rgba(16, 185, 129, 0.3));
+  margin-bottom: 1.5rem;
+}
+
+.success-card h2 {
+  font-size: 2rem;
+  color: #065f46;
+  margin: 0 0 1rem;
+}
+
+.success-message {
+  font-size: 1.05rem;
+  color: #64748b;
+  line-height: 1.7;
+  margin: 0 auto 2.5rem;
+  max-width: 520px;
+}
+
+.success-message strong { color: #1e3a8a; font-weight: 700; }
+
+.success-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* ── Buttons ──────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #2563eb, #1e40af);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(59, 130, 246, 0.4);
+}
+
+.btn-secondary {
+  background: white;
+  color: #64748b;
+  border: 2px solid #e2e8f0;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #1e293b;
+}
+
+.btn-outline {
+  background: transparent;
+  color: #3b82f6;
+  border: 2px solid #3b82f6;
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: #eff6ff;
+}
+
+.spinner-small {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+/* ── Animations ───────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Responsive ───────────────────────────────────── */
+@media (max-width: 768px) {
+  .qr-scanner-page { padding: 1rem 0.5rem; }
+
+  .scanner-header { margin-bottom: 1.5rem; }
+
+  .header-content {
+    flex-direction: column;
+    text-align: center;
+    padding: 1.5rem;
+    gap: 1rem;
+  }
+
+  .header-text h1 { font-size: 1.5rem; }
+  .header-text p  { font-size: 0.9rem; }
+
+  .start-card { padding: 2.5rem 1.25rem; }
+  .start-card h2 { font-size: 1.5rem; }
+
+  .scanner-card,
+  .resident-card,
+  .request-card { padding: 1.5rem; }
+
+  .card-header { gap: 0.625rem; }
+  .card-header h2 { font-size: 1.2rem; }
+
+  .info-row { flex-direction: column; gap: 0.375rem; padding: 1rem; }
+
+  .form-actions,
+  .success-actions { flex-direction: column; }
+
+  .success-card { padding: 2.5rem 1.25rem; }
+  .success-card h2 { font-size: 1.5rem; }
+
+  .btn-large { min-width: unset; width: 100%; }
+}
+
+@media (max-width: 480px) {
+  .header-icon { width: 52px; height: 52px; }
+  .header-icon svg { width: 24px; height: 24px; }
+
+  .start-icon { width: 90px; height: 90px; }
+  .start-icon svg { width: 44px; height: 44px; }
+
+  .btn { padding: 0.75rem 1.25rem; font-size: 0.9375rem; }
+}

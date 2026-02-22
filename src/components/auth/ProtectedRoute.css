@@ -1,0 +1,70 @@
+.protected-route-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--background);
+}
+
+.auth-error-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--background);
+  padding: 2rem;
+}
+
+.auth-error-container {
+  max-width: 500px;
+  width: 100%;
+  text-align: center;
+  background: var(--surface);
+  border-radius: var(--radius-xl);
+  padding: 3rem 2rem;
+  box-shadow: var(--shadow-lg);
+}
+
+.auth-error-container h1 {
+  font-size: 2rem;
+  color: var(--text-primary);
+  margin-bottom: 1rem;
+}
+
+.auth-error-container p {
+  color: var(--text-secondary);
+  margin-bottom: 1.5rem;
+  line-height: 1.6;
+}
+
+.role-info {
+  background: var(--neutral-50);
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  margin: 1.5rem 0;
+  font-size: 0.875rem;
+}
+
+.role-info strong {
+  color: var(--primary-700);
+  font-weight: 600;
+}
+
+.auth-error-container .btn {
+  margin: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .auth-error-container {
+    padding: 2rem 1.5rem;
+  }
+
+  .auth-error-container h1 {
+    font-size: 1.5rem;
+  }
+
+  .auth-error-container .btn {
+    width: 100%;
+    margin: 0.5rem 0;
+  }
+}
