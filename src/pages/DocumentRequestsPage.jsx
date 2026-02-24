@@ -13,7 +13,7 @@ import { logDataModification, ACTIONS } from '../services/security/auditLogger';
 import { Modal } from '../components/common';
 import DocumentRequestForm from '../components/documents/DocumentRequestForm';
 import DocumentRequestDetails from '../components/documents/DocumentRequestDetails';
-import { DocumentStatusFilter } from '../components/documents'; // <-- Added Details Import
+import { DocumentStatusFilter } from '../components/documents';
 import { 
   Search, Eye, Download, CheckCircle, XCircle, Clock, Send, Plus 
 } from 'lucide-react';
@@ -35,7 +35,7 @@ const DocumentRequestsPage = () => {
   const [loading, setLoading] = useState(true);
   const [processingRequest, setProcessingRequest] = useState(null);
   const [showForm, setShowForm] = useState(false);
-  const [viewingRequest, setViewingRequest] = useState(null); // <-- Added Viewing State
+  const [viewingRequest, setViewingRequest] = useState(null); 
 
   // 1. Initial Data Load
   useEffect(() => {
@@ -138,14 +138,12 @@ const DocumentRequestsPage = () => {
         `${request.request_type || 'Document'}_${request.resident.last_name}.pdf`
       );
 
-      // 2. SUPABASE STORAGE UPLOAD (Replaced Google Drive)
+      // 2. SUPABASE STORAGE UPLOAD 
       let uploadParams = {};
       try {
-        // Create a unique file path to prevent overwriting
         const uniqueFileName = `${Date.now()}_${fileName.replace(/\s+/g, '_')}`;
         const filePath = `processed_requests/${uniqueFileName}`;
 
-        // Upload the Blob to the 'documents' bucket
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from('documents')
           .upload(filePath, blob, {
@@ -155,7 +153,6 @@ const DocumentRequestsPage = () => {
 
         if (uploadError) throw uploadError;
 
-        // Get the public URL to save in your database
         const { data: urlData } = supabase.storage
           .from('documents')
           .getPublicUrl(filePath);
@@ -191,7 +188,6 @@ const DocumentRequestsPage = () => {
 
       toast.success('Document processed successfully!');
       
-      // Close details modal if open
       if (viewingRequest) setViewingRequest(null);
       
       previewPDF(blob); 
@@ -223,7 +219,6 @@ const DocumentRequestsPage = () => {
       }
 
       toast.success('Request rejected');
-      // Close details modal if open
       if (viewingRequest) setViewingRequest(null);
       
     } catch (error) {
@@ -247,7 +242,6 @@ const DocumentRequestsPage = () => {
       } catch (auditErr) {}
 
       toast.success('Document marked as released');
-      // Close details modal if open
       if (viewingRequest) setViewingRequest(null);
       
     } catch (error) {
@@ -273,18 +267,12 @@ const DocumentRequestsPage = () => {
     return statusMap[status] || 'badge-info';
   };
 
-  // FIXED: Forces the date string to be parsed as UTC so JavaScript correctly applies the local (+8) timezone.
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
-    
-    // Normalize format to standard ISO (replaces SQL space with T)
     let parsedString = dateString.replace(' ', 'T');
-    
-    // If the database string lacks a timezone indicator, force it to UTC by adding 'Z'
     if (!/(Z|[+-]\d{2}(:\d{2})?)$/.test(parsedString)) {
       parsedString += 'Z';
     }
-
     return new Date(parsedString).toLocaleDateString('en-US', { 
       month: 'short', 
       day: 'numeric', 
@@ -308,10 +296,13 @@ const DocumentRequestsPage = () => {
           <h1>Document Requests</h1>
           <p>Process and manage barangay document requests</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowForm(true)}>
-          <Plus size={20} />
-          New Request
-        </button>
+        {/* HIDE NEW REQUEST BUTTON FROM VIEW ONLY */}
+        {user?.role !== 'view_only' && (
+          <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+            <Plus size={20} />
+            New Request
+          </button>
+        )}
       </div>
 
       <div className="requests-controls">
@@ -387,7 +378,8 @@ const DocumentRequestsPage = () => {
                             <Download size={18} />
                           </button>
                           
-                          {request.status === 'pending' && user?.role !== 'record_keeper' && (
+                          {/* HIDE PROCESS/REJECT FROM VIEW ONLY */}
+                          {request.status === 'pending' && user?.role !== 'record_keeper' && user?.role !== 'view_only' && (
                             <>
                               <button
                                 className="btn-icon btn-success"
@@ -401,7 +393,8 @@ const DocumentRequestsPage = () => {
                             </>
                           )}
 
-                          {request.status === 'completed' && user?.role !== 'record_keeper' && (
+                          {/* HIDE RELEASE FROM VIEW ONLY */}
+                          {request.status === 'completed' && user?.role !== 'record_keeper' && user?.role !== 'view_only' && (
                             <button className="btn-icon btn-success" onClick={() => handleReleaseDocument(request)} title="Mark as Released"><Send size={18} /></button>
                           )}
                         </div>
@@ -415,7 +408,7 @@ const DocumentRequestsPage = () => {
         </div>
       )}
 
-      {/* NEW: Document Details Modal */}
+      {/* Document Details Modal */}
       {viewingRequest && (
         <Modal
           isOpen={!!viewingRequest}
@@ -426,13 +419,15 @@ const DocumentRequestsPage = () => {
           <DocumentRequestDetails 
             request={viewingRequest}
             onClose={() => setViewingRequest(null)}
-            onApprove={user?.role !== 'record_keeper' ? handleProcessRequest : null}
-            onReject={user?.role !== 'record_keeper' ? handleRejectRequest : null}
+            // Strip process/reject props if user is view_only or record_keeper
+            onApprove={user?.role !== 'record_keeper' && user?.role !== 'view_only' ? handleProcessRequest : null}
+            onReject={user?.role !== 'record_keeper' && user?.role !== 'view_only' ? handleRejectRequest : null}
             onDownload={handleDownloadDocument}
           />
         </Modal>
       )}
 
+      {/* Create Request Modal */}
       {showForm && (
         <Modal
           isOpen={showForm}

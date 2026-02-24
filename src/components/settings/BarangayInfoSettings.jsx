@@ -7,7 +7,7 @@ import './BarangayInfoSettings.css';
 
 /**
  * BarangayInfoSettings Component
- * * Manages barangay administrative information and contact details.
+ * Manages barangay administrative information and contact details.
  * Integrates with SettingsContext to persist data to the Supabase backend.
  */
 const BarangayInfoSettings = () => {
@@ -15,6 +15,7 @@ const BarangayInfoSettings = () => {
   const [loading, setLoading] = useState(false);
   
   // Initialize form state with data from SettingsContext
+  // FIXED: Changed captain_name to barangay_chairman and kagawad_names to barangay_kagawad_list
   const [formData, setFormData] = useState({
     barangay_name: settings?.barangay_name || '',
     city_municipality: settings?.city_municipality || '',
@@ -23,8 +24,8 @@ const BarangayInfoSettings = () => {
     zip_code: settings?.zip_code || '',
     contact_number: settings?.contact_number || '',
     email_address: settings?.email_address || '',
-    captain_name: settings?.captain_name || '',
-    kagawad_names: settings?.kagawad_names || '',
+    barangay_chairman: settings?.barangay_chairman || '',
+    barangay_kagawad_list: settings?.barangay_kagawad_list || '',
     sk_chairman: settings?.sk_chairman || '',
     barangay_website: settings?.barangay_website || '',
     enable_email_notifications: settings?.enable_email_notifications ?? true
@@ -40,7 +41,6 @@ const BarangayInfoSettings = () => {
 
   /**
    * Validates and submits the updated barangay information.
-   * Replaced undefined 'setError' with 'toast.error' for better UX.
    */
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -85,8 +85,8 @@ const BarangayInfoSettings = () => {
         zip_code: settings?.zip_code || '',
         contact_number: settings?.contact_number || '',
         email_address: settings?.email_address || '',
-        captain_name: settings?.captain_name || '',
-        kagawad_names: settings?.kagawad_names || '',
+        barangay_chairman: settings?.barangay_chairman || '',
+        barangay_kagawad_list: settings?.barangay_kagawad_list || '',
         sk_chairman: settings?.sk_chairman || '',
         barangay_website: settings?.barangay_website || '',
       });
@@ -196,12 +196,13 @@ const BarangayInfoSettings = () => {
           </div>
 
           <div className="form-grid">
+            {/* FIXED: Changed to barangay_chairman */}
             <Input
-              label="Barangay Captain"
-              name="captain_name"
-              value={formData.captain_name}
+              label="Barangay Chairman"
+              name="barangay_chairman"
+              value={formData.barangay_chairman}
               onChange={handleChange}
-              placeholder="Full name of barangay captain"
+              placeholder="Full name of barangay chairman"
             />
 
             <Input
@@ -212,15 +213,16 @@ const BarangayInfoSettings = () => {
               placeholder="Full name of SK chairman"
             />
 
+            {/* FIXED: Changed to barangay_kagawad_list */}
             <div className="form-group full-width">
-              <label htmlFor="kagawad_names">
+              <label htmlFor="barangay_kagawad_list">
                 Barangay Kagawads
                 <span className="label-hint">(One per line)</span>
               </label>
               <textarea
-                id="kagawad_names"
-                name="kagawad_names"
-                value={formData.kagawad_names}
+                id="barangay_kagawad_list"
+                name="barangay_kagawad_list"
+                value={formData.barangay_kagawad_list}
                 onChange={handleChange}
                 placeholder="Enter kagawad names, one per line"
                 rows="6"

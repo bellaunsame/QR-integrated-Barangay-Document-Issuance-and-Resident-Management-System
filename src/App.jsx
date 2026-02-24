@@ -1,10 +1,9 @@
 import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster, toast } from 'react-hot-toast'; // Added toast for session alerts
+import { Toaster, toast } from 'react-hot-toast'; 
 
 // Security & Layout
 import { initializeCSRF } from './services/security';
-// Merged: Added sessionManager import
 import { sessionManager } from './services/security'; 
 import { MainLayout } from './components/layout';
 import ProtectedRoute from './components/auth/ProtectedRoute';
@@ -39,6 +38,20 @@ function App() {
       style: { background: '#f59e0b', color: '#fff' }
     });
   };
+  
+  useEffect(() => {
+    const savedSize = localStorage.getItem('system_font_size');
+    const root = document.documentElement;
+    
+    if (savedSize === 'small') {
+      root.style.setProperty('font-size', '14px', 'important');
+    } else if (savedSize === 'large') {
+      root.style.setProperty('font-size', '18px', 'important');
+    } else {
+      // Catch-all for 'medium' or if no setting exists yet
+      root.style.setProperty('font-size', '16px', 'important'); 
+    }
+  }, []);
 
   const handleTimeout = () => {
     toast.error('Session expired. Please log in again.');
@@ -54,7 +67,7 @@ function App() {
     // 1. Initialize CSRF
     initializeCSRF();
 
-    // 2. Merged: Initialize Session Manager
+    // 2. Initialize Session Manager
     if (sessionManager) {
       sessionManager.initialize({
         onWarning: handleWarning,
@@ -68,8 +81,8 @@ function App() {
     };
   }, []);
 
-return (
-    <Router> {/* MOVED TO THE TOP */}
+  return (
+    <Router> 
       <ThemeProvider>
         <NotificationProvider>
           <AuthProvider>
@@ -116,22 +129,26 @@ return (
                         </ProtectedRoute>
                       }
                     >
+                      {/* Open to EVERY logged-in user (including view_only) */}
                       <Route path="/" element={<Navigate to="/dashboard" replace />} />
                       <Route path="/dashboard" element={<DashboardPage />} />
                       <Route path="/profile" element={<ProfilePage />} />
                       
+                      {/* ADDED view_only: They can see the list, but not edit (handled in component) */}
                       <Route path="/residents" element={
-                        <ProtectedRoute requiredRoles={['admin', 'record_keeper']}>
+                        <ProtectedRoute requiredRoles={['admin', 'record_keeper', 'view_only']}>
                           <ResidentsPage />
                         </ProtectedRoute>
                       } />
                       
+                      {/* ADDED view_only: They can view documents, but not process/approve them */}
                       <Route path="/documents" element={
-                        <ProtectedRoute requiredRoles={['admin', 'clerk', 'record_keeper']}>
+                        <ProtectedRoute requiredRoles={['admin', 'clerk', 'record_keeper', 'view_only']}>
                           <DocumentRequestsPage />
                         </ProtectedRoute>
                       } />
                       
+                      {/* Admin-only Routes below this point */}
                       <Route path="/templates" element={
                         <ProtectedRoute requiredRoles={['admin']}>
                           <DocumentTemplatesPage />
@@ -171,7 +188,7 @@ return (
           </AuthProvider>
         </NotificationProvider>
       </ThemeProvider>
-    </Router> // CLOSING TAG MOVED TO THE BOTTOM
+    </Router> 
   );
 }
 

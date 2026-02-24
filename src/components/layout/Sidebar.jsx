@@ -11,78 +11,81 @@ import {
   ChevronRight,
   QrCode,
   Activity,
-  LogOut
+  LogOut,
+  ShieldCheck // Grouped the imports for cleanliness
 } from 'lucide-react';
-import { ShieldCheck } from 'lucide-react';
 import logo from "../../assets/brgy.2-icon.png";
 import './Sidebar.css';
 
 /**
  * Sidebar Component
- * 
- * Navigation sidebar with menu items
+ * * Navigation sidebar with menu items
  * Supports collapsed mode and role-based menu items
  */
 const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
   const { user, logout, hasRole } = useAuth();
   const navigate = useNavigate();
 
-const menuItems = [
-  {
-    icon: <LayoutDashboard size={20} />,
-    label: 'Dashboard',
-    path: '/dashboard',
-    roles: ['admin', 'clerk', 'record_keeper']
-  },
-  {
-    icon: <Users size={20} />,
-    label: 'Residents',
-    path: '/residents',
-    roles: ['admin', 'record_keeper']
-  },
-  {
-    icon: <FileText size={20} />,
-    label: 'Documents',
-    path: '/documents',
-    roles: ['admin', 'clerk', 'record_keeper']
-  },
-  {
-    icon: <FileCheck size={20} />,
-    label: 'Templates',
-    path: '/templates',
-    roles: ['admin']
-  },
-  {
-    icon: <User size={20} />,
-    label: 'Users',
-    path: '/users',
-    roles: ['admin']
-  },
-  {
-    icon: <QrCode size={20} />,
-    label: 'QR Scanner',
-    path: '/scan',
-    roles: ['admin', 'clerk'] // Fixed: uncommented and properly formatted
-  },
- /* {
-    icon: <Activity size={20} />,
-    label: 'Activity Logs',
-    path: '/activity-logs',
-    roles: ['admin']
-  },*/
-  {
-    icon: <ShieldCheck size={20} />,
-    label: 'Security Dashboard', // Changed from 'title' to 'label'
-    path: '/security',
-    roles: ['admin']
-  },
-  {
-    icon: <Settings size={20} />,
-    label: 'Settings',
-    path: '/settings',
-    roles: ['admin']
-  }
-];
+  // --- MENU ITEMS CONFIGURATION ---
+  const menuItems = [
+    {
+      icon: <LayoutDashboard size={20} />,
+      label: 'Dashboard',
+      path: '/dashboard',
+      // ADDED view_only
+      roles: ['admin', 'clerk', 'record_keeper', 'view_only'] 
+    },
+    {
+      icon: <Users size={20} />,
+      label: 'Residents',
+      path: '/residents',
+      // ADDED view_only
+      roles: ['admin', 'record_keeper', 'view_only'] 
+    },
+    {
+      icon: <FileText size={20} />,
+      label: 'Documents',
+      path: '/documents',
+      // ADDED view_only
+      roles: ['admin', 'clerk', 'record_keeper', 'view_only'] 
+    },
+    {
+      icon: <FileCheck size={20} />,
+      label: 'Templates',
+      path: '/templates',
+      roles: ['admin']
+    },
+    {
+      icon: <User size={20} />,
+      label: 'Users',
+      path: '/users',
+      roles: ['admin']
+    },
+    {
+      icon: <QrCode size={20} />,
+      label: 'QR Scanner',
+      path: '/scan',
+      roles: ['admin', 'clerk'] 
+    },
+    /* {
+      icon: <Activity size={20} />,
+      label: 'Activity Logs',
+      path: '/activity-logs',
+      roles: ['admin']
+    }, */
+    {
+      icon: <ShieldCheck size={20} />,
+      label: 'Security Dashboard',
+      path: '/security',
+      roles: ['admin']
+    },
+    {
+      icon: <Settings size={20} />,
+      label: 'Settings',
+      path: '/settings',
+      roles: ['admin']
+    }
+  ];
 
   const handleLogout = async () => {
     await logout();
@@ -168,7 +171,10 @@ const menuItems = [
               </div>
               <div className="user-details">
                 <div className="user-name-small">{user.full_name}</div>
-                <div className="user-role-small">{user.role}</div>
+                {/* Cleaned up role display so it looks like "View Only" instead of "view_only" */}
+                <div className="user-role-small">
+                  {user.role === 'view_only' ? 'View Only' : user.role.replace('_', ' ')}
+                </div>
               </div>
             </div>
           )}

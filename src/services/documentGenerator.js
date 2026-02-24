@@ -4,15 +4,10 @@ import { format } from 'date-fns';
 import brgyLogo from '../assets/brgy.2-icon.png';
 import calambaSeal from '../assets/Calamba,_Laguna_Seal.svg.png'; 
 
-/**
- * Convert image URL to base64 data URL
- */
 const getImageDataUrl = async (imageUrl) => {
   try {
     const response = await fetch(imageUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch image: ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
     const blob = await response.blob();
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -26,9 +21,6 @@ const getImageDataUrl = async (imageUrl) => {
   }
 };
 
-/**
- * Calculate age from date of birth
- */
 const calculateAge = (dateOfBirth) => {
   if (!dateOfBirth) return '';
   try {
@@ -46,21 +38,15 @@ const calculateAge = (dateOfBirth) => {
   }
 };
 
-/**
- * Replace template variables with actual data
- */
-const replaceVariables = (template, data) => {
-  if (!template) return '';
-  let result = template;
-  const variables = template.match(/\{\{([^}]+)\}\}/g);
+const replaceVariables = (templateText, data) => {
+  if (!templateText) return '';
+  let result = templateText;
+  const variables = templateText.match(/\{\{([^}]+)\}\}/g);
   
   if (variables && variables.length > 0) {
     variables.forEach(variable => {
       const key = variable.replace(/\{\{|\}\}/g, '').trim();
-      
-      // FIX 1: Prevent this function from erasing our special thumbprint marker!
-      if (key === 'thumbprint_boxes') return;
-      
+      if (key === 'thumbprint_boxes') return; 
       const value = data[key] !== undefined && data[key] !== null ? String(data[key]) : '';
       result = result.split(variable).join(value);
     });
@@ -68,21 +54,26 @@ const replaceVariables = (template, data) => {
   return result;
 };
 
-/**
- * Format addresses and calculate residency
- */
+// FIXED: Now uses the actual database field 'full_address' instead of 'house_number'/'street'
 const formatAddress = (resident) => {
   const parts = [];
-  if (resident.house_number) parts.push(resident.house_number);
-  if (resident.street) parts.push(resident.street);
-  if (resident.purok) parts.push(`Purok ${resident.purok}`);
-  if (resident.barangay) parts.push(`Barangay ${resident.barangay}`);
+  if (resident.full_address) parts.push(resident.full_address);
+  if (resident.purok) {
+    // Prevent duplicating the word "Purok" if they already typed it
+    const purokText = resident.purok.toLowerCase().includes('purok') ? resident.purok : `Purok ${resident.purok}`;
+    parts.push(purokText);
+  }
   return parts.join(', ');
 };
 
-const formatFullAddress = (resident) => {
+// FIXED: Ensures the long address string builds correctly
+const formatFullAddress = (resident, city, province) => {
   const baseAddress = formatAddress(resident);
-  return `${baseAddress}, ${resident.city_municipality || 'Cabuyao'}, ${resident.province || 'Laguna'}`;
+  let brgy = resident.barangay || '';
+  if (brgy && !brgy.toLowerCase().startsWith('brgy') && !brgy.toLowerCase().startsWith('barangay')) {
+      brgy = `Barangay ${brgy}`;
+  }
+  return [baseAddress, brgy, city || resident.city_municipality, province || resident.province].filter(Boolean).join(', ');
 };
 
 const calculateResidencyYears = (createdAt) => {
@@ -95,34 +86,22 @@ const calculateResidencyYears = (createdAt) => {
   }
 };
 
-/**
- * Clean and process template content for PDF rendering
- */
-const processTemplateContent = (content) => {
-  if (!content) return '';
-  let processed = content;
-  
-  // FIX 2: Translate HTML paragraphs into exact PDF line breaks
-  processed = processed.replace(/<br\s*\/?>/gi, '\n');
-  processed = processed.replace(/<\/(p|div|h[1-6])>/gi, '\n\n'); // End of paragraph = double space
-  processed = processed.replace(/<[^>]*>/g, ''); // Strip remaining HTML
-  processed = processed.replace(/&nbsp;/gi, ' ');
-  
-  // Trim spaces on each line and reduce massive gaps down to standard double-spacing
-  const lines = processed.split('\n').map(line => line.trim());
-  processed = lines.join('\n').replace(/\n{3,}/g, '\n\n');
-  
-  return processed.trim();
-};
-
-/**
- * Prepare template data from resident and settings
- */
 export const prepareTemplateData = (resident = {}, settings = {}, additionalData = {}) => {
   try {
+    const getSet = (key, fallback) => {
+      if (Array.isArray(settings)) {
+        const found = settings.find(s => s.setting_key === key);
+        return found && found.setting_value ? found.setting_value : fallback;
+      }
+      return settings[key] || fallback;
+    };
+
     const nameParts = [resident.first_name, resident.middle_name, resident.last_name, resident.suffix].filter(Boolean);
     const fullName = nameParts.join(' ').trim() || 'N/A';
     
+    const city = getSet('city_municipality', resident.city_municipality || 'Cabuyao');
+    const province = getSet('province', resident.province || 'Laguna');
+
     return {
       id: resident.id || '',
       first_name: resident.first_name || '',
@@ -136,15 +115,12 @@ export const prepareTemplateData = (resident = {}, settings = {}, additionalData
       gender: resident.gender || '',
       civil_status: resident.civil_status || '',
       nationality: resident.nationality || 'Filipino',
-      house_number: resident.house_number || '',
-      street: resident.street || '',
-      purok: resident.purok || '',
-      barangay: resident.barangay || '',
-      city_municipality: resident.city_municipality || 'Cabuyao',
-      province: resident.province || 'Laguna',
-      zip_code: resident.zip_code || '',
-      address: formatAddress(resident),
-      full_address: formatFullAddress(resident),
+      
+      // We map the database `full_address` to the template `{{address}}`
+      address: formatAddress(resident), 
+      // And we map the complete province string to `{{full_address}}`
+      full_address: formatFullAddress(resident, city, province),
+      
       mobile_number: resident.mobile_number || '',
       email: resident.email || '',
       occupation: resident.occupation || '',
@@ -152,14 +128,16 @@ export const prepareTemplateData = (resident = {}, settings = {}, additionalData
       voter_status: resident.voter_status ? 'Yes' : 'No',
       pwd_status: resident.pwd_status ? 'Yes' : 'No',
       senior_citizen: resident.senior_citizen ? 'Yes' : 'No',
-      barangay_name: settings.barangay_name || resident.barangay || '',
-      barangay_chairman: settings.barangay_chairman || '',
-      barangay_kagawad_list: settings.barangay_kagawad_list || '',
-      city: settings.city_municipality || resident.city_municipality || 'Cabuyao',
-      province_name: settings.province || resident.province || 'Laguna',
-      region: settings.region || 'Region IV-A',
-      contact_number: settings.contact_number || '',
-      email_address: settings.email_address || '',
+      
+      barangay_name: getSet('barangay_name', resident.barangay || ''),
+      barangay_chairman: getSet('barangay_chairman', ''),
+      barangay_kagawad_list: getSet('barangay_kagawad_list', ''),
+      city: city,
+      province_name: province,
+      region: getSet('region', 'Region IV-A'),
+      contact_number: getSet('contact_number', ''),
+      email_address: getSet('email_address', ''),
+      
       date_issued: format(new Date(), 'MMMM dd, yyyy'),
       date_issued_short: format(new Date(), 'MM/dd/yyyy'),
       year: format(new Date(), 'yyyy'),
@@ -172,45 +150,45 @@ export const prepareTemplateData = (resident = {}, settings = {}, additionalData
   }
 };
 
-/**
- * Generate PDF document from template
- */
 export const generatePDFDocument = async (templateContent, data, documentName = 'document.pdf') => {
   try {
-    const processedContent = replaceVariables(templateContent, data);
     const [logoBase64, calambaBase64] = await Promise.all([
       getImageDataUrl(brgyLogo),
       getImageDataUrl(calambaSeal)
     ]);
     
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const pageWidth = doc.internal.pageSize.width;
-    const pageHeight = doc.internal.pageSize.height;
+    const pageWidth = 210;
+    const pageHeight = 297;
     const margin = 20;
     const contentWidth = pageWidth - (margin * 2);
     
-    // --- HEADER ---
+    // --- 1. DRAW OFFICIAL HEADER ---
     let currentY = 15;
     const logoSize = 28;
     
-    doc.addImage(logoBase64, 'PNG', 25, currentY, logoSize, logoSize);
-    doc.addImage(calambaBase64, 'PNG', pageWidth - 25 - logoSize, currentY, logoSize, logoSize);
+    doc.addImage(logoBase64, 'PNG', margin, currentY, logoSize, logoSize);
+    doc.addImage(calambaBase64, 'PNG', pageWidth - margin - logoSize, currentY, logoSize, logoSize);
     
     doc.setFont('times', 'normal');
     doc.setFontSize(11);
     doc.setTextColor(0, 0, 0);
-    
     doc.text('Republic of the Philippines', pageWidth / 2, currentY + 5, { align: 'center' });
     doc.text(`Province of ${data.province_name || 'Laguna'}`, pageWidth / 2, currentY + 10, { align: 'center' });
     
     doc.setFont('times', 'bold');
     doc.setFontSize(14);
-    doc.text(`CITY OF ${(data.city || 'CABUYAO').toUpperCase()}`, pageWidth / 2, currentY + 16, { align: 'center' });
+    
+    const cleanCity = (data.city || 'CABUYAO').replace(/ City$/i, '').toUpperCase();
+    doc.text(`CITY OF ${cleanCity}`, pageWidth / 2, currentY + 16, { align: 'center' });
     
     doc.setFont('times', 'normal');
     doc.setFontSize(11);
-    const barangayText = data.barangay_name ? `Barangay ${data.barangay_name}` : 'Barangay';
-    doc.text(barangayText, pageWidth / 2, currentY + 21, { align: 'center' });
+    let cleanBrgy = data.barangay_name || 'Barangay';
+    if (!cleanBrgy.toLowerCase().startsWith('brgy') && !cleanBrgy.toLowerCase().startsWith('barangay')) {
+        cleanBrgy = `Barangay ${cleanBrgy}`;
+    }
+    doc.text(cleanBrgy, pageWidth / 2, currentY + 21, { align: 'center' });
     
     doc.setFontSize(16);
     doc.setFont('times', 'bold');
@@ -219,81 +197,173 @@ export const generatePDFDocument = async (templateContent, data, documentName = 
     currentY += 40;
     doc.setDrawColor(204, 0, 0);
     doc.setLineWidth(0.8);
-    doc.line(margin, currentY, pageWidth - margin, currentY);
+    doc.line(margin, currentY, pageWidth - margin, currentY); 
     
-    // --- CONTENT ---
-    currentY += 15;
-    let cleanContent = processTemplateContent(processedContent);
-    
-    doc.setFontSize(12);
-    doc.setFont('times', 'normal');
+    currentY += 15; 
+
+    // --- 2. PREPARE HTML & INJECT VARIABLES ---
+    const htmlWithData = replaceVariables(templateContent, data);
+    const preppedHtml = htmlWithData.replace(/\{\{thumbprint_boxes\}\}/g, '<thumbprints></thumbprints>');
+
+    const parser = new DOMParser();
+    const dom = parser.parseFromString(preppedHtml, 'text/html');
+
+    // --- 3. ADVANCED RICH-TEXT RENDER ENGINE ---
     const lineHeight = 6;
-    
-    // Custom renderer to apply paragraph spacing accurately
-    const drawFormattedText = (text, startY) => {
-      let y = startY;
-      const paragraphs = text.split('\n');
-      paragraphs.forEach(p => {
-        if (p === '') {
-          y += lineHeight; // Empty line = paragraph gap
-        } else {
-          const lines = doc.splitTextToSize(p, contentWidth);
-          doc.text(lines, margin, y);
-          y += lines.length * lineHeight; 
+    doc.setFontSize(12);
+
+    Array.from(dom.body.children).forEach(block => {
+        if (block.tagName === 'THUMBPRINTS') {
+            currentY += 10;
+            const boxSize = 25;
+            const rightBoxX = pageWidth - margin - boxSize;
+            const leftBoxX = rightBoxX - boxSize - 10;
+
+            doc.setDrawColor(0, 0, 0);
+            doc.setLineWidth(0.5);
+
+            doc.rect(leftBoxX, currentY, boxSize, boxSize);
+            doc.setFontSize(8);
+            doc.setFont('times', 'bold');
+            doc.text('LEFT THUMB', leftBoxX + (boxSize/2), currentY + boxSize + 4, { align: 'center' });
+
+            doc.rect(rightBoxX, currentY, boxSize, boxSize);
+            doc.text('RIGHT THUMB', rightBoxX + (boxSize/2), currentY + boxSize + 4, { align: 'center' });
+
+            currentY += boxSize + 15;
+            doc.setFontSize(12); 
+            return;
         }
-      });
-      return y;
-    };
 
-    // FIX 3: Accurately calculate Right-aligned Boxes & Left-aligned Text
-    if (cleanContent.includes('{{thumbprint_boxes}}')) {
-      const parts = cleanContent.split('{{thumbprint_boxes}}');
-      
-      // 1. Draw all text BEFORE the thumbprints
-      if (parts[0]) {
-        currentY = drawFormattedText(parts[0], currentY);
-      }
-      
-      // 2. Draw Thumbprints locked to the RIGHT margin
-      currentY += 5; // Add a small gap before boxes
-      const boxY = currentY; 
-      const boxSize = 25;
-      const rightMarginLimit = pageWidth - margin;
-      
-      const rightBoxX = rightMarginLimit - boxSize;
-      const leftBoxX = rightBoxX - boxSize - 10; // 10mm gap between boxes
+        if (block.textContent.trim() === '' && !block.querySelector('br') && !block.innerHTML.includes('&nbsp;')) return;
+        if (block.innerHTML.trim() === '<br>' || block.innerHTML.trim() === '<br/>') {
+            currentY += lineHeight;
+            return;
+        }
 
-      doc.setDrawColor(0, 0, 0);
-      doc.setLineWidth(0.5);
+        let align = 'left';
+        if (block.className.includes('ql-align-center') || block.style.textAlign === 'center' || block.align === 'center') align = 'center';
+        if (block.className.includes('ql-align-right') || block.style.textAlign === 'right' || block.align === 'right') align = 'right';
+        if (block.className.includes('ql-align-justify') || block.style.textAlign === 'justify' || block.align === 'justify') align = 'justify';
 
-      // Left Box
-      doc.rect(leftBoxX, boxY, boxSize, boxSize);
-      doc.setFontSize(8);
-      doc.setFont('times', 'bold');
-      doc.text('LEFT THUMB', leftBoxX + (boxSize/2), boxY + boxSize + 4, { align: 'center' });
+        let indentX = margin;
+        if (block.className.includes('ql-indent-1')) indentX += 10;
+        if (block.className.includes('ql-indent-2')) indentX += 20;
 
-      // Right Box
-      doc.rect(rightBoxX, boxY, boxSize, boxSize);
-      doc.text('RIGHT THUMB', rightBoxX + (boxSize/2), boxY + boxSize + 4, { align: 'center' });
+        let isList = block.tagName === 'UL' || block.tagName === 'OL';
+        let items = isList ? Array.from(block.children) : [block];
 
-      doc.setFontSize(12);
-      doc.setFont('times', 'normal');
+        items.forEach((item, itemIndex) => {
+            let tokens = []; 
+            
+            const extractTokens = (node, styles) => {
+                if (node.nodeType === 3) { 
+                    const text = node.textContent.replace(/\u00A0/g, ' '); 
+                    const words = text.split(/(\s+)/);
+                    words.forEach(w => {
+                        if (w.length > 0) tokens.push({ text: w, ...styles });
+                    });
+                } else if (node.nodeType === 1) { 
+                    if (node.tagName === 'BR') {
+                        tokens.push({ isBreak: true });
+                        return;
+                    }
+                    let newStyles = { ...styles };
+                    if (['STRONG', 'B'].includes(node.tagName)) newStyles.bold = true;
+                    if (['EM', 'I'].includes(node.tagName)) newStyles.italic = true;
+                    if (['U'].includes(node.tagName)) newStyles.underline = true;
+                    node.childNodes.forEach(c => extractTokens(c, newStyles));
+                }
+            };
+            extractTokens(item, { bold: false, italic: false, underline: false });
 
-      // 3. Draw text AFTER the thumbprints locked to the LEFT margin (starting at same height as boxes)
-      if (parts[1]) {
-        const textAfterY = drawFormattedText(parts[1], boxY); 
-        // Set the final Y position to whichever is lower: the signature text, or the bottom of the boxes
-        currentY = Math.max(textAfterY, boxY + boxSize + 15);
-      } else {
-        currentY = boxY + boxSize + 15;
-      }
-      
-    } else {
-      // If no boxes are requested, draw normally
-      currentY = drawFormattedText(cleanContent, currentY);
-    }
+            let prefix = '';
+            let prefixWidth = 0;
+            let currentIndent = indentX;
+
+            if (isList) {
+                prefix = block.tagName === 'UL' ? '• ' : `${itemIndex + 1}. `;
+                doc.setFont('times', 'normal');
+                prefixWidth = doc.getTextWidth(prefix);
+                currentIndent += 10; 
+            }
+
+            const allowedWidth = contentWidth - (currentIndent - margin);
+            let currentLineTokens = [];
+            let currentLineWidth = 0;
+            let isFirstLine = true;
+
+            const renderLine = () => {
+                if (currentLineTokens.length === 0) return;
+
+                let xPos = currentIndent;
+                let displayWidth = currentLineWidth;
+                
+                const lastToken = currentLineTokens[currentLineTokens.length - 1];
+                if (lastToken && lastToken.text.trim() === '') {
+                    doc.setFont('times', (lastToken.bold && lastToken.italic) ? 'bolditalic' : lastToken.bold ? 'bold' : lastToken.italic ? 'italic' : 'normal');
+                    displayWidth -= doc.getTextWidth(lastToken.text);
+                }
+
+                if (align === 'center') xPos += (allowedWidth - displayWidth) / 2;
+                if (align === 'right') xPos += (allowedWidth - displayWidth);
+
+                if (isFirstLine && isList) {
+                    doc.setFont('times', 'normal');
+                    doc.text(prefix, xPos - prefixWidth, currentY);
+                }
+
+                currentLineTokens.forEach(t => {
+                    let style = 'normal';
+                    if (t.bold && t.italic) style = 'bolditalic';
+                    else if (t.bold) style = 'bold';
+                    else if (t.italic) style = 'italic';
+
+                    doc.setFont('times', style);
+                    doc.text(t.text, xPos, currentY);
+
+                    let w = doc.getTextWidth(t.text);
+                    if (t.underline) {
+                        doc.setLineWidth(0.2);
+                        doc.line(xPos, currentY + 1, xPos + w, currentY + 1);
+                    }
+                    xPos += w;
+                });
+
+                currentY += lineHeight;
+                currentLineTokens = [];
+                currentLineWidth = 0;
+                isFirstLine = false;
+            };
+
+            tokens.forEach(t => {
+                if (t.isBreak) {
+                    renderLine();
+                    return;
+                }
+
+                let style = 'normal';
+                if (t.bold && t.italic) style = 'bolditalic';
+                else if (t.bold) style = 'bold';
+                else if (t.italic) style = 'italic';
+                doc.setFont('times', style);
+
+                let w = doc.getTextWidth(t.text);
+                
+                if (currentLineWidth + w > allowedWidth && t.text.trim() !== '') {
+                    renderLine();
+                }
+                currentLineTokens.push(t);
+                currentLineWidth += w;
+            });
+            
+            renderLine();
+        });
+        
+        currentY += 4; 
+    });
     
-    // --- FOOTER ---
+    // --- 4. DRAW FOOTER ---
     const footerY = pageHeight - 15;
     doc.setFontSize(10);
     doc.setFont('helvetica', 'italic');
@@ -313,9 +383,6 @@ export const generatePDFDocument = async (templateContent, data, documentName = 
   }
 };
 
-/**
- * Download PDF to user's device
- */
 export const downloadPDF = (pdfBlob, fileName = 'document.pdf') => {
   try {
     const url = URL.createObjectURL(pdfBlob);
@@ -334,9 +401,6 @@ export const downloadPDF = (pdfBlob, fileName = 'document.pdf') => {
   }
 };
 
-/**
- * Preview PDF in new tab with fallback to download if popups are blocked
- */
 export const previewPDF = (pdfBlob, fallbackFileName = 'Document_Preview.pdf') => {
   try {
     const url = URL.createObjectURL(pdfBlob);

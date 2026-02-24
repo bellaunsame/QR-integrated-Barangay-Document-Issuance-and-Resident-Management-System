@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { db, supabase } from '../services/supabaseClient'; 
-import { generateQRData, generateQRCodeImage, downloadQRCode } from '../services/qrCodeService';
+import { generateQRData, generateQRCodeImage } from '../services/qrCodeService';
+import { generateResidentIDImage, downloadResidentID } from '../services/idGenerator'; // NEW ID GENERATOR
 import { sendQRCodeEmail } from '../services/emailService';
 import toast from 'react-hot-toast';
 
@@ -31,6 +32,20 @@ const ResidentsPage = () => {
   
   const [formData, setFormData] = useState(getEmptyFormData());
   const [errors, setErrors] = useState({});
+
+  // --- DATE RESTRICTIONS ---
+  const todayDateStr = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).split('/').reverse().join('-');
+  const maxDate = todayDateStr; 
+  
+  const date16 = new Date();
+  date16.setFullYear(date16.getFullYear() - 16);
+  const maxDate16 = date16.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).split('/').reverse().join('-');
+  
+  const minDate = "1870-01-01"; 
+
+  // --- COMPUTE CURRENT AGE FOR UI LOCKING ---
+  const currentResidentAge = calculateAge(formData.date_of_birth);
+  const isUnderage = currentResidentAge !== 'N/A' && currentResidentAge !== 'Invalid' && currentResidentAge < 16;
 
   useEffect(() => {
     loadResidents();
@@ -67,7 +82,6 @@ const ResidentsPage = () => {
       occupation: '',
       monthly_income: '',
       
-      // Expanded Father Info
       father_name: '',
       father_deceased: false,
       father_occupation: '',
@@ -80,7 +94,6 @@ const ResidentsPage = () => {
       father_nationality: 'Filipino',
       father_civil_status: '',
 
-      // Expanded Mother Info
       mother_name: '',
       mother_deceased: false,
       mother_occupation: '',
@@ -93,10 +106,11 @@ const ResidentsPage = () => {
       mother_nationality: 'Filipino',
       mother_civil_status: '',
 
-      // Spouse & Other Family
       spouse_name: '',
       spouse_occupation: '',
-      number_of_children: '',
+      spouse_birthdate: '', 
+      spouse_age: '',       
+      number_of_children: '', 
       guardian_name: '',
       guardian_relationship: '',
       emergency_contact_name: '', 
@@ -139,10 +153,62 @@ const ResidentsPage = () => {
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
+    let newValue = type === 'checkbox' ? checked : value;
+
+    const capitalizeFields = [
+      'first_name', 'middle_name', 'last_name', 'place_of_birth', 'religion', 
+      'full_address', 'purok', 'father_name', 'father_occupation', 'father_address', 
+      'mother_name', 'mother_occupation', 'mother_address', 'spouse_name', 
+      'spouse_occupation', 'guardian_name', 'emergency_contact_name'
+    ];
+    
+    if (capitalizeFields.includes(name) && typeof newValue === 'string') {
+      newValue = newValue.replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    if (['father_birthdate', 'mother_birthdate', 'spouse_birthdate'].includes(name) && newValue) {
+      const age = calculateAge(newValue);
+      const role = name.split('_')[0];
+      const capitalizedRole = role.charAt(0).toUpperCase() + role.slice(1);
+      
+      if (age === 'Invalid') {
+        toast.error(`Invalid birthdate entered for ${capitalizedRole}.`);
+        newValue = ''; 
+      } else if (age !== 'N/A' && age < 16) {
+        toast.error(`${capitalizedRole} must be at least 16 years old.`);
+        newValue = ''; 
+      }
+    }
+
+    if (name === 'date_of_birth' && newValue) {
+      const age = calculateAge(newValue);
+      if (age === 'Invalid') {
+        toast.error('Invalid Date of Birth entered.');
+        newValue = '';
+      }
+    }
+
+    setFormData(prev => {
+      const updated = { ...prev, [name]: newValue };
+      
+      if (name === 'father_birthdate') updated.father_age = newValue ? calculateAge(newValue) : '';
+      if (name === 'mother_birthdate') updated.mother_age = newValue ? calculateAge(newValue) : '';
+      if (name === 'spouse_birthdate') updated.spouse_age = newValue ? calculateAge(newValue) : '';
+
+      if (name === 'date_of_birth' && newValue) {
+        const age = calculateAge(newValue);
+        if (age !== 'N/A' && age !== 'Invalid' && age < 16) {
+          updated.civil_status = 'Single';
+          updated.spouse_name = '';
+          updated.spouse_occupation = '';
+          updated.spouse_birthdate = '';
+          updated.spouse_age = '';
+        }
+      }
+
+      return updated;
+    });
+
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: null }));
     }
@@ -166,6 +232,12 @@ const ResidentsPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    const mainAge = calculateAge(formData.date_of_birth);
+    if (mainAge === 'Invalid') {
+      toast.error('The Resident Date of Birth is invalid (Future date or too old).');
+      return;
+    }
+
     const validationRules = {
       first_name: { required: true, type: 'name' },
       last_name: { required: true, type: 'name' },
@@ -194,20 +266,18 @@ const ResidentsPage = () => {
         created_by: user.id
       };
 
-      // 1. Universal Empty String Scrubber
       Object.keys(sanitizedData).forEach(key => {
         if (sanitizedData[key] === "") {
           sanitizedData[key] = null;
         }
       });
 
-      // 2. Parse numeric fields safely
-      if (sanitizedData.number_of_children) sanitizedData.number_of_children = parseInt(sanitizedData.number_of_children, 10);
-      if (sanitizedData.father_age) sanitizedData.father_age = parseInt(sanitizedData.father_age, 10);
-      if (sanitizedData.mother_age) sanitizedData.mother_age = parseInt(sanitizedData.mother_age, 10);
-      if (sanitizedData.monthly_income) sanitizedData.monthly_income = parseFloat(sanitizedData.monthly_income);
+      sanitizedData.number_of_children = (sanitizedData.number_of_children === null || sanitizedData.number_of_children === '') ? null : parseInt(sanitizedData.number_of_children, 10);
+      sanitizedData.father_age = (sanitizedData.father_age === null || sanitizedData.father_age === '') ? null : parseInt(sanitizedData.father_age, 10);
+      sanitizedData.mother_age = (sanitizedData.mother_age === null || sanitizedData.mother_age === '') ? null : parseInt(sanitizedData.mother_age, 10);
+      sanitizedData.spouse_age = (sanitizedData.spouse_age === null || sanitizedData.spouse_age === '') ? null : parseInt(sanitizedData.spouse_age, 10);
+      sanitizedData.monthly_income = (sanitizedData.monthly_income === null || sanitizedData.monthly_income === '') ? null : parseFloat(sanitizedData.monthly_income);
 
-      // Create a clean payload and remove immutable database fields
       const payload = { ...sanitizedData };
       delete payload.id;
       delete payload.created_at;
@@ -222,7 +292,6 @@ const ResidentsPage = () => {
         residentResult = await db.residents.update(editingResident.id, payload);
         await logDataModification(user.id, 'residents', editingResident.id, ACTIONS.RESIDENT_UPDATED, editingResident, payload);
         
-        // --- CRITICAL FIX 1: Force QR Code to regenerate when updating a resident! ---
         await generateQRForResident({ id: editingResident.id, ...payload });
 
         toast.success('Resident updated successfully');
@@ -243,8 +312,10 @@ const ResidentsPage = () => {
     }
   };
 
+  // --- UPDATED QR & ID GENERATION (IMAGE METHOD) ---
   const generateQRForResident = async (resident) => {
     try {
+      // 1. Generate core QR Code for database
       const qrData = generateQRData(resident);
       const qrCodeUrl = await generateQRCodeImage(qrData);
 
@@ -255,11 +326,28 @@ const ResidentsPage = () => {
 
       if (resident.email) {
         try {
-          await sendQRCodeEmail(resident);
+          // 2. Generate the Beautiful JPEG ID Card
+          const { blob } = await generateResidentIDImage(resident);
+
+          // 3. Upload JPEG to Supabase Storage
+          const filePath = `id_cards/${resident.id}_id_card.jpg`;
+          const { error: uploadError } = await supabase.storage
+            .from('documents')
+            .upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
+
+          if (uploadError) throw uploadError;
+
+          // 4. Get Public URL of the uploaded image
+          const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
+
+          // 5. Send Email with the beautiful Image URL embedded
+          await sendQRCodeEmail(resident, urlData.publicUrl);
           await db.residents.update(resident.id, { qr_sent_at: new Date().toISOString() });
-          toast.success('QR code sent to email');
+          
+          toast.success('ID Card sent to email!');
         } catch (emailError) {
-          toast('QR code generated but email failed to send', { icon: '⚠️' });
+          console.error('Email/Storage error:', emailError);
+          toast('QR generated but email failed to send', { icon: '⚠️' });
         }
       }
       return qrCodeUrl;
@@ -276,42 +364,40 @@ const ResidentsPage = () => {
     }
     try {
       setLoading(true);
-      let qrCodeUrl = resident.qr_code_url;
-      if (!qrCodeUrl) {
-        qrCodeUrl = await generateQRForResident(resident);
-      } else {
-        await sendQRCodeEmail(resident);
-        await db.residents.update(resident.id, { qr_sent_at: new Date().toISOString() });
-      }
-      toast.success('QR code sent successfully');
+      toast.loading('Generating ID & sending email...', { id: 'resend-toast' });
+      
+      // Force a fresh image generation and upload
+      const { blob } = await generateResidentIDImage(resident);
+      const filePath = `id_cards/${resident.id}_id_card.jpg`;
+      
+      await supabase.storage.from('documents').upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
+      const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
+      
+      await sendQRCodeEmail(resident, urlData.publicUrl);
+      await db.residents.update(resident.id, { qr_sent_at: new Date().toISOString() });
+      
+      toast.success('ID Card sent successfully!', { id: 'resend-toast' });
     } catch (error) {
-      toast.error('Failed to send QR code');
+      console.error(error);
+      toast.error('Failed to send email', { id: 'resend-toast' });
     } finally {
       setLoading(false);
     }
   };
 
-  // --- CRITICAL FIX 2: Completely rewrote handleDownloadQR ---
   const handleDownloadQR = async (resident) => {
     try {
-      // 1. Force the app to generate a fresh, simple "ID-only" string right now.
-      // We ignore the massive broken string saved in the database!
-      const freshCleanData = generateQRData(resident);
-      
-      // 2. We download the perfect JPEG using the fresh simple data
-      await downloadQRCode(freshCleanData, `${resident.last_name}_${resident.first_name}_QR.jpg`);
-      
-      toast.success('QR code downloaded');
+      const toastId = toast.loading('Generating ID Card...');
+      await downloadResidentID(resident); // Downloads the beautiful JPEG directly!
+      toast.success('ID Card downloaded successfully!', { id: toastId });
     } catch (error) {
       console.error(error);
-      toast.error('Failed to download QR code');
+      toast.error('Failed to generate ID Card');
     }
   };
 
   const handleEdit = (resident) => {
     setEditingResident(resident);
-    
-    // When editing, parse null values back to empty strings for the form inputs
     const formSafeData = { ...resident };
     Object.keys(formSafeData).forEach(key => {
       if (formSafeData[key] === null) {
@@ -354,6 +440,12 @@ const ResidentsPage = () => {
     setErrors({});
   };
 
+  const InputHint = ({ text }) => (
+    <small style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+      {text}
+    </small>
+  );
+
   return (
     <div className="residents-page">
       <div className="page-header">
@@ -361,9 +453,11 @@ const ResidentsPage = () => {
           <h1>Residents Management</h1>
           <p>Manage barangay residents, update info, and generate QR codes</p>
         </div>
-        <button className="btn btn-primary" onClick={openAddModal}>
-          <Plus size={20} /> Add New Resident
-        </button>
+        {user?.role !== 'view_only' && (
+          <button className="btn btn-primary" onClick={openAddModal}>
+            <Plus size={20} /> Add New Resident
+          </button>
+        )}
       </div>
 
       <div className="residents-controls">
@@ -448,18 +542,23 @@ const ResidentsPage = () => {
                           <button className="btn-icon" onClick={() => setViewingResident(resident)} title="View Info">
                             <Eye size={18} />
                           </button>
-                          <button className="btn-icon" onClick={() => handleDownloadQR(resident)} title="Download QR">
-                            <Download size={18} />
-                          </button>
-                          <button className="btn-icon" onClick={() => handleResendQR(resident)} title="Send QR via Email" disabled={!resident.email}>
-                            <Mail size={18} />
-                          </button>
-                          <button className="btn-icon" onClick={() => handleEdit(resident)} title="Edit">
-                            <Edit2 size={18} />
-                          </button>
-                          <button className="btn-icon btn-danger" onClick={() => handleDelete(resident)} title="Delete">
-                            <Trash2 size={18} />
-                          </button>
+                          
+                          {user?.role !== 'view_only' && (
+                            <>
+                              <button className="btn-icon" onClick={() => handleDownloadQR(resident)} title="Download QR">
+                                <Download size={18} />
+                              </button>
+                              <button className="btn-icon" onClick={() => handleResendQR(resident)} title="Send QR via Email" disabled={!resident.email}>
+                                <Mail size={18} />
+                              </button>
+                              <button className="btn-icon" onClick={() => handleEdit(resident)} title="Edit">
+                                <Edit2 size={18} />
+                              </button>
+                              <button className="btn-icon btn-danger" onClick={() => handleDelete(resident)} title="Delete">
+                                <Trash2 size={18} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -572,15 +671,16 @@ const ResidentsPage = () => {
                     {/* Spouse / Guardian / Emergency */}
                     <div style={{ paddingTop: '1.5rem', borderTop: '1px dashed var(--border)' }}>
                       <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
-                        {['Married', 'Separated', 'Widowed'].includes(viewingResident.civil_status) && (
-                          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '2rem' }}>
-                            <div><p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Spouse's Name</p><p className="font-medium">{viewingResident.spouse_name || 'N/A'}</p></div>
-                            <div><p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Spouse Occupation</p><p className="font-medium">{viewingResident.spouse_occupation || 'N/A'}</p></div>
-                            <div><p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>No. of Children </p><p className="font-medium">{viewingResident.number_of_children || '0'}</p></div>
+                        <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
+                          <div><p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Spouse's Name</p><p className="font-medium">{viewingResident.spouse_name || 'N/A'}</p></div>
+                          <div><p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Age / Birthday</p><p className="font-medium">{viewingResident.spouse_age || 'N/A'} / {viewingResident.spouse_birthdate ? new Date(viewingResident.spouse_birthdate).toLocaleDateString() : 'N/A'}</p></div>
+                          <div><p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Spouse Occupation</p><p className="font-medium">{viewingResident.spouse_occupation || 'N/A'}</p></div>
+                          <div><p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>No. of Children </p>
+                            <p className="font-medium">{viewingResident.number_of_children !== null ? viewingResident.number_of_children : 'None'}</p>
                           </div>
-                        )}
-                        <div><p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Guardian's Name</p><p className="font-medium">{viewingResident.guardian_name || 'N/A'} {viewingResident.guardian_relationship ? `(${viewingResident.guardian_relationship})` : ''}</p></div>
-                        <div><p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Emergency Contact</p><p className="font-medium">{viewingResident.emergency_contact_name || 'N/A'} - {viewingResident.emergency_contact_number || 'N/A'}</p></div>
+                        </div>
+                        <div style={{ marginTop: '1rem' }}><p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Guardian's Name</p><p className="font-medium">{viewingResident.guardian_name || 'N/A'} {viewingResident.guardian_relationship ? `(${viewingResident.guardian_relationship})` : ''}</p></div>
+                        <div style={{ marginTop: '1rem' }}><p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Emergency Contact</p><p className="font-medium">{viewingResident.emergency_contact_name || 'N/A'} - {viewingResident.emergency_contact_number || 'N/A'}</p></div>
                       </div>
                     </div>
                   </div>
@@ -590,9 +690,12 @@ const ResidentsPage = () => {
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-secondary" onClick={() => setViewingResident(null)}>Close</button>
-              <button type="button" className="btn btn-primary" onClick={() => { setViewingResident(null); handleEdit(viewingResident); }}>
-                <Edit2 size={16} style={{ marginRight: '0.5rem' }} /> Edit Info
-              </button>
+              
+              {user?.role !== 'view_only' && (
+                <button type="button" className="btn btn-primary" onClick={() => { setViewingResident(null); handleEdit(viewingResident); }}>
+                  <Edit2 size={16} style={{ marginRight: '0.5rem' }} /> Edit Info
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -638,29 +741,34 @@ const ResidentsPage = () => {
                   <div className="form-grid">
                     <div className={`form-group ${errors.first_name ? 'has-error' : ''}`}>
                       <label>First Name *</label>
-                      <input type="text" name="first_name" value={formData.first_name} onChange={handleInputChange} required />
+                      <input type="text" name="first_name" value={formData.first_name} onChange={handleInputChange} required maxLength="50" placeholder="e.g. Juan" pattern="[a-zA-ZñÑ\-\.\s]+" title="Letters, spaces, hyphens, and periods only" />
+                      <InputHint text="Required. Letters only." />
                       {errors.first_name && <span className="error-text">{errors.first_name}</span>}
                     </div>
                     <div className="form-group">
                       <label>Middle Name</label>
-                      <input type="text" name="middle_name" value={formData.middle_name} onChange={handleInputChange} />
+                      <input type="text" name="middle_name" value={formData.middle_name} onChange={handleInputChange} maxLength="50" placeholder="e.g. Santos" pattern="[a-zA-ZñÑ\-\.\s]+" title="Letters, spaces, hyphens, and periods only" />
+                      <InputHint text="Optional." />
                     </div>
                     <div className={`form-group ${errors.last_name ? 'has-error' : ''}`}>
                       <label>Last Name *</label>
-                      <input type="text" name="last_name" value={formData.last_name} onChange={handleInputChange} required />
+                      <input type="text" name="last_name" value={formData.last_name} onChange={handleInputChange} required maxLength="50" placeholder="e.g. Dela Cruz" pattern="[a-zA-ZñÑ\-\.\s]+" title="Letters, spaces, hyphens, and periods only" />
+                      <InputHint text="Required. Letters only." />
                       {errors.last_name && <span className="error-text">{errors.last_name}</span>}
                     </div>
                     <div className="form-group">
                       <label>Suffix</label>
-                      <input type="text" name="suffix" value={formData.suffix} onChange={handleInputChange} placeholder="Jr., Sr., III" />
+                      <input type="text" name="suffix" value={formData.suffix} onChange={handleInputChange} maxLength="10" placeholder="e.g. Jr., Sr., III" />
+                      <InputHint text="Optional." />
                     </div>
                     <div className={`form-group ${errors.date_of_birth ? 'has-error' : ''}`}>
                       <label>Date of Birth *</label>
-                      <input type="date" name="date_of_birth" value={formData.date_of_birth} onChange={handleInputChange} required />
+                      <input type="date" name="date_of_birth" max={maxDate} min={minDate} value={formData.date_of_birth} onChange={handleInputChange} required />
+                      <InputHint text="Used to automatically calculate age." />
                     </div>
                     <div className="form-group">
                       <label>Place of Birth</label>
-                      <input type="text" name="place_of_birth" value={formData.place_of_birth} onChange={handleInputChange} />
+                      <input type="text" name="place_of_birth" value={formData.place_of_birth} onChange={handleInputChange} maxLength="100" placeholder="e.g. Calamba City" />
                     </div>
                     <div className="form-group">
                       <label>Gender *</label>
@@ -670,16 +778,19 @@ const ResidentsPage = () => {
                         <option value="Female">Female</option>
                       </select>
                     </div>
+
                     <div className="form-group">
                       <label>Civil Status *</label>
-                      <select name="civil_status" value={formData.civil_status} onChange={handleInputChange} required>
+                      <select name="civil_status" value={formData.civil_status} onChange={handleInputChange} required disabled={isUnderage}>
                         <option value="">Select status</option>
                         <option value="Single">Single</option>
                         <option value="Married">Married</option>
                         <option value="Widowed">Widowed</option>
                         <option value="Separated">Separated</option>
                       </select>
+                      {isUnderage && <InputHint text="Resident must be at least 16 to change status." />}
                     </div>
+
                     <div className="form-group">
                       <label>Blood Type</label>
                       <select name="blood_type" value={formData.blood_type} onChange={handleInputChange}>
@@ -692,7 +803,7 @@ const ResidentsPage = () => {
                     </div>
                     <div className="form-group">
                       <label>Religion</label>
-                      <input type="text" name="religion" value={formData.religion} onChange={handleInputChange} />
+                      <input type="text" name="religion" value={formData.religion} onChange={handleInputChange} maxLength="50" placeholder="e.g. Roman Catholic" />
                     </div>
                   </div>
                 </div>
@@ -703,27 +814,32 @@ const ResidentsPage = () => {
                   <div className="form-grid">
                     <div className={`form-group ${errors.full_address ? 'has-error' : ''}`} style={{ gridColumn: '1 / -1' }}>
                       <label>Full Address (House No., Street, Subdivision/Village) *</label>
-                      <input type="text" name="full_address" value={formData.full_address} onChange={handleInputChange} required placeholder="e.g. Blk 1 Lot 2, San Jose St., Phase 3" />
+                      <input type="text" name="full_address" value={formData.full_address} onChange={handleInputChange} required maxLength="150" placeholder="e.g. Blk 1 Lot 2, San Jose St., Phase 3" />
+                      <InputHint text="Exclude Barangay, City, Province." />
                     </div>
                     <div className="form-group">
                       <label>Purok/Zone</label>
-                      <input type="text" name="purok" value={formData.purok} onChange={handleInputChange} />
+                      <input type="text" name="purok" value={formData.purok} onChange={handleInputChange} maxLength="20" placeholder="e.g. Purok 1" />
                     </div>
                     <div className="form-group">
                       <label>Zip Code</label>
-                      <input type="text" name="zip_code" value={formData.zip_code} onChange={handleInputChange} />
+                      <input type="text" name="zip_code" value={formData.zip_code} onChange={handleInputChange} maxLength="4" pattern="[0-9]{4}" placeholder="e.g. 4027" title="Must be a 4-digit number" />
+                      <InputHint text="4-digit number." />
                     </div>
                     <div className="form-group">
                       <label>Date Started Residing</label>
-                      <input type="date" name="residency_start_date" value={formData.residency_start_date} onChange={handleInputChange} />
+                      <input type="date" name="residency_start_date" max={maxDate} min={minDate} value={formData.residency_start_date} onChange={handleInputChange} />
+                      <InputHint text="Used to calculate residency duration." />
                     </div>
                     <div className={`form-group ${errors.mobile_number ? 'has-error' : ''}`}>
                       <label>Mobile Number *</label>
-                      <input type="tel" name="mobile_number" value={formData.mobile_number} onChange={handleInputChange} required placeholder="09XX-XXX-XXXX" />
+                      <input type="tel" name="mobile_number" value={formData.mobile_number} onChange={handleInputChange} required maxLength="11" pattern="09[0-9]{9}" placeholder="e.g. 09123456789" title="Must be an 11-digit number starting with 09" />
+                      <InputHint text="Format: 11 digits starting with 09." />
                     </div>
                     <div className={`form-group ${errors.email ? 'has-error' : ''}`}>
                       <label>Email Address</label>
-                      <input type="email" name="email" value={formData.email} onChange={handleInputChange} />
+                      <input type="email" name="email" value={formData.email} onChange={handleInputChange} maxLength="100" placeholder="e.g. juan@example.com" />
+                      <InputHint text="Required for sending QR codes." />
                     </div>
                   </div>
                 </div>
@@ -739,39 +855,45 @@ const ResidentsPage = () => {
                   <div className="form-grid">
                     <div className="form-group">
                       <label>Father's Name</label>
-                      <input type="text" name="father_name" value={formData.father_name} onChange={handleInputChange} />
+                      <input type="text" name="father_name" value={formData.father_name} onChange={handleInputChange} maxLength="100" placeholder="Full Name" />
                     </div>
                     <div className="form-group">
                       <label>Occupation</label>
-                      <input type="text" name="father_occupation" value={formData.father_occupation} onChange={handleInputChange} disabled={formData.father_deceased} />
+                      <input type="text" name="father_occupation" value={formData.father_occupation} onChange={handleInputChange} disabled={formData.father_deceased} maxLength="50" placeholder="e.g. Driver" />
                     </div>
                     <div className="form-group">
                       <label>Contact Number</label>
-                      <input type="tel" name="father_phone_number" value={formData.father_phone_number} onChange={handleInputChange} disabled={formData.father_deceased} />
+                      <input type="tel" name="father_phone_number" value={formData.father_phone_number} onChange={handleInputChange} disabled={formData.father_deceased} maxLength="11" pattern="09[0-9]{9}" placeholder="e.g. 09123456789" />
                     </div>
                     <div className="form-group">
                       <label>Birthdate</label>
-                      <input type="date" name="father_birthdate" value={formData.father_birthdate} onChange={handleInputChange} disabled={formData.father_deceased} />
+                      <input type="date" name="father_birthdate" max={maxDate16} min={minDate} value={formData.father_birthdate} onChange={handleInputChange} disabled={formData.father_deceased} />
                     </div>
                     <div className="form-group">
                       <label>Age</label>
-                      <input type="number" name="father_age" value={formData.father_age} onChange={handleInputChange} disabled={formData.father_deceased} />
+                      <input type="number" name="father_age" value={formData.father_age ?? ''} onChange={handleInputChange} disabled placeholder="Auto-calculated" />
                     </div>
                     <div className="form-group">
                       <label>Religion</label>
-                      <input type="text" name="father_religion" value={formData.father_religion} onChange={handleInputChange} />
+                      <input type="text" name="father_religion" value={formData.father_religion} onChange={handleInputChange} maxLength="50" placeholder="e.g. Roman Catholic" />
                     </div>
                     <div className="form-group">
                       <label>Nationality</label>
-                      <input type="text" name="father_nationality" value={formData.father_nationality} onChange={handleInputChange} />
+                      <input type="text" name="father_nationality" value={formData.father_nationality} onChange={handleInputChange} maxLength="50" placeholder="e.g. Filipino" />
                     </div>
                     <div className="form-group">
                       <label>Blood Type</label>
-                      <input type="text" name="father_blood_type" value={formData.father_blood_type} onChange={handleInputChange} />
+                      <select name="father_blood_type" value={formData.father_blood_type} onChange={handleInputChange}>
+                        <option value="">Select Type</option>
+                        <option value="A+">A+</option><option value="A-">A-</option>
+                        <option value="B+">B+</option><option value="B-">B-</option>
+                        <option value="O+">O+</option><option value="O-">O-</option>
+                        <option value="AB+">AB+</option><option value="AB-">AB-</option>
+                      </select>
                     </div>
                     <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                       <label>Current Address</label>
-                      <input type="text" name="father_address" value={formData.father_address} onChange={handleInputChange} disabled={formData.father_deceased} />
+                      <input type="text" name="father_address" value={formData.father_address} onChange={handleInputChange} disabled={formData.father_deceased} maxLength="150" placeholder="Full Address" />
                     </div>
                   </div>
                 </div>
@@ -787,39 +909,45 @@ const ResidentsPage = () => {
                   <div className="form-grid">
                     <div className="form-group">
                       <label>Mother's Maiden Name</label>
-                      <input type="text" name="mother_name" value={formData.mother_name} onChange={handleInputChange} />
+                      <input type="text" name="mother_name" value={formData.mother_name} onChange={handleInputChange} maxLength="100" placeholder="Full Maiden Name" />
                     </div>
                     <div className="form-group">
                       <label>Occupation</label>
-                      <input type="text" name="mother_occupation" value={formData.mother_occupation} onChange={handleInputChange} disabled={formData.mother_deceased} />
+                      <input type="text" name="mother_occupation" value={formData.mother_occupation} onChange={handleInputChange} disabled={formData.mother_deceased} maxLength="50" placeholder="e.g. Housewife" />
                     </div>
                     <div className="form-group">
                       <label>Contact Number</label>
-                      <input type="tel" name="mother_phone_number" value={formData.mother_phone_number} onChange={handleInputChange} disabled={formData.mother_deceased} />
+                      <input type="tel" name="mother_phone_number" value={formData.mother_phone_number} onChange={handleInputChange} disabled={formData.mother_deceased} maxLength="11" pattern="09[0-9]{9}" placeholder="e.g. 09123456789" />
                     </div>
                     <div className="form-group">
                       <label>Birthdate</label>
-                      <input type="date" name="mother_birthdate" value={formData.mother_birthdate} onChange={handleInputChange} disabled={formData.mother_deceased} />
+                      <input type="date" name="mother_birthdate" max={maxDate16} min={minDate} value={formData.mother_birthdate} onChange={handleInputChange} disabled={formData.mother_deceased} />
                     </div>
                     <div className="form-group">
                       <label>Age</label>
-                      <input type="number" name="mother_age" value={formData.mother_age} onChange={handleInputChange} disabled={formData.mother_deceased} />
+                      <input type="number" name="mother_age" value={formData.mother_age ?? ''} onChange={handleInputChange} disabled placeholder="Auto-calculated" />
                     </div>
                     <div className="form-group">
                       <label>Religion</label>
-                      <input type="text" name="mother_religion" value={formData.mother_religion} onChange={handleInputChange} />
+                      <input type="text" name="mother_religion" value={formData.mother_religion} onChange={handleInputChange} maxLength="50" placeholder="e.g. Roman Catholic" />
                     </div>
                     <div className="form-group">
                       <label>Nationality</label>
-                      <input type="text" name="mother_nationality" value={formData.mother_nationality} onChange={handleInputChange} />
+                      <input type="text" name="mother_nationality" value={formData.mother_nationality} onChange={handleInputChange} maxLength="50" placeholder="e.g. Filipino" />
                     </div>
                     <div className="form-group">
                       <label>Blood Type</label>
-                      <input type="text" name="mother_blood_type" value={formData.mother_blood_type} onChange={handleInputChange} />
+                      <select name="mother_blood_type" value={formData.mother_blood_type} onChange={handleInputChange}>
+                        <option value="">Select Type</option>
+                        <option value="A+">A+</option><option value="A-">A-</option>
+                        <option value="B+">B+</option><option value="B-">B-</option>
+                        <option value="O+">O+</option><option value="O-">O-</option>
+                        <option value="AB+">AB+</option><option value="AB-">AB-</option>
+                      </select>
                     </div>
                     <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                       <label>Current Address</label>
-                      <input type="text" name="mother_address" value={formData.mother_address} onChange={handleInputChange} disabled={formData.mother_deceased} />
+                      <input type="text" name="mother_address" value={formData.mother_address} onChange={handleInputChange} disabled={formData.mother_deceased} maxLength="150" placeholder="Full Address" />
                     </div>
                   </div>
                 </div>
@@ -828,21 +956,27 @@ const ResidentsPage = () => {
                 <div className="form-section">
                   <h3>Additional & Emergency Info</h3>
                   <div className="form-grid">
-                    {['Married', 'Separated', 'Widowed'].includes(formData.civil_status) && (
-                      <>
-                        <div className="form-group">
-                          <label>Spouse's Name</label>
-                          <input type="text" name="spouse_name" value={formData.spouse_name} onChange={handleInputChange} />
-                        </div>
-                        <div className="form-group">
-                          <label>Spouse's Occupation</label>
-                          <input type="text" name="spouse_occupation" value={formData.spouse_occupation} onChange={handleInputChange} />
-                        </div>
-                      </>
-                    )}
+                    
+                    <div className="form-group">
+                      <label>Spouse's Name</label>
+                      <input type="text" name="spouse_name" value={formData.spouse_name} onChange={handleInputChange} maxLength="100" placeholder="Leave blank if none" disabled={isUnderage} />
+                    </div>
+                    <div className="form-group">
+                      <label>Spouse's Occupation</label>
+                      <input type="text" name="spouse_occupation" value={formData.spouse_occupation} onChange={handleInputChange} maxLength="50" placeholder="Leave blank if none" disabled={isUnderage} />
+                    </div>
+                    <div className="form-group">
+                      <label>Spouse's Birthdate</label>
+                      <input type="date" name="spouse_birthdate" max={maxDate16} min={minDate} value={formData.spouse_birthdate || ''} onChange={handleInputChange} disabled={isUnderage} />
+                    </div>
+                    <div className="form-group">
+                      <label>Spouse's Age</label>
+                      <input type="number" name="spouse_age" value={formData.spouse_age ?? ''} onChange={handleInputChange} disabled placeholder="Auto-calculated" />
+                    </div>
+                    
                     <div className="form-group">
                       <label>Number of Children</label>
-                      <input type="number" name="number_of_children" value={formData.number_of_children} onChange={handleInputChange} min="0" />
+                      <input type="number" name="number_of_children" value={formData.number_of_children ?? ''} onChange={handleInputChange} min="0" placeholder="Leave blank if none" />
                     </div>
                     <div className="form-group">
                       <label>Educational Attainment</label>
@@ -860,11 +994,12 @@ const ResidentsPage = () => {
                     </div>
                     <div className="form-group">
                       <label>Emergency Contact Name</label>
-                      <input type="text" name="emergency_contact_name" value={formData.emergency_contact_name} onChange={handleInputChange} />
+                      <input type="text" name="emergency_contact_name" value={formData.emergency_contact_name} onChange={handleInputChange} maxLength="100" placeholder="Full Name" />
                     </div>
                     <div className="form-group">
                       <label>Emergency Contact Number</label>
-                      <input type="tel" name="emergency_contact_number" value={formData.emergency_contact_number} onChange={handleInputChange} />
+                      <input type="tel" name="emergency_contact_number" value={formData.emergency_contact_number} onChange={handleInputChange} maxLength="11" pattern="09[0-9]{9}" placeholder="e.g. 09123456789" />
+                      <InputHint text="Format: 11 digits starting with 09." />
                     </div>
                   </div>
                   
@@ -908,11 +1043,17 @@ function calculateAge(dateOfBirth) {
   if (!dateOfBirth) return 'N/A';
   const today = new Date();
   const birthDate = new Date(dateOfBirth);
+  
+  if (birthDate > today) return 'Invalid';
+
   let age = today.getFullYear() - birthDate.getFullYear();
   const monthDiff = today.getMonth() - birthDate.getMonth();
   if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
     age--;
   }
+
+  if (age > 150 || age < 0) return 'Invalid';
+
   return age;
 }
 
@@ -920,6 +1061,9 @@ function calculateResidencyYears(startDate) {
   if (!startDate) return 0;
   const today = new Date();
   const start = new Date(startDate);
+  
+  if (start > today) return 0;
+
   let years = today.getFullYear() - start.getFullYear();
   const monthDiff = today.getMonth() - start.getMonth();
   if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < start.getDate())) {

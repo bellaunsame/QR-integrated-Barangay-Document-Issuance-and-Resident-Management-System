@@ -205,20 +205,24 @@ const UsersPage = () => {
     setPasswordStrength(null);
   };
 
+  // --- ADDED: View Only Role Styling ---
   const getRoleBadgeClass = (role) => {
     switch(role) {
       case 'admin': return 'badge-admin';
       case 'clerk': return 'badge-clerk';
       case 'record_keeper': return 'badge-keeper';
+      case 'view_only': return 'badge-view-only'; 
       default: return 'badge-default';
     }
   };
 
+  // --- ADDED: View Only Role Formatting ---
   const formatRole = (role) => {
     const roleMap = {
       'admin': 'Administrator',
       'clerk': 'Barangay Clerk',
-      'record_keeper': 'Record Keeper'
+      'record_keeper': 'Record Keeper',
+      'view_only': 'View Only'
     };
     return roleMap[role] || role;
   };
@@ -403,6 +407,8 @@ const UsersPage = () => {
                     <option value="admin">Administrator</option>
                     <option value="clerk">Barangay Clerk</option>
                     <option value="record_keeper">Record Keeper</option>
+                    {/* --- ADDED: View Only option --- */}
+                    <option value="view_only">View Only</option>
                   </select>
                   {errors.role && <span className="error-text">{errors.role[0]}</span>}
                 </div>
