@@ -2,7 +2,15 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Lock, Mail, LogIn, Shield } from 'lucide-react';
+import brgylogo from '../assets/brgy.2-icon.png';
+import bg1 from '../assets/gallery-1.jpg';
+import bg2 from '../assets/gallery-2.jpg';
+import bg3 from '../assets/gallery-3.jpg';
+import bg4 from '../assets/officials.png';
+import bg5 from '../assets/area.JPG';
 import './LoginPage.css';
+
+const backgroundImages = [bg1, bg2, bg3, bg4, bg5];
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -40,19 +48,32 @@ const LoginPage = () => {
   return (
     <div className="login-page">
       <div className="login-background">
-        <div className="gradient-orb orb-1"></div>
-        <div className="gradient-orb orb-2"></div>
-        <div className="gradient-orb orb-3"></div>
+        <div className="scrolling-wrapper">
+          <div className="scrolling-track">
+            {[...Array(4)].map((_, setIndex) => (
+              <div key={setIndex} className="image-set">
+                {backgroundImages.map((img, index) => (
+                  <img key={`${setIndex}-${index}`} src={img} alt={`background ${index + 1}`} />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="overlay-gradient"></div>
       </div>
 
       <div className="login-container">
         <div className="login-card">
           <div className="login-header">
             <div className="logo-container">
-              <Shield className="logo-icon" size={48} />
+              <img 
+                src={brgylogo} 
+                alt="Barangay Logo" 
+                className="logo-icon" 
+              />
             </div>
-            <h1 className="login-title">Barangay Document System</h1>
-            <p className="login-subtitle">Sign in to your account to continue</p>
+            <h1 className="login-title">Barangay Dos:QR-based BDIS</h1>
+            <p className="login-subtitle">Sign in to your account to access into the system</p>
           </div>
 
           <form onSubmit={handleSubmit} className="login-form">
