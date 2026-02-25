@@ -72,7 +72,8 @@ const LoginPage = () => {
                 className="logo-icon" 
               />
             </div>
-            <h1 className="login-title">Barangay Dos:QR-based BDIS</h1>
+            <h1 className="login-title">QR-Integrated BDIS</h1>
+            <h2 className="login-title-2">Barangay Dos in City of Calamba</h2>
             <p className="login-subtitle">Sign in to your account to access into the system</p>
           </div>
 
