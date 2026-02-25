@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { validateField } from '../../services/security/inputSanitizer';
-import { Save, X, FileText, User, AlignLeft } from 'lucide-react';
+import { Save, X, FileText, User, AlignLeft, AlertTriangle, Upload } from 'lucide-react';
 
-// 1. Import your official logos (Updated)
+// 1. Import your official logos
 import calambaSeal from '../../assets/Calamba,_Laguna_Seal.svg.png';
 import brgyLogo from '../../assets/brgy.2-icon.png';
 
@@ -23,13 +23,90 @@ const DocumentRequestForm = ({
     resident_id: resident?.id || '',
     template_id: '',
     request_type: '',
-    purpose: ''
+    purpose: '',
+    request_reason: '',
+    notarizedDocFile: null
   });
 
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  
+  // States for advanced document logic
+  const [isDuplicate, setIsDuplicate] = useState(false);
+  const [hasPendingRequest, setHasPendingRequest] = useState(false);
+  const [previousDocInfo, setPreviousDocInfo] = useState(null);
 
-  // --- ADDED: Handle input changes ---
+  // Check for duplicates/pending requests whenever resident or template changes
+  useEffect(() => {
+    if (formData.resident_id && formData.template_id) {
+      checkRequestStatus(formData.resident_id, formData.template_id);
+    } else {
+      setIsDuplicate(false);
+      setHasPendingRequest(false);
+      setPreviousDocInfo(null);
+    }
+  }, [formData.resident_id, formData.template_id, residents]);
+
+  const checkRequestStatus = (resId, tempId) => {
+    const selectedResident = residents.find(r => r.id === resId);
+    
+    if (selectedResident && selectedResident.document_requests) {
+      
+      // 1. CHECK FOR SPAM/PENDING REQUESTS
+      const activeRequests = selectedResident.document_requests.filter(
+        req => req.template?.id === tempId && (req.status === 'pending' || req.status === 'processing')
+      );
+
+      if (activeRequests.length > 0) {
+        setHasPendingRequest(true); // Triggers the red block
+        setIsDuplicate(false);      // Hides the upload box
+        return;                     // Stop checking further
+      } else {
+        setHasPendingRequest(false);
+      }
+
+      // 2. CHECK FOR EXPIRATION ON PREVIOUS COMPLETED REQUESTS
+      const pastRequests = selectedResident.document_requests.filter(
+        req => req.template?.id === tempId && (req.status === 'completed' || req.status === 'released')
+      );
+
+      if (pastRequests.length > 0) {
+        // Sort to get the most recent one
+        pastRequests.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        const mostRecent = pastRequests[0];
+        
+        // --- NEW LOGIC: Calculate Expiration ---
+        const today = new Date();
+        let expiryDate;
+        
+        // Use the database expiration date, or fallback to 180 days from creation if missing
+        if (mostRecent.expiration_date) {
+          expiryDate = new Date(mostRecent.expiration_date);
+        } else {
+          expiryDate = new Date(mostRecent.created_at);
+          expiryDate.setDate(expiryDate.getDate() + 180); 
+        }
+
+        if (today < expiryDate) {
+          // RED FLAG: The document is still valid! Force them to upload an affidavit.
+          setIsDuplicate(true);
+          setPreviousDocInfo({ ...mostRecent, calculated_expiry: expiryDate });
+        } else {
+          // GREEN LIGHT: The document is expired. Normal renewal.
+          setIsDuplicate(false);
+          setPreviousDocInfo(null);
+          setFormData(prev => ({ ...prev, request_reason: '', notarizedDocFile: null }));
+        }
+      } else {
+        // First time requesting this document
+        setIsDuplicate(false);
+        setPreviousDocInfo(null);
+        setFormData(prev => ({ ...prev, request_reason: '', notarizedDocFile: null }));
+      }
+    }
+  };
+
+  // Handle input changes
   const handleChange = (e) => {
     const { name, value } = e.target;
     
@@ -45,9 +122,23 @@ const DocumentRequestForm = ({
       setFormData(prev => ({ ...prev, [name]: value }));
     }
     
-    // Clear error for this field when user types
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
+    }
+  };
+
+  // Handle file upload for notarized documents
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) { 
+        setErrors(prev => ({ ...prev, notarizedDocFile: 'File size must be less than 5MB' }));
+        return;
+      }
+      setFormData(prev => ({ ...prev, notarizedDocFile: file }));
+      if (errors.notarizedDocFile) {
+        setErrors(prev => ({ ...prev, notarizedDocFile: '' }));
+      }
     }
   };
 
@@ -62,7 +153,6 @@ const DocumentRequestForm = ({
       newErrors.template_id = 'Please select a document type';
     }
 
-    // Correctly using validateField by passing 'text' as the validation type
     const purposeValidation = validateField(formData.purpose, 'text', {
       required: true,
       minLength: 10,
@@ -73,6 +163,16 @@ const DocumentRequestForm = ({
       newErrors.purpose = purposeValidation.errors[0];
     }
 
+    // Validate duplicate requirements
+    if (isDuplicate) {
+      if (!formData.request_reason || formData.request_reason.trim().length < 5) {
+        newErrors.request_reason = 'Please provide a valid reason for re-requesting this document.';
+      }
+      if (!formData.notarizedDocFile) {
+        newErrors.notarizedDocFile = 'A notarized affidavit or supporting document is required.';
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -80,7 +180,7 @@ const DocumentRequestForm = ({
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!validateForm()) {
+    if (!validateForm() || hasPendingRequest) {
       return; 
     }
 
@@ -89,7 +189,7 @@ const DocumentRequestForm = ({
     try {
       await onSubmit({
         ...formData,
-        status: 'pending'
+        is_duplicate_request: isDuplicate
       });
     } catch (error) {
       console.error('Form submission error:', error);
@@ -99,7 +199,6 @@ const DocumentRequestForm = ({
     }
   };
 
-  // --- The same renderPreview logic from the Template Editor ---
   const renderPreview = (content) => {
     if (!content) return '';
     let html = content;
@@ -211,6 +310,66 @@ const DocumentRequestForm = ({
             )}
           </div>
 
+          {/* --- SPAM PREVENTION BLOCK --- */}
+          {hasPendingRequest && (
+            <div className="duplicate-warning full-width" style={{ background: '#fee2e2', border: '1px solid #ef4444', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
+              <h4 style={{ color: '#b91c1c', display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 0.5rem 0' }}>
+                <AlertTriangle size={18} />
+                Request Already Pending
+              </h4>
+              <p style={{ fontSize: '0.9rem', color: '#991b1b', margin: 0, lineHeight: '1.5' }}>
+                This resident already has an active, unprocessed request for this exact document. Please process or reject the existing request on the dashboard before creating a new one.
+              </p>
+            </div>
+          )}
+
+          {/* --- UPDATED: EARLY RENEWAL WARNING AND UPLOAD SECTION --- */}
+          {isDuplicate && !hasPendingRequest && (
+            <div className="duplicate-warning full-width" style={{ background: '#fffbeb', border: '1px solid #f59e0b', padding: '1.5rem', borderRadius: '8px', marginBottom: '1rem' }}>
+              <h4 style={{ color: '#b45309', display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 1rem 0' }}>
+                <AlertTriangle size={20} />
+                Early Renewal / Prior Request Detected
+              </h4>
+              <p style={{ fontSize: '0.9rem', color: '#92400e', marginBottom: '1rem', lineHeight: '1.5' }}>
+                This resident already holds an active copy of this document valid until <strong>{previousDocInfo?.calculated_expiry?.toLocaleDateString()}</strong>. 
+                <br/>To process an early replacement, a valid reason and a notarized supporting document (e.g., Affidavit of Loss) are required.
+              </p>
+
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
+                <label style={{ color: '#92400e', fontWeight: 'bold' }}>Reason for Re-request *</label>
+                <textarea 
+                  name="request_reason"
+                  value={formData.request_reason}
+                  onChange={handleChange}
+                  className={`form-control ${errors.request_reason ? 'error' : ''}`}
+                  placeholder="e.g., Lost the original copy, Needed for another scholarship application..."
+                  rows="2"
+                  style={{ background: '#fff', border: '1px solid #fcd34d' }}
+                />
+                {errors.request_reason && <span className="error-message">{errors.request_reason}</span>}
+              </div>
+
+              <div className="form-group">
+                <label style={{ color: '#92400e', fontWeight: 'bold' }}>Upload Notarized Affidavit / Supporting Doc *</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginTop: '0.5rem' }}>
+                  <label className="btn btn-secondary" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: '#fff', border: '1px solid #d1d5db', color: '#374151' }}>
+                    <Upload size={16} /> Choose File
+                    <input 
+                      type="file" 
+                      accept=".pdf,image/jpeg,image/png" 
+                      style={{ display: 'none' }} 
+                      onChange={handleFileUpload} 
+                    />
+                  </label>
+                  <span style={{ fontSize: '0.85rem', color: formData.notarizedDocFile ? '#15803d' : '#9ca3af', fontWeight: formData.notarizedDocFile ? '600' : 'normal' }}>
+                    {formData.notarizedDocFile ? `✓ ${formData.notarizedDocFile.name}` : 'No file selected (PDF, JPG, PNG)'}
+                  </span>
+                </div>
+                {errors.notarizedDocFile && <span className="error-message" style={{ display: 'block', marginTop: '0.5rem' }}>{errors.notarizedDocFile}</span>}
+              </div>
+            </div>
+          )}
+
           {/* Purpose */}
           <div className="form-group full-width">
             <label htmlFor="purpose">
@@ -305,7 +464,7 @@ const DocumentRequestForm = ({
         <button
           type="submit"
           className="btn btn-primary"
-          disabled={loading}
+          disabled={loading || hasPendingRequest} 
         >
           {loading ? (
             <>

@@ -17,8 +17,7 @@ import './DocumentRequestCard.css';
 
 /**
  * DocumentRequestCard Component
- * 
- * Display document request in a card format
+ * * Display document request in a card format
  */
 const DocumentRequestCard = ({ 
   request,
@@ -111,11 +110,30 @@ const DocumentRequestCard = ({
         
         <div className="request-info">
           <h3 className="request-type">{request.request_type}</h3>
-          <div className="request-meta">
-            <span className="request-date">
+          
+          {/* UPDATED: Request Meta Data with Expiration Logic */}
+          <div className="request-meta" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <span className="request-date" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <Calendar size={14} />
-              {formatDate(request.created_at)}
+              Requested: {formatDate(request.created_at)}
             </span>
+
+            {/* --- NEW: EXPIRATION DATE DISPLAY --- */}
+            {request.expiration_date && (request.status === 'completed' || request.status === 'released') && (
+              <div style={{ marginTop: '2px', display: 'flex', alignItems: 'center' }}>
+                {new Date(request.expiration_date) < new Date() ? (
+                  <span style={{ fontSize: '0.8rem', color: '#f87171', fontWeight: '500' }}>
+                    Expired on: {formatDate(request.expiration_date)}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '0.8rem', color: '#34d399', fontWeight: '500' }}>
+                    Valid until: {formatDate(request.expiration_date)}
+                  </span>
+                )}
+              </div>
+            )}
+            {/* --- END EXPIRATION LOGIC --- */}
+
           </div>
         </div>
 

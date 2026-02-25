@@ -105,8 +105,31 @@ const DocumentRequestsPage = () => {
   const handleCreateRequest = async (formData) => {
     try {
       setLoading(true);
+      let supportingDocUrl = null;
+
+      // 1. If it's a duplicate request, upload the notarized document to Supabase Storage
+      if (formData.notarizedDocFile) {
+        const file = formData.notarizedDocFile;
+        // Clean filename and create a path
+        const filePath = `supporting_docs/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('documents') // Assuming you are using the 'documents' bucket
+          .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+        
+        const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
+        supportingDocUrl = urlData.publicUrl;
+      }
+
+      // 2. Prepare database payload
+      const payload = { ...formData };
+      delete payload.notarizedDocFile; // Don't try to save the raw File object to the DB!
+
       await db.requests.create({
-        ...formData,
+        ...payload,
+        supporting_doc_url: supportingDocUrl,
         status: 'pending',
         created_by: user.id, 
         created_at: new Date().toISOString()
@@ -144,7 +167,7 @@ const DocumentRequestsPage = () => {
         const uniqueFileName = `${Date.now()}_${fileName.replace(/\s+/g, '_')}`;
         const filePath = `processed_requests/${uniqueFileName}`;
 
-        const { data: uploadData, error: uploadError } = await supabase.storage
+        const { error: uploadError } = await supabase.storage
           .from('documents')
           .upload(filePath, blob, {
             contentType: 'application/pdf',
@@ -168,6 +191,15 @@ const DocumentRequestsPage = () => {
         console.warn('Storage upload skipped/failed:', storageError);
         toast.error('Could not upload to Storage, but will still process document.', { icon: '⚠️' });
       }
+
+      // --- NEW: CALCULATE EXPIRATION DATE ---
+      // Defaults to 180 days if the template doesn't specify
+      const validityDays = request.template?.validity_days || 180;
+      const expirationDate = new Date();
+      expirationDate.setDate(expirationDate.getDate() + validityDays);
+      
+      // Add the expiration date to the update payload
+      uploadParams.expiration_date = expirationDate.toISOString().split('T')[0];
 
       // 3. Update Database Status to Completed
       await db.requests.updateStatus(request.id, 'completed', user.id, uploadParams);
@@ -296,7 +328,6 @@ const DocumentRequestsPage = () => {
           <h1>Document Requests</h1>
           <p>Process and manage barangay document requests</p>
         </div>
-        {/* HIDE NEW REQUEST BUTTON FROM VIEW ONLY */}
         {user?.role !== 'view_only' && (
           <button className="btn btn-primary" onClick={() => setShowForm(true)}>
             <Plus size={20} />
@@ -378,7 +409,6 @@ const DocumentRequestsPage = () => {
                             <Download size={18} />
                           </button>
                           
-                          {/* HIDE PROCESS/REJECT FROM VIEW ONLY */}
                           {request.status === 'pending' && user?.role !== 'record_keeper' && user?.role !== 'view_only' && (
                             <>
                               <button
@@ -393,7 +423,6 @@ const DocumentRequestsPage = () => {
                             </>
                           )}
 
-                          {/* HIDE RELEASE FROM VIEW ONLY */}
                           {request.status === 'completed' && user?.role !== 'record_keeper' && user?.role !== 'view_only' && (
                             <button className="btn-icon btn-success" onClick={() => handleReleaseDocument(request)} title="Mark as Released"><Send size={18} /></button>
                           )}
@@ -419,7 +448,6 @@ const DocumentRequestsPage = () => {
           <DocumentRequestDetails 
             request={viewingRequest}
             onClose={() => setViewingRequest(null)}
-            // Strip process/reject props if user is view_only or record_keeper
             onApprove={user?.role !== 'record_keeper' && user?.role !== 'view_only' ? handleProcessRequest : null}
             onReject={user?.role !== 'record_keeper' && user?.role !== 'view_only' ? handleRejectRequest : null}
             onDownload={handleDownloadDocument}
@@ -438,6 +466,7 @@ const DocumentRequestsPage = () => {
           <DocumentRequestForm
             templates={templates}
             residents={residents}
+            allRequests={requests} // <-- WE ADDED THIS LINE!
             onSubmit={handleCreateRequest}
             onCancel={() => setShowForm(false)}
           />
