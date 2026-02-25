@@ -143,16 +143,26 @@ const LoginPage = () => {
 
         <div className="login-info">
           <div className="info-card">
-            <h3>Secure Access</h3>
-            <p>Role-based authentication ensures only authorized personnel can access the system.</p>
+            <h3>Political Administration</h3>
+            <p><b>Barangay Chairman:</b> Hon. Joanna De Mesa</p>
+            <p><b>Barangay Kagawad:</b> Hon. Amado Melchor Espiritu</p>
+            <p><b>Barangay Kagawad:</b> Hon. Denson Valmoria Ramiro</p>
+            <p><b>Barangay Kagawad:</b> Hon. Remigio Abellar Gonzales</p>
+            <p><b>Barangay Kagawad:</b> Hon. Jose Pingol Villanueva</p>
+            <p><b>Barangay Kagawad:</b> Hon. Jerry Cunanan Lasian</p>
+            <p><b>Barangay Kagawad:</b> Hon. Mark Christian Sangel Domingo</p>
           </div>
           <div className="info-card">
-            <h3>Fast & Efficient</h3>
-            <p>QR code technology speeds up document processing and reduces errors.</p>
+            <h3>Visit Official Calamba Website</h3>
+            <a href="https://www.calambacity.gov.ph">https://www.calambacity.gov.ph</a>
+            <h3>Contact Info:</h3>
+            <p><b>Email: </b><i>barangaydos01255@gmail.com</i></p>
+            <p><b>Phone:</b> <i>0906-057-5537</i></p>
           </div>
           <div className="info-card">
-            <h3>Digital Records</h3>
-            <p>All documents are securely stored in the cloud for easy retrieval.</p>
+            <p><i>Please contact the barangay office for any concerns or inquiries.</i></p>
+            <p><i>To gain access to the system, please contact the barangay office for your login credentials.</i></p>
+            <p><i>Thank you!</i></p>
           </div>
         </div>
       </div>

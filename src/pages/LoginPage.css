@@ -307,6 +307,17 @@
   margin: 0;
 }
 
+.info-card a {
+  color: white; /* A nice blue */
+  text-decoration: none; /* Removes the underline (optional) */
+}
+
+/* When the user hovers their mouse over the link */
+.info-card a:hover {
+  color: white; /* A slightly darker blue */
+  text-decoration: underline; /* Adds underline on hover */
+}
+
 @media (max-width: 1024px) {
   .login-container {
     grid-template-columns: 1fr;
