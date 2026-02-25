@@ -153,10 +153,16 @@ const LoginPage = () => {
               style={{ width: '80px', height: '80px', objectFit: 'contain' }} 
             />
           </div>
-            <h1 className="login-title">QR-Integrated BDIS</h1>
-            <h2 className="login-title-2">Barangay Dos in City of Calamba</h2>
-            <p className="login-subtitle">Sign in to your account to access into the system</p>
-=======
+          <h1 className="login-title">QR-Integrated BDIS</h1>
+          <h2 className="login-title-2">Barangay Dos in City of Calamba</h2>
+          <p className="login-subtitle">Sign in to your account to access into the system</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="login-form">
+          {error && (
+            <div className="error-message" style={{ marginBottom: '15px' }}>
+              <span>{error}</span>
+            </div>
           )}
 
           <div className="form-group">
@@ -174,7 +180,7 @@ const LoginPage = () => {
               required
               autoComplete="email"
             />
->>>>>>> fb26e582ddd0400fa6dab554da079defb5c2a313
+
           </div>
 
           <div className="form-group" style={{ marginBottom: '10px' }}>
