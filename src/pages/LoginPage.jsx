@@ -6,10 +6,16 @@ import { Lock, Mail, LogIn } from 'lucide-react';
 import toast from 'react-hot-toast'; 
 import emailjs from '@emailjs/browser';
 
-import brgyLogo from '../assets/brgy.2-icon.png';      
-import brgyBackground from '../assets/Brgyhall.jpg'; 
+import brgyLogo from '../assets/brgy.2-icon.png';
+import bg1 from '../assets/gallery-1.jpg';
+import bg2 from '../assets/gallery-2.jpg';
+import bg3 from '../assets/gallery-3.jpg';
+import bg4 from '../assets/officials.png';
+import bg5 from '../assets/area.JPG';
 
 import './LoginPage.css';
+
+const backgroundImages = [bg1, bg2, bg3, bg4, bg5];
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -127,23 +133,23 @@ const LoginPage = () => {
   };
 
   return (
-    <div 
-      className="login-page"
-      style={{
-        backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url(${brgyBackground})`,
-        backgroundSize: 'cover',        
-        backgroundPosition: 'center',   
-        backgroundRepeat: 'no-repeat',
-        backgroundColor: '#1e293b',     
-        minHeight: '100vh',
-        width: '100%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px'
-      }}
-    >
-      <div className="login-card" style={{ maxWidth: '450px', width: '100%' }}>
+    <div className="login-page">
+      <div className="login-background">
+        <div className="scrolling-wrapper">
+          <div className="scrolling-track">
+            {[...Array(4)].map((_, setIndex) => (
+              <div key={setIndex} className="image-set">
+                {backgroundImages.map((img, index) => (
+                  <img key={`${setIndex}-${index}`} src={img} alt={`background ${index + 1}`} />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="overlay-gradient"></div>
+      </div>
+
+      <div className="login-card" style={{ maxWidth: '450px', width: '100%', margin: '0 20px' }}>
         <div className="login-header">
           <div className="logo-container">
             <img 
