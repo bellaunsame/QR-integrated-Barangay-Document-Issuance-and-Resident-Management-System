@@ -19,6 +19,7 @@ import {
 
 // Pages
 import LoginPage from './pages/LoginPage';
+import VerifyOTP from './pages/VerifyOTP'; // --- IMPORTED FOR STEP 2 ---
 import DashboardPage from './pages/DashboardPage';
 import ResidentsPage from './pages/ResidentsPage';
 import DocumentRequestsPage from './pages/DocumentRequestsPage';
@@ -48,26 +49,19 @@ function App() {
     } else if (savedSize === 'large') {
       root.style.setProperty('font-size', '18px', 'important');
     } else {
-      // Catch-all for 'medium' or if no setting exists yet
       root.style.setProperty('font-size', '16px', 'important'); 
     }
   }, []);
 
   const handleTimeout = () => {
     toast.error('Session expired. Please log in again.');
-    // The sessionManager should handle the actual logout logic, 
-    // but we ensure the UI reacts here.
     window.location.href = '/login';
   };
 
   // --- Initialize Security on Mount ---
   useEffect(() => {
-    console.log("App is initializing security...");
-    
-    // 1. Initialize CSRF
     initializeCSRF();
 
-    // 2. Initialize Session Manager
     if (sessionManager) {
       sessionManager.initialize({
         onWarning: handleWarning,
@@ -75,7 +69,6 @@ function App() {
       });
     }
 
-    // Cleanup on unmount
     return () => {
       if (sessionManager?.cleanup) sessionManager.cleanup();
     };
@@ -119,6 +112,7 @@ function App() {
                   <Routes>
                     {/* --- 1. PUBLIC ROUTES --- */}
                     <Route path="/login" element={<LoginPage />} />
+                    <Route path="/verify-otp" element={<VerifyOTP />} /> {/* --- ADDED FOR STEP 2 --- */}
                     <Route path="/scan" element={<QRScanPage />} />
                     
                     {/* --- 2. PROTECTED ROUTES (Main System) --- */}
@@ -129,26 +123,22 @@ function App() {
                         </ProtectedRoute>
                       }
                     >
-                      {/* Open to EVERY logged-in user (including view_only) */}
                       <Route path="/" element={<Navigate to="/dashboard" replace />} />
                       <Route path="/dashboard" element={<DashboardPage />} />
                       <Route path="/profile" element={<ProfilePage />} />
                       
-                      {/* ADDED view_only: They can see the list, but not edit (handled in component) */}
                       <Route path="/residents" element={
                         <ProtectedRoute requiredRoles={['admin', 'record_keeper', 'view_only']}>
                           <ResidentsPage />
                         </ProtectedRoute>
                       } />
                       
-                      {/* ADDED view_only: They can view documents, but not process/approve them */}
                       <Route path="/documents" element={
                         <ProtectedRoute requiredRoles={['admin', 'clerk', 'record_keeper', 'view_only']}>
                           <DocumentRequestsPage />
                         </ProtectedRoute>
                       } />
                       
-                      {/* Admin-only Routes below this point */}
                       <Route path="/templates" element={
                         <ProtectedRoute requiredRoles={['admin']}>
                           <DocumentTemplatesPage />

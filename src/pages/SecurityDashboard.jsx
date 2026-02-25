@@ -5,12 +5,11 @@ import { PageHeader, Breadcrumbs } from '../components/layout';
 import { Card, Table, Badge, Input, Button, LoadingSpinner, EmptyState, Pagination, Modal } from '../components/common';
 import toast from 'react-hot-toast'; 
 import { 
-  Activity, Search, Filter, Download, RefreshCw, User, FileText, Settings,
-  Trash2, Edit, Plus, Eye, Calendar, Clock, Wifi, WifiOff, X, Shield, 
-  AlertTriangle, Monitor, Smartphone, Tablet, MapPin, CheckCircle, XCircle, LogOut
+  Activity, Search, Filter, Download, RefreshCw, User,
+  Trash2, Edit, Plus, Eye, Calendar, Wifi, WifiOff, X, Shield, 
+  AlertTriangle, XCircle
 } from 'lucide-react';
 import { usePagination } from '../hooks';
-import { getRelativeTime } from '../utils/dateUtils';
 import { getSecuritySummary, queryAuditLogs, exportAuditLogs, SEVERITY } from '../services/security/auditLogger';
 
 import './SecurityDashboard.css'; 
@@ -265,7 +264,7 @@ const ActivityLogTab = () => {
             <p><strong>Action:</strong> {selectedLog.action}</p>
             <p><strong>User:</strong> {selectedLog.user?.full_name}</p>
             <p><strong>Table:</strong> {selectedLog.table_name}</p>
-            <pre style={{ background: '#f1f5f9', padding: '1rem', borderRadius: '8px' }}>
+            <pre style={{ background: '#f1f5f9', padding: '1rem', borderRadius: '8px', overflowX: 'auto' }}>
               {JSON.stringify(selectedLog.new_data || selectedLog.old_data, null, 2)}
             </pre>
           </div>
@@ -276,105 +275,10 @@ const ActivityLogTab = () => {
 };
 
 // ==========================================
-// TAB 3: SESSION MANAGEMENT
-// ==========================================
-const SessionManagementTab = () => {
-  const { user } = useAuth();
-  const [sessions, setSessions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const currentSessionId = localStorage.getItem('current_session_id');
-
-  useEffect(() => {
-    if (!user) return;
-    loadSessions();
-    const sessionSub = supabase.channel('realtime-user-sessions')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_sessions', filter: `user_id=eq.${user.id}` }, () => loadSessions())
-      .subscribe();
-    return () => supabase.removeChannel(sessionSub);
-  }, [user]);
-
-  const loadSessions = async () => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase.from('user_sessions').select('*').eq('user_id', user.id).order('last_activity', { ascending: false });
-      if (error) throw error;
-      setSessions(data.map(s => ({ ...s, is_current: s.id === currentSessionId })));
-    } catch (error) {
-      toast.error('Failed to load sessions');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleTerminateSession = async (sessionId) => {
-    if (!window.confirm("Terminate this session?")) return;
-    try {
-      const { error, count } = await supabase.from('user_sessions').delete({ count: 'exact' }).eq('id', sessionId);
-      if (error || count === 0) throw error || new Error("Session not found");
-      toast.success('Session terminated');
-      await loadSessions(); 
-    } catch (error) {
-      toast.error(`Termination failed: ${error.message}`);
-    }
-  };
-
-  const handleTerminateAllOthers = async () => {
-    if (!window.confirm("Log out of all other devices?")) return;
-    try {
-      await supabase.from('user_sessions').delete().eq('user_id', user.id).neq('id', currentSessionId);
-      toast.success('Other sessions terminated');
-      await loadSessions();
-    } catch (error) {
-      toast.error('Failed to terminate sessions');
-    }
-  };
-
-  if (loading && sessions.length === 0) return <LoadingSpinner text="Loading sessions..." />;
-
-  return (
-    <div className="session-management-tab fade-in">
-      <Card>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
-          <div>
-            <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}><Monitor size={24} /> Active Sessions</h2>
-            <p style={{ color: 'var(--text-secondary)', margin: 0 }}>Manage your logins across devices</p>
-          </div>
-          {sessions.filter(s => !s.is_current).length > 0 && (
-            <Button variant="danger" icon={<LogOut size={20} />} onClick={handleTerminateAllOthers}>
-              Terminate All Others
-            </Button>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {sessions.map((session) => (
-            <div key={session.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', border: '1px solid var(--border-color)', borderRadius: '8px', background: session.is_current ? 'var(--primary-50)' : 'transparent' }}>
-              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                <Monitor size={32} color={session.is_current ? 'var(--primary-600)' : 'var(--text-tertiary)'} />
-                <div>
-                  <h4 style={{ margin: '0 0 4px 0' }}>{session.device_name} {session.is_current && <Badge variant="success">Current</Badge>}</h4>
-                  <div style={{ display: 'flex', gap: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><MapPin size={14}/> {session.location || 'Unknown'}</span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Clock size={14}/> {getRelativeTime(session.last_activity)}</span>
-                  </div>
-                </div>
-              </div>
-              {!session.is_current && (
-                <Button variant="danger" size="sm" onClick={() => handleTerminateSession(session.id)}>Terminate</Button>
-              )}
-            </div>
-          ))}
-        </div>
-      </Card>
-    </div>
-  );
-};
-
-// ==========================================
 // MASTER DASHBOARD (RENDER TABS)
 // ==========================================
 const SecurityDashboard = () => {
-  const [activeTab, setActiveTab] = useState('audit'); // 'audit', 'activity', or 'sessions'
+  const [activeTab, setActiveTab] = useState('audit'); // 'audit' or 'activity'
 
   return (
     <div className="security-dashboard-page">
@@ -398,19 +302,12 @@ const SecurityDashboard = () => {
         >
           <Activity size={18} /> Activity Logs
         </button>
-        <button 
-          className={`tab-btn ${activeTab === 'sessions' ? 'active' : ''}`}
-          onClick={() => setActiveTab('sessions')}
-        >
-          <Monitor size={18} /> Sessions
-        </button>
       </div>
 
       {/* Render Selected Tab */}
       <div className="tab-content mt-md">
         {activeTab === 'audit' && <SecurityAuditTab />}
         {activeTab === 'activity' && <ActivityLogTab />}
-        {activeTab === 'sessions' && <SessionManagementTab />}
       </div>
     </div>
   );

@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { db, supabase } from '../services/supabaseClient'; 
 import { generateQRData, generateQRCodeImage } from '../services/qrCodeService';
-import { generateResidentIDImage, downloadResidentID } from '../services/idGenerator'; // NEW ID GENERATOR
+import { generateResidentIDImage, downloadResidentID } from '../services/idGenerator'; 
 import { sendQRCodeEmail } from '../services/emailService';
 import toast from 'react-hot-toast';
 
@@ -11,9 +11,10 @@ import toast from 'react-hot-toast';
 import { validateForm } from '../services/security/inputSanitizer';
 import { logDataModification, ACTIONS } from '../services/security/auditLogger';
 
+// ADDED: FileText icon for the document history
 import { 
   Users, Plus, Search, Edit2, Trash2, QrCode, 
-  Mail, Download, X, Save, Eye, User, Upload
+  Mail, Download, X, Save, Eye, User, Upload, FileText
 } from 'lucide-react';
 import './ResidentsPage.css';
 
@@ -312,10 +313,8 @@ const ResidentsPage = () => {
     }
   };
 
-  // --- UPDATED QR & ID GENERATION (IMAGE METHOD) ---
   const generateQRForResident = async (resident) => {
     try {
-      // 1. Generate core QR Code for database
       const qrData = generateQRData(resident);
       const qrCodeUrl = await generateQRCodeImage(qrData);
 
@@ -326,10 +325,7 @@ const ResidentsPage = () => {
 
       if (resident.email) {
         try {
-          // 2. Generate the Beautiful JPEG ID Card
           const { blob } = await generateResidentIDImage(resident);
-
-          // 3. Upload JPEG to Supabase Storage
           const filePath = `id_cards/${resident.id}_id_card.jpg`;
           const { error: uploadError } = await supabase.storage
             .from('documents')
@@ -337,10 +333,8 @@ const ResidentsPage = () => {
 
           if (uploadError) throw uploadError;
 
-          // 4. Get Public URL of the uploaded image
           const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
 
-          // 5. Send Email with the beautiful Image URL embedded
           await sendQRCodeEmail(resident, urlData.publicUrl);
           await db.residents.update(resident.id, { qr_sent_at: new Date().toISOString() });
           
@@ -366,7 +360,6 @@ const ResidentsPage = () => {
       setLoading(true);
       toast.loading('Generating ID & sending email...', { id: 'resend-toast' });
       
-      // Force a fresh image generation and upload
       const { blob } = await generateResidentIDImage(resident);
       const filePath = `id_cards/${resident.id}_id_card.jpg`;
       
@@ -388,7 +381,7 @@ const ResidentsPage = () => {
   const handleDownloadQR = async (resident) => {
     try {
       const toastId = toast.loading('Generating ID Card...');
-      await downloadResidentID(resident); // Downloads the beautiful JPEG directly!
+      await downloadResidentID(resident); 
       toast.success('ID Card downloaded successfully!', { id: toastId });
     } catch (error) {
       console.error(error);
@@ -490,6 +483,7 @@ const ResidentsPage = () => {
                   <th>Name</th>
                   <th>Address</th>
                   <th>Contact</th>
+                  <th style={{ textAlign: 'center' }}>No. of Docs Req/s.</th>
                   <th>Age / Gender</th>
                   <th>QR Status</th>
                   <th>Actions</th>
@@ -498,7 +492,7 @@ const ResidentsPage = () => {
               <tbody>
                 {filteredResidents.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="empty-row">
+                    <td colSpan="7" className="empty-row">
                       <div className="empty-state">
                         <Users size={48} />
                         <h3>No residents found</h3>
@@ -522,6 +516,7 @@ const ResidentsPage = () => {
                           </div>
                         </div>
                       </td>
+                      
                       <td>{resident.full_address}, {resident.barangay}</td>
                       <td>
                         <div className="contact-cell">
@@ -529,6 +524,14 @@ const ResidentsPage = () => {
                           <small>{resident.email || 'No email'}</small>
                         </div>
                       </td>
+                      
+                      {/* --- NO. OF DOCS COLUMN DATA --- */}
+                      <td style={{ textAlign: 'center' }}>
+                        <span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--primary-600)' }}>
+                          {resident.document_requests?.length || 0} 
+                        </span>
+                      </td>
+
                       <td>{calculateAge(resident.date_of_birth)} yrs / {resident.gender}</td>
                       <td>
                         {resident.qr_code_url ? (
@@ -684,6 +687,68 @@ const ResidentsPage = () => {
                       </div>
                     </div>
                   </div>
+
+                  {/* --- NEW: DOCUMENT HISTORY SECTION IN MODAL --- */}
+                  <div style={{ background: 'var(--neutral-50)', padding: '1.5rem', borderRadius: '8px' }}>
+                    <h3 style={{ marginBottom: '1rem', color: 'var(--primary-700)', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <FileText size={20} /> Requested Documents History
+                    </h3>
+                    
+                    {viewingResident?.document_requests?.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '250px', overflowY: 'auto', paddingRight: '0.5rem' }}>
+                        {viewingResident.document_requests
+                          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                          .map((doc) => {
+                            // Calculate if the document is expired
+                            const isExpired = doc.expiration_date ? new Date(doc.expiration_date) < new Date() : false;
+
+                            return (
+                              <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', background: '#fff', border: '1px solid var(--border)', borderRadius: '6px' }}>
+                                <div>
+                                  <strong style={{ display: 'block', color: 'var(--text-primary)', marginBottom: '4px' }}>
+                                    {doc.template?.template_name || 'Unknown Document'}
+                                  </strong>
+                                  
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    <small style={{ color: 'var(--text-tertiary)' }}>
+                                      Requested: {new Date(doc.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                                    </small>
+                                    
+                                    {/* --- EXPIRATION DATE DISPLAY --- */}
+                                    {doc.expiration_date && (doc.status === 'completed' || doc.status === 'released') && (
+  <div style={{ marginTop: '4px', fontSize: '0.85rem', fontWeight: '500' }}>
+    {new Date(doc.expiration_date) < new Date() ? (
+      <span style={{ color: '#f87171' }}> {/* Red for expired */}
+        Expired on: {new Date(doc.expiration_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      </span>
+    ) : (
+      <span style={{ color: '#34d399' }}> {/* Green for valid */}
+        Valid until: {new Date(doc.expiration_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      </span>
+    )}
+      </div>
+    )}
+                                  </div>
+                                </div>
+
+                                <span className={`badge badge-${
+                                  doc.status === 'released' ? 'success' : 
+                                  doc.status === 'completed' ? 'success' : 
+                                  doc.status === 'processing' ? 'warning' : 'gray'
+                                }`}>
+                                  {doc.status ? doc.status.charAt(0).toUpperCase() + doc.status.slice(1) : 'Unknown'}
+                                </span>
+                              </div>
+                            );
+                        })}
+                      </div>
+                    ) : (
+                      <div style={{ textAlign: 'center', padding: '1.5rem', background: '#fff', border: '1px dashed var(--border)', borderRadius: '6px' }}>
+                        <p style={{ margin: 0, color: 'var(--text-tertiary)' }}>No documents requested yet.</p>
+                      </div>
+                    )}
+                  </div>
+                  {/* --- END DOCUMENT HISTORY SECTION --- */}
 
                 </div>
               </div>

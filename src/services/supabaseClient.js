@@ -36,6 +36,21 @@ export const db = {
       if (error) throw error;
       return data;
     },
+    // --- ADDED: This fixes the "getByEmail is not a function" error ---
+    getByEmail: async (email) => {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email)
+        .single();
+        
+      // PGRST116 is Supabase's code for "No rows found". We ignore it so it just returns null.
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+      return data || null;
+    },
+    // -----------------------------------------------------------------
     create: async (userData) => {
       const { data, error} = await supabase.from('users').insert(userData).select().single();
       if (error) throw error;
@@ -54,7 +69,19 @@ export const db = {
   // Residents
   residents: {
     getAll: async () => {
-      const { data, error } = await supabase.from('residents').select('*').order('created_at', { ascending: false });
+      const { data, error } = await supabase
+        .from('residents')
+        .select(`
+          *, 
+          document_requests (
+            id,
+            status,
+            created_at,
+            expiration_date,
+            template:document_templates(id, template_name)
+          )
+        `)
+        .order('created_at', { ascending: false });
       if (error) throw error;
       return data || [];
     },
@@ -69,7 +96,20 @@ export const db = {
       return data;
     },
     search: async (searchTerm) => {
-      const { data, error } = await supabase.from('residents').select('*').or(`first_name.ilike.%${searchTerm}%,last_name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`).order('created_at', { ascending: false });
+      const { data, error } = await supabase
+        .from('residents')
+        // UPDATED HERE TOO
+        .select(`
+          *, 
+          document_requests (
+            id,
+            status,
+            created_at,
+            template:document_templates(template_name)
+          )
+        `)
+        .or(`first_name.ilike.%${searchTerm}%,last_name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`)
+        .order('created_at', { ascending: false });
       if (error) throw error;
       return data || [];
     },
@@ -180,18 +220,14 @@ export const db = {
       try {
         const { data, error } = await supabase
           .from('audit_logs')
-          .insert({ ...logData, created_at: new Date().toISOString() })
-          /*.select()
-          .single()*/;
+          .insert({ ...logData, created_at: new Date().toISOString() });
         
         if (error) {
-          // Log the error but don't throw - audit logging should never break the app
           console.error('Audit log error:', error);
           return null;
         }
         return data;
       } catch (err) {
-        // Catch any unexpected exceptions
         console.error('Audit log exception:', err);
         return null;
       }
