@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { db, supabase } from '../services/supabaseClient'; 
@@ -6,14 +6,14 @@ import { generateQRData, generateQRCodeImage } from '../services/qrCodeService';
 import { generateResidentIDImage, downloadResidentID } from '../services/idGenerator'; 
 import { sendQRCodeEmail } from '../services/emailService';
 import toast from 'react-hot-toast';
+import Webcam from 'react-webcam'; 
 
-// Security Imports
 import { validateForm } from '../services/security/inputSanitizer';
 import { logDataModification, ACTIONS } from '../services/security/auditLogger';
 
 import { 
   Users, Plus, Search, Edit2, Trash2, QrCode, 
-  Mail, Download, X, Save, Eye, User, Upload, FileText, CheckCircle, CreditCard
+  Mail, Download, X, Save, Eye, User, Upload, FileText, CheckCircle, CreditCard, Camera
 } from 'lucide-react';
 import './ResidentsPage.css';
 
@@ -25,7 +25,6 @@ const ResidentsPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   
-  // Modal states
   const [showModal, setShowModal] = useState(false);
   const [viewingResident, setViewingResident] = useState(null); 
   const [editingResident, setEditingResident] = useState(null);
@@ -33,7 +32,10 @@ const ResidentsPage = () => {
   const [formData, setFormData] = useState(getEmptyFormData());
   const [errors, setErrors] = useState({});
 
-  // --- DATE RESTRICTIONS ---
+  // --- CAMERA STATES & REFS ---
+  const [activeCamera, setActiveCamera] = useState(null); // 'photo', 'proof', or 'valid_id'
+  const webcamRef = useRef(null);
+
   const todayDateStr = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).split('/').reverse().join('-');
   const maxDate = todayDateStr; 
   
@@ -43,7 +45,6 @@ const ResidentsPage = () => {
   
   const minDate = "1870-01-01"; 
 
-  // --- COMPUTE CURRENT AGE FOR UI LOCKING ---
   const currentResidentAge = calculateAge(formData.date_of_birth);
   const isUnderage = currentResidentAge !== 'N/A' && currentResidentAge !== 'Invalid' && currentResidentAge < 16;
 
@@ -68,9 +69,7 @@ const ResidentsPage = () => {
       civil_status: '',
       nationality: 'Filipino',
       religion: '', 
-      blood_type: '', 
       educational_attainment: '', 
-      
       full_address: '',
       purok: '',
       barangay: getSetting('barangay_name', 'Barangay'),
@@ -79,12 +78,10 @@ const ResidentsPage = () => {
       zip_code: '',
       residency_start_date: '', 
       proof_of_residency_url: '',
-      
       mobile_number: '',
       email: '',
       occupation: '',
       monthly_income: '',
-      
       spouse_name: '',
       spouse_occupation: '',
       spouse_birthdate: '', 
@@ -95,7 +92,6 @@ const ResidentsPage = () => {
       emergency_contact_name: '', 
       emergency_contact_number: '', 
 
-      // Father Info
       father_first_name: '',
       father_middle_name: '',
       father_last_name: '',
@@ -108,10 +104,8 @@ const ResidentsPage = () => {
       father_age: '',
       father_address: '',
       father_religion: '',
-      father_blood_type: '',
       father_nationality: 'Filipino',
 
-      // Mother Info
       mother_first_name: '',
       mother_middle_name: '',
       mother_last_name: '',
@@ -124,10 +118,8 @@ const ResidentsPage = () => {
       mother_age: '',
       mother_address: '',
       mother_religion: '',
-      mother_blood_type: '',
       mother_nationality: 'Filipino',
 
-      // Verifications & IDs
       voter_status: false,
       pwd_status: false,
       senior_citizen: false,
@@ -165,7 +157,6 @@ const ResidentsPage = () => {
     setFilteredResidents(filtered);
   };
 
-  // --- UPDATED INPUT CHANGE (NO AUTOCLEAR) ---
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     let newValue = type === 'checkbox' ? checked : value;
@@ -185,7 +176,6 @@ const ResidentsPage = () => {
     setFormData(prev => {
       const updated = { ...prev, [name]: newValue };
       
-      // Calculate ages ONLY if a full date (YYYY-MM-DD) is provided (length >= 10)
       if (['father_birthdate', 'mother_birthdate', 'spouse_birthdate', 'date_of_birth'].includes(name)) {
         if (newValue && newValue.length >= 10) {
            const age = calculateAge(newValue);
@@ -194,7 +184,6 @@ const ResidentsPage = () => {
            if (name === 'mother_birthdate') updated.mother_age = age !== 'Invalid' ? age : '';
            if (name === 'spouse_birthdate') updated.spouse_age = age !== 'Invalid' ? age : '';
 
-           // Handle Resident Underage logic dynamically
            if (name === 'date_of_birth') {
              if (age !== 'N/A' && age !== 'Invalid' && age < 16) {
                updated.civil_status = 'Single';
@@ -205,7 +194,6 @@ const ResidentsPage = () => {
              }
            }
         } else {
-           // Clear computed ages silently if the date is incomplete or deleted
            if (name === 'father_birthdate') updated.father_age = '';
            if (name === 'mother_birthdate') updated.mother_age = '';
            if (name === 'spouse_birthdate') updated.spouse_age = '';
@@ -220,6 +208,7 @@ const ResidentsPage = () => {
     }
   };
 
+  // --- FILE UPLOADS ---
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -267,6 +256,25 @@ const ResidentsPage = () => {
     }
   };
 
+  // --- LIVE CAMERA CAPTURE FUNCTION ---
+  const capturePhoto = useCallback(() => {
+    const imageSrc = webcamRef.current.getScreenshot();
+    
+    if (activeCamera === 'photo') {
+      setFormData(prev => ({ ...prev, photo_url: imageSrc }));
+      toast.success("Profile Photo captured!");
+    } else if (activeCamera === 'proof') {
+      setFormData(prev => ({ ...prev, proof_of_residency_url: imageSrc }));
+      toast.success("Proof of Residency captured!");
+    } else if (activeCamera === 'valid_id') {
+      setFormData(prev => ({ ...prev, valid_id_url: imageSrc }));
+      toast.success("Valid ID captured!");
+    }
+    
+    setActiveCamera(null); // Close camera modal
+  }, [webcamRef, activeCamera]);
+
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -304,7 +312,6 @@ const ResidentsPage = () => {
         created_by: user.id
       };
 
-      // Concatenate parent names dynamically for the legacy columns
       sanitizedData.father_name = [sanitizedData.father_first_name, sanitizedData.father_middle_name, sanitizedData.father_last_name, sanitizedData.father_suffix].filter(Boolean).join(' ') || sanitizedData.father_name;
       sanitizedData.mother_name = [sanitizedData.mother_first_name, sanitizedData.mother_middle_name, sanitizedData.mother_last_name, sanitizedData.mother_suffix].filter(Boolean).join(' ') || sanitizedData.mother_name;
 
@@ -432,7 +439,6 @@ const ResidentsPage = () => {
     setEditingResident(resident);
     const formSafeData = { ...resident };
     
-    // Ensure new fields aren't undefined when editing old data
     formSafeData.father_first_name = resident.father_first_name || '';
     formSafeData.father_middle_name = resident.father_middle_name || '';
     formSafeData.father_last_name = resident.father_last_name || '';
@@ -513,7 +519,7 @@ const ResidentsPage = () => {
           <h1>Residents Management</h1>
           <p>Manage barangay residents, update info, and generate QR codes</p>
         </div>
-        {user?.role !== 'view_only' && (
+        {['admin', 'clerk'].includes(user?.role) && (
           <button className="btn btn-primary" onClick={openAddModal}>
             <Plus size={20} /> Add New Resident
           </button>
@@ -612,7 +618,7 @@ const ResidentsPage = () => {
                             <Eye size={18} />
                           </button>
                           
-                          {user?.role !== 'view_only' && (
+                          {['admin', 'clerk'].includes(user?.role) && (
                             <>
                               <button className="btn-icon" onClick={() => handleDownloadQR(resident)} title="Download QR">
                                 <Download size={18} />
@@ -623,9 +629,11 @@ const ResidentsPage = () => {
                               <button className="btn-icon" onClick={() => handleEdit(resident)} title="Edit">
                                 <Edit2 size={18} />
                               </button>
-                              <button className="btn-icon btn-danger" onClick={() => handleDelete(resident)} title="Delete">
-                                <Trash2 size={18} />
-                              </button>
+                              {user?.role === 'admin' && ( // Only Admin can delete!
+                                <button className="btn-icon btn-danger" onClick={() => handleDelete(resident)} title="Delete">
+                                  <Trash2 size={18} />
+                                </button>
+                              )}
                             </>
                           )}
                         </div>
@@ -716,7 +724,7 @@ const ResidentsPage = () => {
                     <div><p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Residency Duration</p>
                       <p className="font-medium">{viewingResident.residency_start_date ? `${calculateResidencyYears(viewingResident.residency_start_date)} Years (Since ${new Date(viewingResident.residency_start_date).getFullYear()})` : 'Not specified'}</p>
                     </div>
-                    <div><p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Religion / Blood Type</p><p className="font-medium">{viewingResident.religion || 'N/A'} / {viewingResident.blood_type || 'N/A'}</p></div>
+                    <div><p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Religion</p><p className="font-medium">{viewingResident.religion || 'N/A'}</p></div>
                     <div><p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Educational Attainment</p><p className="font-medium">{viewingResident.educational_attainment || 'N/A'}</p></div>
                   </div>
 
@@ -835,7 +843,7 @@ const ResidentsPage = () => {
             <div className="modal-footer">
               <button type="button" className="btn btn-secondary" onClick={() => setViewingResident(null)}>Close</button>
               
-              {user?.role !== 'view_only' && (
+              {['admin', 'clerk'].includes(user?.role) && (
                 <button type="button" className="btn btn-primary" onClick={() => { setViewingResident(null); handleEdit(viewingResident); }}>
                   <Edit2 size={16} style={{ marginRight: '0.5rem' }} /> Edit Info
                 </button>
@@ -845,7 +853,7 @@ const ResidentsPage = () => {
         </div>
       )}
 
-      {/* ADD/EDIT FORM MODAL */}
+      {/* --- ADD/EDIT FORM MODAL --- */}
       {showModal && (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal modal-large" onClick={(e) => e.stopPropagation()}>
@@ -869,12 +877,19 @@ const ResidentsPage = () => {
                         <User size={32} color="var(--neutral-400)"/>
                       </div>
                     )}
-                    <div>
-                      <label className="btn btn-secondary" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <Upload size={16} /> Upload Image
-                        <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
-                      </label>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', marginTop: '0.5rem' }}>Max size: 2MB. JPG, PNG accepted.</p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <label className="btn btn-secondary" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+                          <Upload size={16} /> Upload
+                          <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
+                        </label>
+                        
+                        {/* --- UPDATED: CAMERA CAPTURE OPENER --- */}
+                        <button type="button" className="btn btn-secondary" onClick={() => setActiveCamera('photo')} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+                          <Camera size={16} /> Take Photo
+                        </button>
+                      </div>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', margin: 0 }}>Max size: 2MB. JPG, PNG accepted.</p>
                     </div>
                   </div>
                 </div>
@@ -936,16 +951,6 @@ const ResidentsPage = () => {
                     </div>
 
                     <div className="form-group">
-                      <label>Blood Type</label>
-                      <select name="blood_type" value={formData.blood_type} onChange={handleInputChange}>
-                        <option value="">Select Type</option>
-                        <option value="A+">A+</option><option value="A-">A-</option>
-                        <option value="B+">B+</option><option value="B-">B-</option>
-                        <option value="O+">O+</option><option value="O-">O-</option>
-                        <option value="AB+">AB+</option><option value="AB-">AB-</option>
-                      </select>
-                    </div>
-                    <div className="form-group">
                       <label>Religion</label>
                       <input type="text" name="religion" value={formData.religion} onChange={handleInputChange} maxLength="50" placeholder="e.g. Roman Catholic" />
                     </div>
@@ -976,21 +981,27 @@ const ResidentsPage = () => {
                       <InputHint text="Used to calculate residency duration." />
                     </div>
                     
-                    {/* Proof of Residency Upload */}
+                    {/* --- UPDATED: Proof of Residency Upload + Camera --- */}
                     <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                       <label>Proof of Residency (Upload Document/Image)</label>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginTop: '4px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '4px' }}>
                         <label className="btn btn-secondary" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-                          <Upload size={16} /> Attach Proof
+                          <Upload size={16} /> Upload
                           <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={handleProofUpload} />
                         </label>
+                        
+                        {/* --- OPEN CAMERA FOR PROOF --- */}
+                        <button type="button" className="btn btn-secondary" onClick={() => setActiveCamera('proof')} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+                          <Camera size={16} /> Take Photo
+                        </button>
+                        
                         {formData.proof_of_residency_url ? (
-                          <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle size={14} /> File Attached</span>
+                          <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '0.5rem' }}><CheckCircle size={14} /> Attached</span>
                         ) : (
-                          <span style={{ fontSize: '13px', color: 'var(--text-tertiary)' }}>No file chosen</span>
+                          <span style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginLeft: '0.5rem' }}>No file chosen</span>
                         )}
                       </div>
-                      <InputHint text="Upload a utility bill, lease agreement, or valid proof (Max: 5MB)." />
+                      <InputHint text="Upload or take a photo of a utility bill, lease agreement, etc (Max: 5MB)." />
                     </div>
 
                     <div className={`form-group ${errors.mobile_number ? 'has-error' : ''}`}>
@@ -1018,7 +1029,6 @@ const ResidentsPage = () => {
                       <span>Check if Deceased (Disables contact/current details)</span>
                     </label>
                     
-                    {/* Fixed 2-Column Grid for Father's Name */}
                     <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                       <div className="form-group">
                         <label>First Name</label>
@@ -1063,16 +1073,6 @@ const ResidentsPage = () => {
                         <label>Nationality</label>
                         <input type="text" name="father_nationality" value={formData.father_nationality} onChange={handleInputChange} maxLength="50" placeholder="e.g. Filipino" />
                       </div>
-                      <div className="form-group">
-                        <label>Blood Type</label>
-                        <select name="father_blood_type" value={formData.father_blood_type} onChange={handleInputChange}>
-                          <option value="">Select Type</option>
-                          <option value="A+">A+</option><option value="A-">A-</option>
-                          <option value="B+">B+</option><option value="B-">B-</option>
-                          <option value="O+">O+</option><option value="O-">O-</option>
-                          <option value="AB+">AB+</option><option value="AB-">AB-</option>
-                        </select>
-                      </div>
                       <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                         <label>Current Address</label>
                         <input type="text" name="father_address" value={formData.father_address} onChange={handleInputChange} disabled={formData.father_deceased} maxLength="150" placeholder="Full Address" />
@@ -1088,7 +1088,6 @@ const ResidentsPage = () => {
                       <span>Check if Deceased (Disables contact/current details)</span>
                     </label>
                     
-                    {/* Fixed 2-Column Grid for Mother's Name */}
                     <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                       <div className="form-group">
                         <label>Maiden First Name</label>
@@ -1132,16 +1131,6 @@ const ResidentsPage = () => {
                       <div className="form-group">
                         <label>Nationality</label>
                         <input type="text" name="mother_nationality" value={formData.mother_nationality} onChange={handleInputChange} maxLength="50" placeholder="e.g. Filipino" />
-                      </div>
-                      <div className="form-group">
-                        <label>Blood Type</label>
-                        <select name="mother_blood_type" value={formData.mother_blood_type} onChange={handleInputChange}>
-                          <option value="">Select Type</option>
-                          <option value="A+">A+</option><option value="A-">A-</option>
-                          <option value="B+">B+</option><option value="B-">B-</option>
-                          <option value="O+">O+</option><option value="O-">O-</option>
-                          <option value="AB+">AB+</option><option value="AB-">AB-</option>
-                        </select>
                       </div>
                       <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                         <label>Current Address</label>
@@ -1202,24 +1191,31 @@ const ResidentsPage = () => {
                   </div>
                 </div>
 
-                {/* NEW: IDENTIFICATIONS & VERIFICATIONS */}
+                {/* IDENTIFICATIONS & VERIFICATIONS */}
                 <div className="form-section">
                   <h3>Identifications & Verifications</h3>
                   
+                  {/* --- UPDATED: Valid ID Upload + Camera --- */}
                   <div className="form-group" style={{ marginBottom: '1.5rem' }}>
                     <label>Valid ID (Upload Document/Image)</label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginTop: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '4px' }}>
                       <label className="btn btn-secondary" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-                        <Upload size={16} /> Attach Valid ID
+                        <Upload size={16} /> Upload
                         <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={handleValidIdUpload} />
                       </label>
+                      
+                      {/* --- OPEN CAMERA FOR ID --- */}
+                      <button type="button" className="btn btn-secondary" onClick={() => setActiveCamera('valid_id')} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+                        <Camera size={16} /> Take Photo
+                      </button>
+                      
                       {formData.valid_id_url ? (
-                        <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle size={14} /> ID Attached</span>
+                        <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '0.5rem' }}><CheckCircle size={14} /> Attached</span>
                       ) : (
-                        <span style={{ fontSize: '13px', color: 'var(--text-tertiary)' }}>No file chosen</span>
+                        <span style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginLeft: '0.5rem' }}>No file chosen</span>
                       )}
                     </div>
-                    <InputHint text="Upload a National ID, Driver's License, Passport, etc. (Max: 5MB)." />
+                    <InputHint text="Upload or take a photo of a National ID, Driver's License, Passport, etc. (Max: 5MB)." />
                   </div>
 
                   <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Special Status Checkboxes</label>
@@ -1259,6 +1255,47 @@ const ResidentsPage = () => {
           </div>
         </div>
       )}
+
+      {/* --- BRAND NEW LIVE CAMERA MODAL --- */}
+      {activeCamera && (
+        <div className="modal-overlay" style={{ zIndex: 9999 }}>
+          <div className="modal" style={{ padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: '500px' }}>
+            <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+              <h3 style={{ margin: 0 }}>
+                {activeCamera === 'photo' ? 'Take Resident Photo' : activeCamera === 'proof' ? 'Take Photo of Proof of Residency' : 'Take Photo of Valid ID'}
+              </h3>
+              <button className="btn-icon" onClick={() => setActiveCamera(null)}><X size={20} /></button>
+            </div>
+            
+            {/* FIXED WEBCAM CONSTRAINTS HERE */}
+            <div style={{ width: '100%', background: '#000', borderRadius: '8px', overflow: 'hidden', display: 'flex', justifyContent: 'center' }}>
+              <Webcam
+                audio={false}
+                ref={webcamRef}
+                screenshotFormat="image/jpeg"
+                videoConstraints={{
+                  width: 1280,
+                  height: 720,
+                  facingMode: "user" 
+                }}
+                onUserMediaError={(err) => {
+                  console.error("Webcam error:", err);
+                  alert("Could not access the camera. Please check your browser permissions.");
+                }}
+                style={{ width: '100%', maxHeight: '400px', objectFit: 'cover' }}
+              />
+            </div>
+            
+            <div style={{ display: 'flex', gap: '10px', marginTop: '20px', width: '100%' }}>
+              <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setActiveCamera(null)}>Cancel</button>
+              <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={capturePhoto}>
+                <Camera size={18} style={{ marginRight: '8px' }} /> Snap Photo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

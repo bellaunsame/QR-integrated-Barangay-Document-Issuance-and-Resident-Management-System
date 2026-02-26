@@ -165,13 +165,15 @@
   color: var(--text-primary);
 }
 
-.nav-item.active {
+.nav-item.active,
+.nav-item.active-parent { /* Keeps the parent highlighted when a sub-item is clicked */
   background: linear-gradient(90deg, rgba(59, 130, 246, 0.1), transparent);
   color: var(--primary-600);
   border-left-color: var(--primary-600);
 }
 
-.nav-item.active .nav-icon {
+.nav-item.active .nav-icon,
+.nav-item.active-parent .nav-icon {
   color: var(--primary-600);
 }
 
@@ -185,6 +187,73 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* --- DROPDOWN MENU STYLES --- */
+.nav-dropdown {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.dropdown-arrow {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  color: var(--text-tertiary);
+  transition: transform 0.2s ease;
+}
+
+.dropdown-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 3.5rem; /* Indents the sub-items perfectly past the icon */
+  padding-right: 1.5rem;
+  margin-top: 4px;
+  margin-bottom: 8px;
+  animation: slideDown 0.2s ease-out forwards;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.dropdown-item:hover {
+  background-color: var(--neutral-100);
+  color: var(--text-primary);
+}
+
+.dropdown-item.active {
+  background-color: var(--primary-50);
+  color: var(--primary-700);
+  font-weight: 600;
+}
+
+.dropdown-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* --- FOOTER STYLES --- */
@@ -249,6 +318,7 @@
 .sidebar.collapsed .logo-text,
 .sidebar.collapsed .nav-section-title,
 .sidebar.collapsed .nav-label,
+.sidebar.collapsed .dropdown-arrow,
 .sidebar.collapsed .user-details {
   display: none;
 }
@@ -284,6 +354,7 @@
   .sidebar.collapsed .logo-text,
   .sidebar.collapsed .nav-section-title,
   .sidebar.collapsed .nav-label,
+  .sidebar.collapsed .dropdown-arrow,
   .sidebar.collapsed .user-details {
     display: block;
   }

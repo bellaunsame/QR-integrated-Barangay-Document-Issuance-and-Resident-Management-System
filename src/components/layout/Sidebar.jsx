@@ -1,5 +1,6 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   Users,
@@ -9,46 +10,48 @@ import {
   User,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   QrCode,
-  Activity,
   LogOut,
-  ShieldCheck // Grouped the imports for cleanliness
+  ShieldCheck,
+  Clock,
+  CheckCircle,
+  Send,
+  Archive
 } from 'lucide-react';
 import logo from "../../assets/brgy.2-icon.png";
 import './Sidebar.css';
 
-/**
- * Sidebar Component
- * * Navigation sidebar with menu items
- * Supports collapsed mode and role-based menu items
- */
 const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
   const { user, logout, hasRole } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
-  // --- MENU ITEMS CONFIGURATION ---
+  // --- State for Documents Dropdown ---
+  const [isDocsOpen, setIsDocsOpen] = useState(false);
+
+  // Auto-open if we are on a documents page
+  useEffect(() => {
+    if (location.pathname.includes('/documents')) {
+      setIsDocsOpen(true);
+    }
+  }, [location.pathname]);
+
   const menuItems = [
     {
       icon: <LayoutDashboard size={20} />,
       label: 'Dashboard',
       path: '/dashboard',
-      // ADDED view_only
       roles: ['admin', 'clerk', 'record_keeper', 'view_only'] 
     },
     {
       icon: <Users size={20} />,
       label: 'Residents',
       path: '/residents',
-      // ADDED view_only
       roles: ['admin', 'record_keeper', 'view_only'] 
     },
-    {
-      icon: <FileText size={20} />,
-      label: 'Documents',
-      path: '/documents',
-      // ADDED view_only
-      roles: ['admin', 'clerk', 'record_keeper', 'view_only'] 
-    },
+    // Documents handled explicitly below
     {
       icon: <FileCheck size={20} />,
       label: 'Templates',
@@ -67,12 +70,6 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
       path: '/scan',
       roles: ['admin', 'clerk'] 
     },
-    /* {
-      icon: <Activity size={20} />,
-      label: 'Activity Logs',
-      path: '/activity-logs',
-      roles: ['admin']
-    }, */
     {
       icon: <ShieldCheck size={20} />,
       label: 'Security Dashboard',
@@ -92,7 +89,6 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
     navigate('/login');
   };
 
-  // Filter menu items based on user role
   const visibleMenuItems = menuItems.filter(item => 
     !item.roles || hasRole(item.roles)
   );
@@ -125,13 +121,13 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
         <nav className="sidebar-nav">
           <div className="nav-section">
             {!isCollapsed && <div className="nav-section-title">Main Menu</div>}
-            {visibleMenuItems.map((item) => (
+            
+            {/* 1. Dashboard & Residents */}
+            {visibleMenuItems.slice(0, 2).map((item) => (
               <NavLink
                 key={item.path}
                 to={item.path}
-                className={({ isActive }) =>
-                  `nav-item ${isActive ? 'active' : ''}`
-                }
+                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                 onClick={onClose}
                 title={isCollapsed ? item.label : ''}
               >
@@ -139,6 +135,117 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
                 {!isCollapsed && <span className="nav-label">{item.label}</span>}
               </NavLink>
             ))}
+
+            {/* 2. CUSTOM DOCUMENTS DROPDOWN */}
+            {hasRole(['admin', 'clerk', 'record_keeper', 'view_only']) && (
+              <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+                
+                {/* Parent Button */}
+                <div 
+                  onClick={() => {
+                    if (isCollapsed) onToggleCollapse();
+                    setIsDocsOpen(!isDocsOpen);
+                    navigate('/documents'); // Navigates to All Requests
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '0.75rem 1.5rem', cursor: 'pointer',
+                    backgroundColor: location.pathname.includes('/documents') ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                    color: location.pathname.includes('/documents') ? 'var(--primary-600)' : 'var(--text-secondary)',
+                    borderLeft: location.pathname.includes('/documents') ? '3px solid var(--primary-600)' : '3px solid transparent',
+                    fontWeight: 500, transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <span className="nav-icon" style={{ display: 'flex' }}><FileText size={20} /></span>
+                    {!isCollapsed && <span className="nav-label">Documents</span>}
+                  </div>
+                  {!isCollapsed && (
+                    <span style={{ color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center' }}>
+                      {isDocsOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </span>
+                  )}
+                </div>
+
+                {/* Dropdown Items */}
+                {!isCollapsed && isDocsOpen && (
+                  <div style={{ 
+                    display: 'flex', flexDirection: 'column', 
+                    background: 'var(--neutral-50)', padding: '0.5rem 0',
+                    borderBottom: '1px solid var(--border)'
+                  }}>
+                    
+                    <NavLink to="/documents?filter=pending" 
+                      onClick={onClose}
+                      style={{
+                        padding: '0.6rem 1.5rem 0.6rem 3.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem',
+                        textDecoration: 'none', fontSize: '0.85rem', 
+                        color: location.search === '?filter=pending' ? 'var(--primary-700)' : 'var(--text-secondary)',
+                        fontWeight: location.search === '?filter=pending' ? '600' : '500',
+                        backgroundColor: location.search === '?filter=pending' ? '#e0f2fe' : 'transparent'
+                      }}
+                    >
+                      <Clock size={16} color="#f59e0b" /> Pending
+                    </NavLink>
+
+                    <NavLink to="/documents?filter=completed" 
+                      onClick={onClose}
+                      style={{
+                        padding: '0.6rem 1.5rem 0.6rem 3.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem',
+                        textDecoration: 'none', fontSize: '0.85rem', 
+                        color: location.search === '?filter=completed' ? 'var(--primary-700)' : 'var(--text-secondary)',
+                        fontWeight: location.search === '?filter=completed' ? '600' : '500',
+                        backgroundColor: location.search === '?filter=completed' ? '#e0f2fe' : 'transparent'
+                      }}
+                    >
+                      <CheckCircle size={16} color="#10b981" /> Completed
+                    </NavLink>
+
+                    <NavLink to="/documents?filter=released" 
+                      onClick={onClose}
+                      style={{
+                        padding: '0.6rem 1.5rem 0.6rem 3.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem',
+                        textDecoration: 'none', fontSize: '0.85rem', 
+                        color: location.search === '?filter=released' ? 'var(--primary-700)' : 'var(--text-secondary)',
+                        fontWeight: location.search === '?filter=released' ? '600' : '500',
+                        backgroundColor: location.search === '?filter=released' ? '#e0f2fe' : 'transparent'
+                      }}
+                    >
+                      <Send size={16} color="#3b82f6" /> Released
+                    </NavLink>
+
+                    <NavLink to="/documents?filter=archived" 
+                      onClick={onClose}
+                      style={{
+                        padding: '0.6rem 1.5rem 0.6rem 3.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem',
+                        textDecoration: 'none', fontSize: '0.85rem', 
+                        color: location.search === '?filter=archived' ? 'var(--primary-700)' : 'var(--text-secondary)',
+                        fontWeight: location.search === '?filter=archived' ? '600' : '500',
+                        backgroundColor: location.search === '?filter=archived' ? '#e0f2fe' : 'transparent'
+                      }}
+                    >
+                      <Archive size={16} color="#64748b" /> Archive
+                    </NavLink>
+
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 3. Render the rest of the items */}
+            {visibleMenuItems.slice(2).map((item) => (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                onClick={onClose}
+                title={isCollapsed ? item.label : ''}
+              >
+                <span className="nav-icon">{item.icon}</span>
+                {!isCollapsed && <span className="nav-label">{item.label}</span>}
+              </NavLink>
+            ))}
+
           </div>
         </nav>
 
@@ -171,7 +278,6 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
               </div>
               <div className="user-details">
                 <div className="user-name-small">{user.full_name}</div>
-                {/* Cleaned up role display so it looks like "View Only" instead of "view_only" */}
                 <div className="user-role-small">
                   {user.role === 'view_only' ? 'View Only' : user.role.replace('_', ' ')}
                 </div>

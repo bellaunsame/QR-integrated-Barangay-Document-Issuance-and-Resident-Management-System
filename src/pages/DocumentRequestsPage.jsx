@@ -5,6 +5,7 @@ import { db, supabase } from '../services/supabaseClient';
 import { prepareTemplateData, generatePDFDocument, downloadPDF, previewPDF } from '../services/documentGenerator';
 
 import toast from 'react-hot-toast';
+import { useLocation } from 'react-router-dom';
 
 // Security & Audit Imports
 import { logDataModification, ACTIONS } from '../services/security/auditLogger';
@@ -13,15 +14,15 @@ import { logDataModification, ACTIONS } from '../services/security/auditLogger';
 import { Modal } from '../components/common';
 import DocumentRequestForm from '../components/documents/DocumentRequestForm';
 import DocumentRequestDetails from '../components/documents/DocumentRequestDetails';
-import { DocumentStatusFilter } from '../components/documents';
 import { 
-  Search, Eye, Download, CheckCircle, XCircle, Clock, Send, Plus 
+  Search, Eye, Download, CheckCircle, XCircle, Send, Plus, Archive
 } from 'lucide-react';
 import './DocumentRequestsPage.css';
 
 const DocumentRequestsPage = () => {
   const { user } = useAuth();
   const { settings } = useSettings();
+  const location = useLocation(); 
   
   // Data States
   const [requests, setRequests] = useState([]);
@@ -36,6 +37,18 @@ const DocumentRequestsPage = () => {
   const [processingRequest, setProcessingRequest] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [viewingRequest, setViewingRequest] = useState(null); 
+
+  // Read URL parameters to auto-select the filter tab
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const filterParam = params.get('filter');
+    
+    if (filterParam) {
+      setSelectedStatus(filterParam);
+    } else {
+      setSelectedStatus('all');
+    }
+  }, [location.search]);
 
   // 1. Initial Data Load
   useEffect(() => {
@@ -86,9 +99,18 @@ const DocumentRequestsPage = () => {
 
   const filterRequests = () => {
     let filtered = [...requests];
-    if (selectedStatus !== 'all') {
+    
+    // --- UPDATED LOGIC FOR ALL AND ARCHIVE ---
+    if (selectedStatus === 'all') {
+      // Hide both archived AND rejected from the "All" view
+      filtered = filtered.filter(req => req.status !== 'archived' && req.status !== 'rejected');
+    } else if (selectedStatus === 'archived') {
+      // Show BOTH manually archived AND rejected documents in the Archive tab
+      filtered = filtered.filter(req => req.status === 'archived' || req.status === 'rejected');
+    } else {
       filtered = filtered.filter(req => req.status === selectedStatus);
     }
+
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
       filtered = filtered.filter(req =>
@@ -114,7 +136,7 @@ const DocumentRequestsPage = () => {
         const filePath = `supporting_docs/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
         
         const { error: uploadError } = await supabase.storage
-          .from('documents') // Assuming you are using the 'documents' bucket
+          .from('documents') 
           .upload(filePath, file);
 
         if (uploadError) throw uploadError;
@@ -125,7 +147,7 @@ const DocumentRequestsPage = () => {
 
       // 2. Prepare database payload
       const payload = { ...formData };
-      delete payload.notarizedDocFile; // Don't try to save the raw File object to the DB!
+      delete payload.notarizedDocFile; 
 
       await db.requests.create({
         ...payload,
@@ -137,6 +159,7 @@ const DocumentRequestsPage = () => {
       
       toast.success('Request created successfully!');
       setShowForm(false);
+      await loadData(); // Force sync
     } catch (error) {
       toast.error(`Create failed: ${error.message}`);
       console.error('Create error:', error);
@@ -152,6 +175,9 @@ const DocumentRequestsPage = () => {
 
     try {
       setProcessingRequest(request.id);
+      
+      // INSTANT UI UPDATE
+      setRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'completed' } : r));
 
       // 1. Prepare data & Generate PDF
       const templateData = prepareTemplateData(request.resident, settings, { purpose: request.purpose });
@@ -192,19 +218,17 @@ const DocumentRequestsPage = () => {
         toast.error('Could not upload to Storage, but will still process document.', { icon: '⚠️' });
       }
 
-      // --- NEW: CALCULATE EXPIRATION DATE ---
-      // Defaults to 180 days if the template doesn't specify
+      // 3. CALCULATE EXPIRATION DATE
       const validityDays = request.template?.validity_days || 180;
       const expirationDate = new Date();
       expirationDate.setDate(expirationDate.getDate() + validityDays);
       
-      // Add the expiration date to the update payload
       uploadParams.expiration_date = expirationDate.toISOString().split('T')[0];
 
-      // 3. Update Database Status to Completed
+      // 4. Update Database Status to Completed
       await db.requests.updateStatus(request.id, 'completed', user.id, uploadParams);
 
-      // 4. SAFE AUDIT LOG
+      // 5. SAFE AUDIT LOG
       try {
         await logDataModification(
           user.id,
@@ -219,14 +243,15 @@ const DocumentRequestsPage = () => {
       }
 
       toast.success('Document processed successfully!');
-      
       if (viewingRequest) setViewingRequest(null);
       
       previewPDF(blob); 
+      await loadData(); // Force sync to get accurate URLs
 
     } catch (error) {
       toast.error(`Processing Error: ${error.message}`);
       console.error('Error processing request:', error);
+      await loadData(); // Revert on fail
     } finally {
       setProcessingRequest(null);
     }
@@ -239,6 +264,9 @@ const DocumentRequestsPage = () => {
     const oldStatus = request.status;
 
     try {
+      // INSTANT UI UPDATE
+      setRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'rejected' } : r));
+
       await db.requests.updateStatus(request.id, 'rejected', user.id, { rejection_reason: reason });
 
       try {
@@ -253,9 +281,12 @@ const DocumentRequestsPage = () => {
       toast.success('Request rejected');
       if (viewingRequest) setViewingRequest(null);
       
+      await loadData(); // Sync DB
+
     } catch (error) {
       toast.error(`Rejection Error: ${error.message}`);
       console.error('Reject error:', error);
+      await loadData(); // Revert on fail
     }
   };
 
@@ -264,6 +295,9 @@ const DocumentRequestsPage = () => {
     const oldStatus = request.status;
 
     try {
+      // INSTANT UI UPDATE
+      setRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'released' } : r));
+
       await db.requests.updateStatus(request.id, 'released', user.id);
       
       try {
@@ -276,8 +310,37 @@ const DocumentRequestsPage = () => {
       toast.success('Document marked as released');
       if (viewingRequest) setViewingRequest(null);
       
+      await loadData(); // Sync DB
     } catch (error) {
       toast.error(`Release Error: ${error.message}`);
+      await loadData(); // Revert on fail
+    }
+  };
+
+  const handleArchiveDocument = async (request) => {
+    if (!window.confirm('Are you sure you want to archive this document? It will be removed from the main list.')) return;
+    const oldStatus = request.status;
+
+    try {
+      // INSTANT UI UPDATE
+      setRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'archived' } : r));
+
+      await db.requests.updateStatus(request.id, 'archived', user.id);
+      
+      try {
+        await logDataModification(
+          user.id, 'document_requests', request.id, 'DOCUMENT_ARCHIVED',
+          { status: oldStatus }, { status: 'archived' }
+        );
+      } catch (auditErr) {}
+
+      toast.success('Document archived successfully');
+      if (viewingRequest) setViewingRequest(null);
+      
+      await loadData(); // Sync DB
+    } catch (error) {
+      toast.error(`Archive Error: ${error.message}`);
+      await loadData(); // Revert on fail
     }
   };
 
@@ -295,7 +358,7 @@ const DocumentRequestsPage = () => {
   // --- HELPERS ---
 
   const getStatusBadgeClass = (status) => {
-    const statusMap = { pending: 'badge-warning', processing: 'badge-info', completed: 'badge-success', rejected: 'badge-danger', released: 'badge-success' };
+    const statusMap = { pending: 'badge-warning', processing: 'badge-info', completed: 'badge-success', rejected: 'badge-danger', released: 'badge-success', archived: 'badge-secondary' };
     return statusMap[status] || 'badge-info';
   };
 
@@ -314,18 +377,20 @@ const DocumentRequestsPage = () => {
     });
   };
 
-  const statusCounts = {
-    all: requests.length,
-    pending: requests.filter(r => r.status === 'pending').length,
-    completed: requests.filter(r => r.status === 'completed').length,
-    released: requests.filter(r => r.status === 'released').length
+  const canProcessDocs = !['record_keeper', 'view_only', 'clerk'].includes(user?.role);
+
+  // Dynamic Title Generator
+  const getPageTitle = () => {
+    if (selectedStatus === 'all') return 'All Document Requests';
+    return `${selectedStatus.charAt(0).toUpperCase() + selectedStatus.slice(1)} Requests`;
   };
 
   return (
     <div className="document-requests-page">
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h1>Document Requests</h1>
+          {/* UPDATED DYNAMIC TITLE */}
+          <h1>{getPageTitle()}</h1>
           <p>Process and manage barangay document requests</p>
         </div>
         {user?.role !== 'view_only' && (
@@ -345,21 +410,6 @@ const DocumentRequestsPage = () => {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
-        </div>
-
-        <div className="status-filters">
-          <button className={`filter-btn ${selectedStatus === 'all' ? 'active' : ''}`} onClick={() => setSelectedStatus('all')}>
-            All ({statusCounts.all})
-          </button>
-          <button className={`filter-btn ${selectedStatus === 'pending' ? 'active' : ''}`} onClick={() => setSelectedStatus('pending')}>
-            <Clock size={16} /> Pending ({statusCounts.pending})
-          </button>
-          <button className={`filter-btn ${selectedStatus === 'completed' ? 'active' : ''}`} onClick={() => setSelectedStatus('completed')}>
-            <CheckCircle size={16} /> Completed ({statusCounts.completed})
-          </button>
-          <button className={`filter-btn ${selectedStatus === 'released' ? 'active' : ''}`} onClick={() => setSelectedStatus('released')}>
-            <Send size={16} /> Released ({statusCounts.released})
-          </button>
         </div>
       </div>
 
@@ -409,22 +459,33 @@ const DocumentRequestsPage = () => {
                             <Download size={18} />
                           </button>
                           
-                          {request.status === 'pending' && user?.role !== 'record_keeper' && user?.role !== 'view_only' && (
+                          {canProcessDocs && (
                             <>
-                              <button
-                                className="btn-icon btn-success"
-                                onClick={() => handleProcessRequest(request)}
-                                disabled={processingRequest === request.id}
-                                title="Process & Upload"
-                              >
-                                {processingRequest === request.id ? <div className="spinner-small"></div> : <CheckCircle size={18} />}
-                              </button>
-                              <button className="btn-icon btn-danger" onClick={() => handleRejectRequest(request)} title="Reject"><XCircle size={18} /></button>
-                            </>
-                          )}
+                              {request.status === 'pending' && (
+                                <>
+                                  <button
+                                    className="btn-icon btn-success"
+                                    onClick={() => handleProcessRequest(request)}
+                                    disabled={processingRequest === request.id}
+                                    title="Process & Upload"
+                                  >
+                                    {processingRequest === request.id ? <div className="spinner-small"></div> : <CheckCircle size={18} />}
+                                  </button>
+                                  <button className="btn-icon btn-danger" onClick={() => handleRejectRequest(request)} title="Reject"><XCircle size={18} /></button>
+                                </>
+                              )}
 
-                          {request.status === 'completed' && user?.role !== 'record_keeper' && user?.role !== 'view_only' && (
-                            <button className="btn-icon btn-success" onClick={() => handleReleaseDocument(request)} title="Mark as Released"><Send size={18} /></button>
+                              {request.status === 'completed' && (
+                                <button className="btn-icon btn-success" onClick={() => handleReleaseDocument(request)} title="Mark as Released"><Send size={18} /></button>
+                              )}
+
+                              {/* --- UPDATED ARCHIVE BUTTON (HIDDEN FOR REJECTED) --- */}
+                              {['completed', 'released'].includes(request.status) && (
+                                <button className="btn-icon btn-danger" style={{ color: '#ef4444' }} onClick={() => handleArchiveDocument(request)} title="Archive Document">
+                                  <Archive size={18} />
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>
@@ -443,13 +504,13 @@ const DocumentRequestsPage = () => {
           isOpen={!!viewingRequest}
           onClose={() => setViewingRequest(null)}
           title="Document Details & Preview"
-          size="lg"
+          size="xl" 
         >
           <DocumentRequestDetails 
             request={viewingRequest}
             onClose={() => setViewingRequest(null)}
-            onApprove={user?.role !== 'record_keeper' && user?.role !== 'view_only' ? handleProcessRequest : null}
-            onReject={user?.role !== 'record_keeper' && user?.role !== 'view_only' ? handleRejectRequest : null}
+            onApprove={canProcessDocs ? handleProcessRequest : null}
+            onReject={canProcessDocs ? handleRejectRequest : null}
             onDownload={handleDownloadDocument}
           />
         </Modal>
@@ -461,12 +522,12 @@ const DocumentRequestsPage = () => {
           isOpen={showForm}
           onClose={() => setShowForm(false)}
           title="Create New Document Request"
-          size="lg"
+          size="xl" 
         >
           <DocumentRequestForm
             templates={templates}
             residents={residents}
-            allRequests={requests} // <-- WE ADDED THIS LINE!
+            allRequests={requests} 
             onSubmit={handleCreateRequest}
             onCancel={() => setShowForm(false)}
           />
