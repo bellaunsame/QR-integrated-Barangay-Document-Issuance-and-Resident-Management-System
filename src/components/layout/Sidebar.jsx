@@ -107,8 +107,8 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
             </div>
             {!isCollapsed && (
               <div className="logo-text">
-                <h1>Barangay</h1>
-                <p>Document System</p>
+                <h1>Barangay Dos</h1>
+                <p>Document Issuance System</p>
               </div>
             )}
           </div>

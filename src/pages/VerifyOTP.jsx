@@ -30,12 +30,22 @@ const VerifyOTP = () => {
         });
 
         toast.success('Account verified successfully!');
-        navigate('/dashboard');
+        
+        // --- 3. NEW LOGIC: INTERCEPT FOR PASSWORD CHANGE ---
+        if (user.needs_password_change === true) {
+          // Send them to the forced password reset screen
+          navigate('/force-password-change');
+        } else {
+          // Standard login sends them to the dashboard
+          navigate('/dashboard');
+        }
+
       } else {
         toast.error('Invalid verification code');
       }
     } catch (error) {
       toast.error('Verification failed. Please try again.');
+      console.error(error);
     } finally {
       setLoading(false);
     }

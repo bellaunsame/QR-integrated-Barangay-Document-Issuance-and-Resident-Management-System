@@ -19,7 +19,8 @@ import {
 
 // Pages
 import LoginPage from './pages/LoginPage';
-import VerifyOTP from './pages/VerifyOTP'; // --- IMPORTED FOR STEP 2 ---
+import VerifyOTP from './pages/VerifyOTP'; 
+import ForcePasswordChange from './pages/ForcePasswordChange'; // --- IMPORTED NEW PAGE ---
 import DashboardPage from './pages/DashboardPage';
 import ResidentsPage from './pages/ResidentsPage';
 import DocumentRequestsPage from './pages/DocumentRequestsPage';
@@ -112,10 +113,21 @@ function App() {
                   <Routes>
                     {/* --- 1. PUBLIC ROUTES --- */}
                     <Route path="/login" element={<LoginPage />} />
-                    <Route path="/verify-otp" element={<VerifyOTP />} /> {/* --- ADDED FOR STEP 2 --- */}
+                    <Route path="/verify-otp" element={<VerifyOTP />} /> 
                     <Route path="/scan" element={<QRScanPage />} />
                     
-                    {/* --- 2. PROTECTED ROUTES (Main System) --- */}
+                    {/* --- 2. FORCED PASSWORD RESET ROUTE --- */}
+                    {/* Traps the user outside the MainLayout so they can't access the sidebar */}
+                    <Route 
+                      path="/force-password-change" 
+                      element={
+                        <ProtectedRoute>
+                          <ForcePasswordChange />
+                        </ProtectedRoute>
+                      } 
+                    />
+
+                    {/* --- 3. PROTECTED ROUTES (Main System) --- */}
                     <Route 
                       element={
                         <ProtectedRoute>

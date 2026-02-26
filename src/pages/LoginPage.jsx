@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; 
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/supabaseClient'; 
-import { Lock, Mail, LogIn } from 'lucide-react';
+import { Lock, Mail, LogIn, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast'; 
 import emailjs from '@emailjs/browser';
 
@@ -26,17 +26,51 @@ const LoginPage = () => {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  
+  // --- Lockout Timer State ---
+  const [lockoutTimer, setLockoutTimer] = useState(0);
+
+  // --- Live Countdown Effect ---
+  useEffect(() => {
+    let interval;
+    if (lockoutTimer > 0) {
+      interval = setInterval(() => {
+        setLockoutTimer((prev) => {
+          if (prev <= 1) {
+            setError(''); 
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [lockoutTimer]);
 
   const handleChange = (e) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
     });
-    setError('');
+    if (lockoutTimer === 0) {
+      setError('');
+    }
   };
 
-  // --- FORGOT PASSWORD LOGIC ---
+  const formatTime = (totalSeconds) => {
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  };
+
+  // --- STEP 1: FORGOT PASSWORD LOGIC (SENDS ONLY TEMP PASS) ---
   const handleForgotPassword = async () => {
+    if (lockoutTimer > 0) {
+      toast.error(`Please wait ${formatTime(lockoutTimer)} before trying again.`);
+      return;
+    }
+
     if (!formData.email) {
       toast.error("Please enter your email address first.");
       return;
@@ -48,10 +82,9 @@ const LoginPage = () => {
       return;
     }
 
-    const loadingToast = toast.loading("Verifying account...");
+    const loadingToast = toast.loading("Processing request...");
 
     try {
-      // 1. Check if user exists and is active
       const userData = await db.users.getByEmail(emailVal);
       
       if (!userData || userData.is_active === false) {
@@ -59,28 +92,29 @@ const LoginPage = () => {
         return;
       }
 
-      // 2. Generate a random 8-character temporary password
+      // Generate ONLY the Temporary Password
       const tempPassword = Math.random().toString(36).slice(-8);
       
-      // 3. Import hash service and update DB
       const { hashPassword } = await import('../services/security/passwordService');
       const hashedTemp = await hashPassword(tempPassword);
 
+      // Update DB, flag them for password change, and clear any old OTP
       await db.users.update(userData.id, { 
         password_hash: hashedTemp,
-        is_verified: false // Forces them to go through OTP verification again
+        is_verified: false,
+        needs_password_change: true,
+        otp_code: null 
       });
 
-      // 4. Send Email via EmailJS using the DYNAMIC HTML Template
+      // Send Email 1: Temporary Password Only
       await emailjs.send(
         'service_178ko1n', 
         'template_qzkqkvf', 
         {
           to_email: emailVal,
           to_name: userData.full_name,
-          otp_code: tempPassword, 
-          // UPDATED: This matches your new HTML template variable
-          email_subject_message: "You have requested to reset your password. Please use the temporary password below to log in and update your credentials immediately:",
+          otp_code: tempPassword, // Send only the password
+          email_subject_message: "You requested a password reset. Please use this temporary password to log in. You will receive an OTP for verification after logging in:",
           barangay_name: "Dos Tibag"
         },
         'pfTdQReY0nVV3CjnY'
@@ -93,8 +127,11 @@ const LoginPage = () => {
     }
   };
 
+  // --- STEP 2: LOGIN LOGIC (SENDS OTP IF NEEDED) ---
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (lockoutTimer > 0) return; 
+
     setLoading(true);
     setError('');
 
@@ -106,7 +143,6 @@ const LoginPage = () => {
     }
 
     try {
-      // 1. Fetch user to check deactivation
       const userData = await db.users.getByEmail(formData.email);
 
       if (userData && userData.is_active === false) {
@@ -115,18 +151,55 @@ const LoginPage = () => {
         return;
       }
 
-      // 2. Login attempt
+      // Attempt to log in with the password provided
       await login(formData.email, formData.password);
 
-      // 3. Redirect logic
+      // --- IF LOGIN SUCCEEDS BUT UNVERIFIED (They used the Temp Pass) ---
       if (userData && userData.is_verified === false) {
+        
+        toast.loading("Sending verification code to email...", { id: 'otp-toast' });
+        
+        // Generate the 6-digit OTP
+        const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
+        
+        // Save the new OTP to the database
+        await db.users.update(userData.id, { 
+          otp_code: newOtp 
+        });
+
+        // Send Email 2: OTP Only
+        await emailjs.send(
+          'service_178ko1n', 
+          'template_qzkqkvf', 
+          {
+            to_email: formData.email,
+            to_name: userData.full_name,
+            otp_code: newOtp, // Send only the OTP
+            email_subject_message: "Here is your 6-digit verification code to securely access your account:",
+            barangay_name: "Dos Tibag"
+          },
+          'pfTdQReY0nVV3CjnY'
+        );
+
+        toast.success("OTP sent! Please check your Gmail.", { id: 'otp-toast' });
         navigate('/verify-otp', { state: { email: formData.email } });
       } else {
+        // Normal verified user login
         navigate('/dashboard');
       }
 
     } catch (err) {
-      setError(err.message || 'Invalid credentials');
+      const errorMsg = err.message || 'Invalid credentials';
+      
+      const timeMatch = errorMsg.match(/(\d+)\s*(s|sec|second)/i);
+      
+      if (timeMatch && timeMatch[1]) {
+        const seconds = parseInt(timeMatch[1], 10);
+        setLockoutTimer(seconds);
+        setError('Too many login attempts.'); 
+      } else {
+        setError(errorMsg);
+      }
     } finally {
       setLoading(false);
     }
@@ -166,8 +239,23 @@ const LoginPage = () => {
 
         <form onSubmit={handleSubmit} className="login-form">
           {error && (
-            <div className="error-message" style={{ marginBottom: '15px' }}>
-              <span>{error}</span>
+            <div 
+              className="error-message" 
+              style={{ 
+                marginBottom: '15px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '8px',
+                background: lockoutTimer > 0 ? '#fef2f2' : undefined,
+                color: lockoutTimer > 0 ? '#ef4444' : undefined,
+                border: lockoutTimer > 0 ? '1px solid #fca5a5' : undefined
+              }}
+            >
+              {lockoutTimer > 0 && <AlertTriangle size={18} />}
+              <span>
+                {error} 
+                {lockoutTimer > 0 && <strong> Try again in {formatTime(lockoutTimer)}.</strong>}
+              </span>
             </div>
           )}
 
@@ -185,8 +273,8 @@ const LoginPage = () => {
               placeholder="Enter your email"
               required
               autoComplete="email"
+              disabled={lockoutTimer > 0} 
             />
-
           </div>
 
           <div className="form-group" style={{ marginBottom: '10px' }}>
@@ -203,17 +291,19 @@ const LoginPage = () => {
               placeholder="Enter your password"
               required
               autoComplete="current-password"
+              disabled={lockoutTimer > 0} 
             />
             <div style={{ textAlign: 'right', marginTop: '8px' }}>
               <button 
                 type="button" 
                 onClick={handleForgotPassword}
+                disabled={lockoutTimer > 0}
                 style={{ 
                   background: 'none', 
                   border: 'none', 
-                  color: '#94a3b8', 
+                  color: lockoutTimer > 0 ? '#cbd5e1' : '#94a3b8', 
                   fontSize: '12px', 
-                  cursor: 'pointer',
+                  cursor: lockoutTimer > 0 ? 'not-allowed' : 'pointer',
                   textDecoration: 'underline'
                 }}
               >
@@ -225,13 +315,19 @@ const LoginPage = () => {
           <button 
             type="submit" 
             className="btn-login"
-            disabled={loading}
+            disabled={loading || lockoutTimer > 0} 
+            style={{ 
+              opacity: lockoutTimer > 0 ? 0.7 : 1,
+              cursor: lockoutTimer > 0 ? 'not-allowed' : 'pointer' 
+            }}
           >
             {loading ? (
               <>
                 <div className="spinner-small"></div>
                 Signing in...
               </>
+            ) : lockoutTimer > 0 ? (
+              <>Locked for {formatTime(lockoutTimer)}</>
             ) : (
               <>
                 <LogIn size={20} />

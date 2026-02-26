@@ -54,26 +54,40 @@ const replaceVariables = (templateText, data) => {
   return result;
 };
 
-// FIXED: Now uses the actual database field 'full_address' instead of 'house_number'/'street'
+// --- UPDATED ADDRESS LOGIC ---
+
+// 1. Gets House No, Street, and Purok smartly
 const formatAddress = (resident) => {
   const parts = [];
   if (resident.full_address) parts.push(resident.full_address);
   if (resident.purok) {
-    // Prevent duplicating the word "Purok" if they already typed it
+    // Prevent duplicating the word "Purok"
     const purokText = resident.purok.toLowerCase().includes('purok') ? resident.purok : `Purok ${resident.purok}`;
     parts.push(purokText);
   }
   return parts.join(', ');
 };
 
-// FIXED: Ensures the long address string builds correctly
+// 2. Combines everything including Barangay, City, Province, and Zip Code
 const formatFullAddress = (resident, city, province) => {
   const baseAddress = formatAddress(resident);
   let brgy = resident.barangay || '';
   if (brgy && !brgy.toLowerCase().startsWith('brgy') && !brgy.toLowerCase().startsWith('barangay')) {
       brgy = `Barangay ${brgy}`;
   }
-  return [baseAddress, brgy, city || resident.city_municipality, province || resident.province].filter(Boolean).join(', ');
+  
+  // Cleanly combine province and zip
+  const prov = province || resident.province || '';
+  const zip = resident.zip_code ? ` ${resident.zip_code}` : '';
+  const provinceWithZip = `${prov}${zip}`.trim();
+
+  // filter(Boolean) safely removes empty strings so we don't get double commas
+  return [
+    baseAddress, 
+    brgy, 
+    city || resident.city_municipality, 
+    provinceWithZip
+  ].filter(Boolean).join(', ');
 };
 
 const calculateResidencyYears = (createdAt) => {
@@ -99,7 +113,7 @@ export const prepareTemplateData = (resident = {}, settings = {}, additionalData
     const nameParts = [resident.first_name, resident.middle_name, resident.last_name, resident.suffix].filter(Boolean);
     const fullName = nameParts.join(' ').trim() || 'N/A';
     
-    const city = getSet('city_municipality', resident.city_municipality || 'Cabuyao');
+    const city = getSet('city_municipality', resident.city_municipality || 'Calamba City');
     const province = getSet('province', resident.province || 'Laguna');
 
     return {
@@ -116,10 +130,10 @@ export const prepareTemplateData = (resident = {}, settings = {}, additionalData
       civil_status: resident.civil_status || '',
       nationality: resident.nationality || 'Filipino',
       
-      // We map the database `full_address` to the template `{{address}}`
-      address: formatAddress(resident), 
-      // And we map the complete province string to `{{full_address}}`
-      full_address: formatFullAddress(resident, city, province),
+      // NEW & UPDATED: Address Variables
+      street_address: formatAddress(resident), 
+      complete_address: formatFullAddress(resident, city, province),
+      full_address: formatFullAddress(resident, city, province), // Overrides old variable so existing templates won't break
       
       mobile_number: resident.mobile_number || '',
       email: resident.email || '',
