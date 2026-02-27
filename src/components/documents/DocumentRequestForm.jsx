@@ -1,12 +1,114 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { validateField } from '../../services/security/inputSanitizer';
-import { Save, X, FileText, User, AlignLeft, AlertTriangle, Upload, Camera } from 'lucide-react';
+import { Save, X, FileText, User, AlignLeft, AlertTriangle, Upload, Camera, Search, ChevronDown } from 'lucide-react';
 import Webcam from 'react-webcam';
 
 // 1. Import your official logos
 import calambaSeal from '../../assets/Calamba,_Laguna_Seal.svg.png';
 import brgyLogo from '../../assets/brgy.2-icon.png';
 
+// ==============================================================
+// CUSTOM SEARCHABLE DROPDOWN COMPONENT
+// ==============================================================
+const SearchableDropdown = ({ options, value, onChange, name, placeholder, error }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const wrapperRef = useRef(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter options based on search input
+  const filteredOptions = options.filter(opt =>
+    opt.label.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const selectedOption = options.find(opt => opt.value === value);
+
+  return (
+    <div ref={wrapperRef} style={{ position: 'relative', width: '100%' }}>
+      <div
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          padding: '10px 12px',
+          borderRadius: '6px',
+          border: `1px solid ${error ? '#ef4444' : 'var(--border)'}`,
+          background: 'var(--background)',
+          color: selectedOption ? 'var(--text-primary)' : 'var(--text-tertiary)',
+          cursor: 'pointer',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          minHeight: '42px'
+        }}
+      >
+        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <ChevronDown size={16} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+      </div>
+
+      {isOpen && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0,
+          background: 'var(--surface)', border: '1px solid var(--border)',
+          borderRadius: '6px', marginTop: '4px', zIndex: 50,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.2)', maxHeight: '300px', 
+          display: 'flex', flexDirection: 'column', overflow: 'hidden'
+        }}>
+          <div style={{ padding: '8px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--background)' }}>
+            <Search size={16} color="var(--text-tertiary)" />
+            <input
+              type="text"
+              autoFocus
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{ width: '100%', padding: '4px', border: 'none', background: 'transparent', color: 'var(--text-primary)', outline: 'none' }}
+            />
+          </div>
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            {filteredOptions.length > 0 ? filteredOptions.map(opt => (
+              <div
+                key={opt.value}
+                onClick={() => {
+                  // Simulate standard event object for the onChange handler
+                  onChange({ target: { name, value: opt.value } });
+                  setIsOpen(false);
+                  setSearchTerm('');
+                }}
+                style={{
+                  padding: '10px 12px', cursor: 'pointer', color: 'var(--text-primary)',
+                  borderBottom: '1px solid var(--border)'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--neutral-100)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                {opt.label}
+              </div>
+            )) : (
+              <div style={{ padding: '12px', color: 'var(--text-tertiary)', textAlign: 'center', fontSize: '0.9rem' }}>
+                No results found
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ==============================================================
+// MAIN FORM COMPONENT
+// ==============================================================
 const DocumentRequestForm = ({ 
   resident = null,
   residents = [],
@@ -19,6 +121,7 @@ const DocumentRequestForm = ({
     template_id: '',
     request_type: '',
     purpose: '',
+    custom_purpose: '', // <-- Added for "Other" option
     request_reason: '',
     notarizedDocFile: null
   });
@@ -127,12 +230,10 @@ const DocumentRequestForm = ({
     }
   };
 
-  // --- WEBCAM CAPTURE FUNCTION ---
   const capturePhoto = useCallback(() => {
     const imageSrc = webcamRef.current.getScreenshot();
     
     if (imageSrc) {
-      // Magically convert the Webcam Image into a standard "File" object
       fetch(imageSrc)
         .then(res => res.blob())
         .then(blob => {
@@ -142,7 +243,7 @@ const DocumentRequestForm = ({
           if (errors.notarizedDocFile) {
             setErrors(prev => ({ ...prev, notarizedDocFile: '' }));
           }
-          setIsCameraOpen(false); // Close camera modal
+          setIsCameraOpen(false); 
         });
     }
   }, [webcamRef, errors]);
@@ -152,6 +253,11 @@ const DocumentRequestForm = ({
 
     if (!formData.resident_id) newErrors.resident_id = 'Please select a resident';
     if (!formData.template_id) newErrors.template_id = 'Please select a document type';
+
+    // Validation for Custom Purpose
+    if (formData.purpose === 'Other' && !formData.custom_purpose.trim()) {
+      newErrors.custom_purpose = 'Please specify your custom purpose';
+    }
 
     if (isDuplicate) {
       if (!formData.notarizedDocFile) {
@@ -169,7 +275,18 @@ const DocumentRequestForm = ({
 
     setLoading(true);
     try {
-      await onSubmit({ ...formData, is_duplicate_request: isDuplicate });
+      // Determine final purpose string
+      const finalPurpose = formData.purpose === 'Other' ? formData.custom_purpose : formData.purpose;
+      
+      const payloadToSubmit = { 
+        ...formData, 
+        purpose: finalPurpose,
+        is_duplicate_request: isDuplicate 
+      };
+      // Clean up the temporary field so we don't send it to the database
+      delete payloadToSubmit.custom_purpose;
+
+      await onSubmit(payloadToSubmit);
     } catch (error) {
       console.error('Form submission error:', error);
       setErrors({ submit: error.message });
@@ -200,6 +317,27 @@ const DocumentRequestForm = ({
   };
 
   const selectedTemplateContent = templates.find(t => t.id === formData.template_id)?.template_content || '';
+
+  // --- DROPDOWN OPTIONS MAPPING ---
+  const residentOptions = residents.map(r => ({
+    label: `${r.first_name} ${r.last_name}`,
+    value: r.id
+  }));
+
+  const templateOptions = templates.filter(t => t.is_active).map(t => ({
+    label: t.template_name,
+    value: t.id
+  }));
+
+  const purposeOptions = [
+    { label: "Employment / Job Application", value: "Employment / Job Application" },
+    { label: "School / Scholarship Requirement", value: "School / Scholarship Requirement" },
+    { label: "Financial / Medical / Burial Assistance", value: "Financial / Medical / Burial Assistance" },
+    { label: "Bank Account Opening / Loan Application", value: "Bank Account Opening / Loan Application" },
+    { label: "Proof of Identity / Postal ID", value: "Proof of Identity / Postal ID" },
+    { label: "Business Permit Application", value: "Business Permit Application" },
+    { label: "Other (Please specify)", value: "Other" }
+  ];
 
   return (
     <>
@@ -243,18 +381,14 @@ const DocumentRequestForm = ({
                   <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-primary)' }}>Select Resident</h3>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <select
+                  <SearchableDropdown 
                     name="resident_id"
                     value={formData.resident_id}
                     onChange={handleChange}
-                    style={{ padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--text-primary)' }}
-                    required
-                  >
-                    <option value="">-- Choose a Resident --</option>
-                    {residents.map(r => (
-                      <option key={r.id} value={r.id}>{r.first_name} {r.last_name}</option>
-                    ))}
-                  </select>
+                    options={residentOptions}
+                    placeholder="-- Search & Choose a Resident --"
+                    error={errors.resident_id}
+                  />
                   {errors.resident_id && <span style={{ color: '#ef4444', fontSize: '0.8rem' }}>{errors.resident_id}</span>}
                 </div>
               </div>
@@ -269,18 +403,14 @@ const DocumentRequestForm = ({
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <label style={{ fontSize: '0.9rem', fontWeight: '500', color: 'var(--text-secondary)' }}>Document Type <span style={{ color: '#ef4444' }}>*</span></label>
-                  <select
+                  <SearchableDropdown 
                     name="template_id"
                     value={formData.template_id}
                     onChange={handleChange}
-                    style={{ padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--text-primary)' }}
-                    required
-                  >
-                    <option value="">Select document type...</option>
-                    {templates.filter(t => t.is_active).map(template => (
-                      <option key={template.id} value={template.id}>{template.template_name}</option>
-                    ))}
-                  </select>
+                    options={templateOptions}
+                    placeholder="-- Search Document Type --"
+                    error={errors.template_id}
+                  />
                   {errors.template_id && <span style={{ color: '#ef4444', fontSize: '0.8rem' }}>{errors.template_id}</span>}
                 </div>
 
@@ -288,22 +418,30 @@ const DocumentRequestForm = ({
                   <label style={{ fontSize: '0.9rem', fontWeight: '500', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <AlignLeft size={16} /> Purpose (Optional)
                   </label>
-                  <select
+                  <SearchableDropdown 
                     name="purpose"
                     value={formData.purpose}
                     onChange={handleChange}
-                    style={{ padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--text-primary)' }}
-                  >
-                    <option value="">-- Select Purpose --</option>
-                    <option value="Employment / Job Application">Employment / Job Application</option>
-                    <option value="School / Scholarship Requirement">School / Scholarship Requirement</option>
-                    <option value="Financial / Medical / Burial Assistance">Financial / Medical / Burial Assistance</option>
-                    <option value="Bank Account Opening / Loan Application">Bank Account Opening / Loan Application</option>
-                    <option value="Proof of Identity / Postal ID">Proof of Identity / Postal ID</option>
-                    <option value="Business Permit Application">Business Permit Application</option>
-                    <option value="Other">Other</option>
-                  </select>
+                    options={purposeOptions}
+                    placeholder="-- Search or Select Purpose --"
+                  />
                 </div>
+
+                {/* --- NEW: CUSTOM PURPOSE TEXTBOX (Only appears if "Other" is selected) --- */}
+                {formData.purpose === 'Other' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '-4px', animation: 'fadeIn 0.3s ease-in-out' }}>
+                    <label style={{ fontSize: '0.85rem', fontWeight: '500', color: 'var(--primary-600)' }}>Please specify your custom purpose: <span style={{ color: '#ef4444' }}>*</span></label>
+                    <input
+                      type="text"
+                      name="custom_purpose"
+                      value={formData.custom_purpose}
+                      onChange={handleChange}
+                      placeholder="e.g. For Travel Abroad"
+                      style={{ padding: '10px', borderRadius: '6px', border: `1px solid ${errors.custom_purpose ? '#ef4444' : 'var(--primary-500)'}`, background: 'var(--background)', color: 'var(--text-primary)' }}
+                    />
+                    {errors.custom_purpose && <span style={{ color: '#ef4444', fontSize: '0.8rem' }}>{errors.custom_purpose}</span>}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -343,7 +481,6 @@ const DocumentRequestForm = ({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <label style={{ color: '#f59e0b', fontWeight: 'bold', fontSize: '0.85rem' }}>Upload Affidavit / Doc *</label>
                   
-                  {/* --- UPDATED FILE ATTACHMENT AREA --- */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                     
                     <label style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '8px 12px', background: 'transparent', border: '1px solid #f59e0b', borderRadius: '6px', color: '#f59e0b' }}>
@@ -351,7 +488,6 @@ const DocumentRequestForm = ({
                       <input type="file" accept=".pdf,image/jpeg,image/png" style={{ display: 'none' }} onChange={handleFileUpload} />
                     </label>
 
-                    {/* NEW TAKE PHOTO BUTTON */}
                     <button type="button" onClick={() => setIsCameraOpen(true)} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '8px 12px', background: 'transparent', border: '1px solid #f59e0b', borderRadius: '6px', color: '#f59e0b' }}>
                       <Camera size={16} /> Take Photo
                     </button>
@@ -453,7 +589,6 @@ const DocumentRequestForm = ({
               <button type="button" className="btn-icon" onClick={() => setIsCameraOpen(false)}><X size={20} /></button>
             </div>
             
-            {/* FIXED WEBCAM CONSTRAINTS HERE */}
             <div style={{ width: '100%', background: '#000', borderRadius: '8px', overflow: 'hidden', display: 'flex', justifyContent: 'center' }}>
               <Webcam
                 audio={false}

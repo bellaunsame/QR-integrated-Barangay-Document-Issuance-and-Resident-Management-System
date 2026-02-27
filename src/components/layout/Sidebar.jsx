@@ -1,6 +1,7 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useState, useEffect } from 'react';
+import { supabase } from '../../services/supabaseClient';
 import {
   LayoutDashboard,
   Users,
@@ -31,6 +32,56 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
   // --- State for Documents Dropdown ---
   const [isDocsOpen, setIsDocsOpen] = useState(false);
 
+  // --- State for Notification Counts ---
+  const [counts, setCounts] = useState({
+    residents: 0,
+    pending: 0,
+    completed: 0,
+    released: 0
+  });
+
+  // Fetch initial counts and set up Realtime listeners
+  useEffect(() => {
+    fetchCounts();
+
+    // Listen to changes in residents table
+    const residentChannel = supabase.channel('sidebar-residents')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'residents' }, () => {
+        fetchCounts();
+      }).subscribe();
+
+    // Listen to changes in document_requests table
+    const docsChannel = supabase.channel('sidebar-docs')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'document_requests' }, () => {
+        fetchCounts();
+      }).subscribe();
+
+    return () => {
+      supabase.removeChannel(residentChannel);
+      supabase.removeChannel(docsChannel);
+    };
+  }, []);
+
+  const fetchCounts = async () => {
+    try {
+      const [resCount, pendingCount, completedCount, releasedCount] = await Promise.all([
+        supabase.from('residents').select('*', { count: 'exact', head: true }),
+        supabase.from('document_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+        supabase.from('document_requests').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
+        supabase.from('document_requests').select('*', { count: 'exact', head: true }).eq('status', 'released')
+      ]);
+
+      setCounts({
+        residents: resCount.count || 0,
+        pending: pendingCount.count || 0,
+        completed: completedCount.count || 0,
+        released: releasedCount.count || 0
+      });
+    } catch (error) {
+      console.error("Error fetching sidebar counts:", error);
+    }
+  };
+
   // Auto-open if we are on a documents page
   useEffect(() => {
     if (location.pathname.includes('/documents')) {
@@ -49,7 +100,8 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
       icon: <Users size={20} />,
       label: 'Residents',
       path: '/residents',
-      roles: ['admin', 'record_keeper', 'view_only'] 
+      roles: ['admin', 'record_keeper', 'view_only'],
+      badge: counts.residents > 0 ? { text: counts.residents, color: '#dbeafe', textColor: '#1d4ed8' } : null
     },
     // Documents handled explicitly below
     {
@@ -95,6 +147,20 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
 
   return (
     <>
+      {/* Inline styles for the badges so you don't have to hunt down Sidebar.css */}
+      <style>{`
+        .nav-badge {
+          font-size: 0.75rem;
+          font-weight: 700;
+          padding: 2px 8px;
+          border-radius: 9999px;
+          margin-left: auto;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+      `}</style>
+
       <aside className={`sidebar ${isOpen ? 'open' : ''} ${isCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
           <div className="sidebar-logo">
@@ -132,7 +198,16 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
                 title={isCollapsed ? item.label : ''}
               >
                 <span className="nav-icon">{item.icon}</span>
-                {!isCollapsed && <span className="nav-label">{item.label}</span>}
+                {!isCollapsed && (
+                  <>
+                    <span className="nav-label">{item.label}</span>
+                    {item.badge && (
+                      <span className="nav-badge" style={{ backgroundColor: item.badge.color, color: item.badge.textColor }}>
+                        {item.badge.text > 99 ? '99+' : item.badge.text}
+                      </span>
+                    )}
+                  </>
+                )}
               </NavLink>
             ))}
 
@@ -156,12 +231,22 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
                     fontWeight: 500, transition: 'all 0.2s'
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%' }}>
                     <span className="nav-icon" style={{ display: 'flex' }}><FileText size={20} /></span>
-                    {!isCollapsed && <span className="nav-label">Documents</span>}
+                    {!isCollapsed && (
+                      <>
+                        <span className="nav-label">Documents</span>
+                        {/* Show total pending docs next to parent folder if closed */}
+                        {!isDocsOpen && counts.pending > 0 && (
+                          <span className="nav-badge" style={{ backgroundColor: '#fef3c7', color: '#b45309' }}>
+                            {counts.pending}
+                          </span>
+                        )}
+                      </>
+                    )}
                   </div>
                   {!isCollapsed && (
-                    <span style={{ color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center' }}>
+                    <span style={{ color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', marginLeft: '8px' }}>
                       {isDocsOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                     </span>
                   )}
@@ -186,6 +271,11 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
                       }}
                     >
                       <Clock size={16} color="#f59e0b" /> Pending
+                      {counts.pending > 0 && (
+                        <span className="nav-badge" style={{ backgroundColor: '#fef3c7', color: '#b45309' }}>
+                          {counts.pending > 99 ? '99+' : counts.pending}
+                        </span>
+                      )}
                     </NavLink>
 
                     <NavLink to="/documents?filter=completed" 
@@ -199,6 +289,11 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
                       }}
                     >
                       <CheckCircle size={16} color="#10b981" /> Completed
+                      {counts.completed > 0 && (
+                        <span className="nav-badge" style={{ backgroundColor: '#d1fae5', color: '#047857' }}>
+                          {counts.completed > 99 ? '99+' : counts.completed}
+                        </span>
+                      )}
                     </NavLink>
 
                     <NavLink to="/documents?filter=released" 
@@ -212,6 +307,11 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
                       }}
                     >
                       <Send size={16} color="#3b82f6" /> Released
+                      {counts.released > 0 && (
+                        <span className="nav-badge" style={{ backgroundColor: '#dbeafe', color: '#1d4ed8' }}>
+                          {counts.released > 99 ? '99+' : counts.released}
+                        </span>
+                      )}
                     </NavLink>
 
                     <NavLink to="/documents?filter=archived" 
