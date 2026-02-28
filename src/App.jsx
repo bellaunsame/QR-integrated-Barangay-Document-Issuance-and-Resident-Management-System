@@ -20,7 +20,7 @@ import {
 // Pages
 import LoginPage from './pages/LoginPage';
 import VerifyOTP from './pages/VerifyOTP'; 
-import ForcePasswordChange from './pages/ForcePasswordChange'; // --- IMPORTED NEW PAGE ---
+import ForcePasswordChange from './pages/ForcePasswordChange';
 import DashboardPage from './pages/DashboardPage';
 import ResidentsPage from './pages/ResidentsPage';
 import DocumentRequestsPage from './pages/DocumentRequestsPage';
@@ -86,7 +86,7 @@ function App() {
                   <Toaster 
                     position="top-right"
                     toastOptions={{
-                      duration: 3000,
+                      duration: 6000,
                       style: {
                         background: '#1e40af',
                         color: '#fff',
@@ -139,8 +139,9 @@ function App() {
                       <Route path="/dashboard" element={<DashboardPage />} />
                       <Route path="/profile" element={<ProfilePage />} />
                       
+                      {/* --- STEP 3 FIX: Added 'clerk' to requiredRoles --- */}
                       <Route path="/residents" element={
-                        <ProtectedRoute requiredRoles={['admin', 'record_keeper', 'view_only']}>
+                        <ProtectedRoute requiredRoles={['admin', 'record_keeper', 'view_only', 'clerk']}>
                           <ResidentsPage />
                         </ProtectedRoute>
                       } />

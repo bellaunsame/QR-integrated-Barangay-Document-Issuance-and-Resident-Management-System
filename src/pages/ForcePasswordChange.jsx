@@ -7,6 +7,10 @@ import toast from 'react-hot-toast';
 
 import brgyBackground from '../assets/Brgyhall.jpg'; 
 
+// Password Validation Regex
+const hasNumber = /\d/;
+const hasSymbol = /[!@#$%^&*(),.?":{}|<>_+\-=\\[\]\\]/; // Checks for at least one special character
+
 const ForcePasswordChange = () => {
   const { user } = useAuth(); // Gets logged-in user context
   const navigate = useNavigate();
@@ -20,11 +24,26 @@ const ForcePasswordChange = () => {
     setPasswords({ ...passwords, [e.target.name]: e.target.value });
   };
 
+  const validatePassword = (password) => {
+    if (password.length < 8) {
+      return "Password must be at least 8 characters long.";
+    }
+    if (!hasNumber.test(password)) {
+      return "Password must contain at least one number.";
+    }
+    if (!hasSymbol.test(password)) {
+      return "Password must contain at least one symbol (e.g., !@#$%^&*).";
+    }
+    return null; // Valid
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (passwords.newPassword.length < 8) {
-      toast.error('Password must be at least 8 characters long.');
+    const passwordError = validatePassword(passwords.newPassword);
+    
+    if (passwordError) {
+      toast.error(passwordError);
       return;
     }
 
@@ -92,11 +111,15 @@ const ForcePasswordChange = () => {
                 name="newPassword"
                 value={passwords.newPassword}
                 onChange={handleChange}
-                placeholder="Enter new password (min 8 chars)"
+                placeholder="Enter new password"
                 required
                 style={{ width: '100%', padding: '10px 10px 10px 35px', borderRadius: '6px', border: '1px solid #334155', backgroundColor: '#0f172a', color: 'white' }}
               />
             </div>
+            {/* Added helper text so the user knows the rules immediately */}
+            <small style={{ color: '#94a3b8', fontSize: '0.75rem', display: 'block', marginTop: '6px' }}>
+              Must contain at least 8 characters, one number, and one symbol.
+            </small>
           </div>
 
           <div className="form-group" style={{ marginBottom: '25px' }}>

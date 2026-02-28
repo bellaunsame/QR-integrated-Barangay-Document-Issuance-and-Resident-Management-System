@@ -29,10 +29,7 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // --- State for Documents Dropdown ---
   const [isDocsOpen, setIsDocsOpen] = useState(false);
-
-  // --- State for Notification Counts ---
   const [counts, setCounts] = useState({
     residents: 0,
     pending: 0,
@@ -40,23 +37,35 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
     released: 0
   });
 
-  // Fetch initial counts and set up Realtime listeners
+  // --- INTEGRATED REALTIME LOGIC ---
   useEffect(() => {
     fetchCounts();
 
-    // Listen to changes in residents table
-    const residentChannel = supabase.channel('sidebar-residents')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'residents' }, () => {
+    // Force update when DocumentRequestsPage tells us to
+    window.addEventListener('docs_updated', fetchCounts);
+
+    const residentChannel = supabase.channel('sidebar-residents-sync')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'residents' 
+      }, () => {
         fetchCounts();
       }).subscribe();
 
-    // Listen to changes in document_requests table
-    const docsChannel = supabase.channel('sidebar-docs')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'document_requests' }, () => {
-        fetchCounts();
+    const docsChannel = supabase.channel('sidebar-docs-sync')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'document_requests' 
+      }, () => {
+        setTimeout(() => {
+            fetchCounts(); 
+        }, 500); 
       }).subscribe();
 
     return () => {
+      window.removeEventListener('docs_updated', fetchCounts);
       supabase.removeChannel(residentChannel);
       supabase.removeChannel(docsChannel);
     };
@@ -82,7 +91,6 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
     }
   };
 
-  // Auto-open if we are on a documents page
   useEffect(() => {
     if (location.pathname.includes('/documents')) {
       setIsDocsOpen(true);
@@ -100,10 +108,9 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
       icon: <Users size={20} />,
       label: 'Residents',
       path: '/residents',
-      roles: ['admin', 'record_keeper', 'view_only'],
+      roles: ['admin', 'record_keeper', 'view_only', 'clerk'],
       badge: counts.residents > 0 ? { text: counts.residents, color: '#dbeafe', textColor: '#1d4ed8' } : null
     },
-    // Documents handled explicitly below
     {
       icon: <FileCheck size={20} />,
       label: 'Templates',
@@ -147,7 +154,6 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
 
   return (
     <>
-      {/* Inline styles for the badges so you don't have to hunt down Sidebar.css */}
       <style>{`
         .nav-badge {
           font-size: 0.75rem;
@@ -158,15 +164,25 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
           display: inline-flex;
           align-items: center;
           justify-content: center;
+          transition: all 0.3s ease;
+        }
+        .badge-pulse {
+          animation: pulse-orange 2s infinite;
+          background-color: #fef3c7;
+          color: #b45309;
+          box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+        }
+        @keyframes pulse-orange {
+          0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
+          70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+          100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
         }
       `}</style>
 
       <aside className={`sidebar ${isOpen ? 'open' : ''} ${isCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
           <div className="sidebar-logo">
-            <div className="logo-icon">
-              <img src={logo} alt="Barangay Logo" />
-            </div>
+            <div className="logo-icon"><img src={logo} alt="Barangay Logo" /></div>
             {!isCollapsed && (
               <div className="logo-text">
                 <h1>Barangay Dos</h1>
@@ -174,12 +190,7 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
               </div>
             )}
           </div>
-
-          <button
-            className="sidebar-collapse-btn desktop-only"
-            onClick={onToggleCollapse}
-            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
+          <button className="sidebar-collapse-btn desktop-only" onClick={onToggleCollapse}>
             {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
           </button>
         </div>
@@ -188,15 +199,8 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
           <div className="nav-section">
             {!isCollapsed && <div className="nav-section-title">Main Menu</div>}
             
-            {/* 1. Dashboard & Residents */}
             {visibleMenuItems.slice(0, 2).map((item) => (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-                onClick={onClose}
-                title={isCollapsed ? item.label : ''}
-              >
+              <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onClose}>
                 <span className="nav-icon">{item.icon}</span>
                 {!isCollapsed && (
                   <>
@@ -211,20 +215,11 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
               </NavLink>
             ))}
 
-            {/* 2. CUSTOM DOCUMENTS DROPDOWN */}
             {hasRole(['admin', 'clerk', 'record_keeper', 'view_only']) && (
               <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
-                
-                {/* Parent Button */}
-                <div 
-                  onClick={() => {
-                    if (isCollapsed) onToggleCollapse();
-                    setIsDocsOpen(!isDocsOpen);
-                    navigate('/documents'); // Navigates to All Requests
-                  }}
+                <div onClick={() => { if (isCollapsed) onToggleCollapse(); setIsDocsOpen(!isDocsOpen); navigate('/documents'); }}
                   style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '0.75rem 1.5rem', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1.5rem', cursor: 'pointer',
                     backgroundColor: location.pathname.includes('/documents') ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
                     color: location.pathname.includes('/documents') ? 'var(--primary-600)' : 'var(--text-secondary)',
                     borderLeft: location.pathname.includes('/documents') ? '3px solid var(--primary-600)' : '3px solid transparent',
@@ -236,151 +231,86 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
                     {!isCollapsed && (
                       <>
                         <span className="nav-label">Documents</span>
-                        {/* Show total pending docs next to parent folder if closed */}
-                        {!isDocsOpen && counts.pending > 0 && (
-                          <span className="nav-badge" style={{ backgroundColor: '#fef3c7', color: '#b45309' }}>
-                            {counts.pending}
-                          </span>
-                        )}
+                        {!isDocsOpen && counts.pending > 0 && <span className="nav-badge badge-pulse">{counts.pending}</span>}
                       </>
                     )}
                   </div>
-                  {!isCollapsed && (
-                    <span style={{ color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', marginLeft: '8px' }}>
-                      {isDocsOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                    </span>
-                  )}
+                  {!isCollapsed && <span style={{ color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', marginLeft: '8px' }}>{isDocsOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>}
                 </div>
 
-                {/* Dropdown Items */}
                 {!isCollapsed && isDocsOpen && (
-                  <div style={{ 
-                    display: 'flex', flexDirection: 'column', 
-                    background: 'var(--neutral-50)', padding: '0.5rem 0',
-                    borderBottom: '1px solid var(--border)'
-                  }}>
-                    
-                    <NavLink to="/documents?filter=pending" 
-                      onClick={onClose}
-                      style={{
-                        padding: '0.6rem 1.5rem 0.6rem 3.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem',
-                        textDecoration: 'none', fontSize: '0.85rem', 
-                        color: location.search === '?filter=pending' ? 'var(--primary-700)' : 'var(--text-secondary)',
-                        fontWeight: location.search === '?filter=pending' ? '600' : '500',
+                  <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--neutral-50)', padding: '0.5rem 0', borderBottom: '1px solid var(--border)' }}>
+                    <NavLink to="/documents?filter=pending" onClick={onClose}
+                      style={({isActive}) => ({
+                        padding: '0.6rem 1.5rem 0.6rem 3.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none', fontSize: '0.85rem', 
+                        color: location.search === '?filter=pending' ? 'var(--primary-700)' : 'var(--text-secondary)', fontWeight: location.search === '?filter=pending' ? '600' : '500',
                         backgroundColor: location.search === '?filter=pending' ? '#e0f2fe' : 'transparent'
-                      }}
+                      })}
                     >
                       <Clock size={16} color="#f59e0b" /> Pending
-                      {counts.pending > 0 && (
-                        <span className="nav-badge" style={{ backgroundColor: '#fef3c7', color: '#b45309' }}>
-                          {counts.pending > 99 ? '99+' : counts.pending}
-                        </span>
-                      )}
+                      {counts.pending > 0 && <span className="nav-badge badge-pulse">{counts.pending}</span>}
                     </NavLink>
 
-                    <NavLink to="/documents?filter=completed" 
-                      onClick={onClose}
-                      style={{
-                        padding: '0.6rem 1.5rem 0.6rem 3.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem',
-                        textDecoration: 'none', fontSize: '0.85rem', 
-                        color: location.search === '?filter=completed' ? 'var(--primary-700)' : 'var(--text-secondary)',
-                        fontWeight: location.search === '?filter=completed' ? '600' : '500',
+                    <NavLink to="/documents?filter=completed" onClick={onClose}
+                      style={({isActive}) => ({
+                        padding: '0.6rem 1.5rem 0.6rem 3.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none', fontSize: '0.85rem', 
+                        color: location.search === '?filter=completed' ? 'var(--primary-700)' : 'var(--text-secondary)', fontWeight: location.search === '?filter=completed' ? '600' : '500',
                         backgroundColor: location.search === '?filter=completed' ? '#e0f2fe' : 'transparent'
-                      }}
+                      })}
                     >
                       <CheckCircle size={16} color="#10b981" /> Completed
-                      {counts.completed > 0 && (
-                        <span className="nav-badge" style={{ backgroundColor: '#d1fae5', color: '#047857' }}>
-                          {counts.completed > 99 ? '99+' : counts.completed}
-                        </span>
-                      )}
+                      {counts.completed > 0 && <span className="nav-badge" style={{ backgroundColor: '#d1fae5', color: '#047857' }}>{counts.completed}</span>}
                     </NavLink>
 
-                    <NavLink to="/documents?filter=released" 
-                      onClick={onClose}
-                      style={{
-                        padding: '0.6rem 1.5rem 0.6rem 3.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem',
-                        textDecoration: 'none', fontSize: '0.85rem', 
-                        color: location.search === '?filter=released' ? 'var(--primary-700)' : 'var(--text-secondary)',
-                        fontWeight: location.search === '?filter=released' ? '600' : '500',
+                    <NavLink to="/documents?filter=released" onClick={onClose}
+                      style={({isActive}) => ({
+                        padding: '0.6rem 1.5rem 0.6rem 3.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none', fontSize: '0.85rem', 
+                        color: location.search === '?filter=released' ? 'var(--primary-700)' : 'var(--text-secondary)', fontWeight: location.search === '?filter=released' ? '600' : '500',
                         backgroundColor: location.search === '?filter=released' ? '#e0f2fe' : 'transparent'
-                      }}
+                      })}
                     >
                       <Send size={16} color="#3b82f6" /> Released
-                      {counts.released > 0 && (
-                        <span className="nav-badge" style={{ backgroundColor: '#dbeafe', color: '#1d4ed8' }}>
-                          {counts.released > 99 ? '99+' : counts.released}
-                        </span>
-                      )}
+                      {counts.released > 0 && <span className="nav-badge" style={{ backgroundColor: '#dbeafe', color: '#1d4ed8' }}>{counts.released}</span>}
                     </NavLink>
 
-                    <NavLink to="/documents?filter=archived" 
-                      onClick={onClose}
-                      style={{
-                        padding: '0.6rem 1.5rem 0.6rem 3.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem',
-                        textDecoration: 'none', fontSize: '0.85rem', 
-                        color: location.search === '?filter=archived' ? 'var(--primary-700)' : 'var(--text-secondary)',
-                        fontWeight: location.search === '?filter=archived' ? '600' : '500',
+                    <NavLink to="/documents?filter=archived" onClick={onClose}
+                      style={({isActive}) => ({
+                        padding: '0.6rem 1.5rem 0.6rem 3.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none', fontSize: '0.85rem', 
+                        color: location.search === '?filter=archived' ? 'var(--primary-700)' : 'var(--text-secondary)', fontWeight: location.search === '?filter=archived' ? '600' : '500',
                         backgroundColor: location.search === '?filter=archived' ? '#e0f2fe' : 'transparent'
-                      }}
+                      })}
                     >
                       <Archive size={16} color="#64748b" /> Archive
                     </NavLink>
-
                   </div>
                 )}
               </div>
             )}
 
-            {/* 3. Render the rest of the items */}
             {visibleMenuItems.slice(2).map((item) => (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-                onClick={onClose}
-                title={isCollapsed ? item.label : ''}
-              >
+              <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onClose}>
                 <span className="nav-icon">{item.icon}</span>
                 {!isCollapsed && <span className="nav-label">{item.label}</span>}
               </NavLink>
             ))}
-
           </div>
         </nav>
 
         <div className="sidebar-footer">
-          <NavLink
-            to="/profile"
-            className={({ isActive }) =>
-              `nav-item ${isActive ? 'active' : ''}`
-            }
-            onClick={onClose}
-            title={isCollapsed ? 'My Profile' : ''}
-          >
+          <NavLink to="/profile" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onClose}>
             <span className="nav-icon"><User size={20} /></span>
             {!isCollapsed && <span className="nav-label">My Profile</span>}
           </NavLink>
-
-          <button
-            className="nav-item logout-btn"
-            onClick={handleLogout}
-            title={isCollapsed ? 'Logout' : ''}
-          >
+          <button className="nav-item logout-btn" onClick={handleLogout}>
             <span className="nav-icon"><LogOut size={20} /></span>
             {!isCollapsed && <span className="nav-label">Logout</span>}
           </button>
-
           {!isCollapsed && user && (
             <div className="sidebar-user">
-              <div className="user-avatar-small">
-                {user.full_name?.charAt(0) || 'U'}
-              </div>
+              <div className="user-avatar-small">{user.full_name?.charAt(0) || 'U'}</div>
               <div className="user-details">
                 <div className="user-name-small">{user.full_name}</div>
-                <div className="user-role-small">
-                  {user.role === 'view_only' ? 'View Only' : user.role.replace('_', ' ')}
-                </div>
+                <div className="user-role-small">{user.role?.replace('_', ' ')}</div>
               </div>
             </div>
           )}

@@ -17,7 +17,7 @@ import ResidentViewModal from '../components/residents/ResidentViewModal';
 import ResidentFormModal from '../components/residents/ResidentFormModal';
 import CameraCaptureModal from '../components/residents/CameraCaptureModal';
 
-import { Users, Plus, Search, Edit2, Trash2, QrCode, Mail, Download, Eye, User } from 'lucide-react';
+import { Users, Plus, Search, Edit2, Trash2, QrCode, Mail, Download, Eye, User, ChevronLeft, ChevronRight } from 'lucide-react';
 import './ResidentsPage.css';
 
 const ResidentsPage = () => {
@@ -29,6 +29,10 @@ const ResidentsPage = () => {
   const [filteredResidents, setFilteredResidents] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
+  
+  // --- NEW: PAGINATION STATES ---
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   
   // Modal states
   const [showModal, setShowModal] = useState(false);
@@ -74,7 +78,10 @@ const ResidentsPage = () => {
   };
 
   const filterResidents = () => {
-    if (!searchTerm) return setFilteredResidents(residents);
+    if (!searchTerm) {
+      setFilteredResidents(residents);
+      return;
+    }
     const search = searchTerm.toLowerCase();
     const filtered = residents.filter(resident => 
       resident.first_name.toLowerCase().includes(search) ||
@@ -83,6 +90,7 @@ const ResidentsPage = () => {
       resident.mobile_number?.includes(search)
     );
     setFilteredResidents(filtered);
+    setCurrentPage(1); // Reset to page 1 whenever they search
   };
 
   const handleInputChange = (e) => {
@@ -268,6 +276,12 @@ const ResidentsPage = () => {
 
   const closeModal = () => { setShowModal(false); setEditingResident(null); setErrors({}); };
 
+  // --- NEW: PAGINATION MATH ---
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentResidents = filteredResidents.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filteredResidents.length / itemsPerPage);
+
   return (
     <div className="residents-page">
       <div className="page-header">
@@ -278,7 +292,10 @@ const ResidentsPage = () => {
       </div>
 
       <div className="residents-controls">
-        <div className="search-box"><Search size={20} /><input type="text" placeholder="Search..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
+        <div className="search-box">
+          <Search size={20} />
+          <input type="text" placeholder="Search..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+        </div>
         <div className="residents-count"><Users size={18} /><span>{filteredResidents.length} residents</span></div>
       </div>
 
@@ -292,37 +309,80 @@ const ResidentsPage = () => {
                 <tr><th>Name</th><th>Address</th><th>Contact</th><th style={{textAlign:'center'}}>Docs</th><th>Age/Gender</th><th>QR</th><th>Actions</th></tr>
               </thead>
               <tbody>
-                {filteredResidents.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      <div className="resident-name" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        {r.photo_url ? <img src={r.photo_url} alt="pic" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover' }} /> : <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><User size={20} color="#94a3b8"/></div>}
-                        <div style={{ display: 'flex', flexDirection: 'column' }}><strong>{r.first_name} {r.last_name} {r.suffix}</strong><small>{r.civil_status}</small></div>
-                      </div>
-                    </td>
-                    <td>{r.full_address}, {r.barangay}</td>
-                    <td><div className="contact-cell"><span>{r.mobile_number || 'N/A'}</span><small>{r.email || 'No email'}</small></div></td>
-                    <td style={{ textAlign: 'center' }}><span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--primary-600)' }}>{r.document_requests?.length || 0}</span></td>
-                    <td>{calculateAge(r.date_of_birth)} yrs / {r.gender}</td>
-                    <td>{r.qr_code_url ? <span className="badge badge-success"><QrCode size={14} /> Yes</span> : <span className="badge badge-warning">Pending</span>}</td>
-                    <td>
-                      <div className="action-buttons">
-                        <button className="btn-icon" onClick={() => setViewingResident(r)}><Eye size={18} /></button>
-                        {user?.role !== 'view_only' && (
-                          <>
-                            <button className="btn-icon" onClick={() => handleDownloadQR(r)}><Download size={18} /></button>
-                            <button className="btn-icon" onClick={() => handleResendQR(r)} disabled={!r.email}><Mail size={18} /></button>
-                            <button className="btn-icon" onClick={() => handleEdit(r)}><Edit2 size={18} /></button>
-                            <button className="btn-icon btn-danger" onClick={() => handleDelete(r)}><Trash2 size={18} /></button>
-                          </>
-                        )}
-                      </div>
+                {/* WE RENDER currentResidents INSTEAD OF filteredResidents */}
+                {currentResidents.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" className="empty-row" style={{ textAlign: 'center', padding: '3rem' }}>
+                      <Users size={40} style={{ color: 'var(--neutral-400)', marginBottom: '1rem' }} />
+                      <p>No residents found.</p>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  currentResidents.map((r) => (
+                    <tr key={r.id}>
+                      <td>
+                        <div className="resident-name" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          {r.photo_url ? <img src={r.photo_url} alt="pic" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover' }} /> : <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><User size={20} color="#94a3b8"/></div>}
+                          <div style={{ display: 'flex', flexDirection: 'column' }}><strong>{r.first_name} {r.last_name} {r.suffix}</strong><small>{r.civil_status}</small></div>
+                        </div>
+                      </td>
+                      <td>{r.full_address}, {r.barangay}</td>
+                      <td><div className="contact-cell"><span>{r.mobile_number || 'N/A'}</span><small>{r.email || 'No email'}</small></div></td>
+                      <td style={{ textAlign: 'center' }}><span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--primary-600)' }}>{r.document_requests?.length || 0}</span></td>
+                      <td>{calculateAge(r.date_of_birth)} yrs / {r.gender}</td>
+                      <td>{r.qr_code_url ? <span className="badge badge-success"><QrCode size={14} /> Yes</span> : <span className="badge badge-warning">Pending</span>}</td>
+                      <td>
+                        <div className="action-buttons">
+                          <button className="btn-icon" onClick={() => setViewingResident(r)}><Eye size={18} /></button>
+                          {user?.role !== 'view_only' && (
+                            <>
+                              <button className="btn-icon" onClick={() => handleDownloadQR(r)}><Download size={18} /></button>
+                              <button className="btn-icon" onClick={() => handleResendQR(r)} disabled={!r.email}><Mail size={18} /></button>
+                              <button className="btn-icon" onClick={() => handleEdit(r)}><Edit2 size={18} /></button>
+                              <button className="btn-icon btn-danger" onClick={() => handleDelete(r)}><Trash2 size={18} /></button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
+
+          {/* --- NEW: PAGINATION CONTROLS --- */}
+          {filteredResidents.length > itemsPerPage && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', borderTop: '1px solid var(--border)', background: 'var(--neutral-50)' }}>
+              <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                Showing <strong>{indexOfFirstItem + 1}</strong> to <strong>{Math.min(indexOfLastItem, filteredResidents.length)}</strong> of <strong>{filteredResidents.length}</strong> entries
+              </span>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <button 
+                  className="btn btn-secondary" 
+                  style={{ padding: '6px 10px', margin: 0 }}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft size={16} /> Prev
+                </button>
+                
+                <span style={{ fontSize: '0.875rem', fontWeight: '500', padding: '0 10px' }}>
+                  Page {currentPage} of {totalPages}
+                </span>
+                
+                <button 
+                  className="btn btn-secondary" 
+                  style={{ padding: '6px 10px', margin: 0 }}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
+                  disabled={currentPage === totalPages}
+                >
+                  Next <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

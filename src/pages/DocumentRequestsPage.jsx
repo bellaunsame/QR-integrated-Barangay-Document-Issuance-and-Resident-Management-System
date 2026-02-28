@@ -15,7 +15,7 @@ import { Modal } from '../components/common';
 import DocumentRequestForm from '../components/documents/DocumentRequestForm';
 import DocumentRequestDetails from '../components/documents/DocumentRequestDetails';
 import { 
-  Search, Eye, Download, CheckCircle, XCircle, Send, Plus, Archive
+  Search, Eye, Download, CheckCircle, XCircle, Send, Plus, Archive, CheckSquare, Printer, RefreshCw, Edit, Copy, Ban, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import './DocumentRequestsPage.css';
 
@@ -38,11 +38,26 @@ const DocumentRequestsPage = () => {
   const [showForm, setShowForm] = useState(false);
   const [viewingRequest, setViewingRequest] = useState(null); 
 
-  // Read URL parameters to auto-select the filter tab
+  // Batch Processing State
+  const [selectedRequests, setSelectedRequests] = useState([]);
+  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
+
+  // --- PAGINATION STATES ---
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  // --- ROLE PERMISSIONS ---
+  const canProcessDocs = ['admin', 'clerk', 'record_keeper'].includes(user?.role);
+  const isAdmin = user?.role === 'admin';
+
+  // --- HELPER: INSTANT SIDEBAR SYNC ---
+  const triggerSidebarUpdate = () => {
+    window.dispatchEvent(new Event('docs_updated'));
+  };
+
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const filterParam = params.get('filter');
-    
     if (filterParam) {
       setSelectedStatus(filterParam);
     } else {
@@ -50,48 +65,41 @@ const DocumentRequestsPage = () => {
     }
   }, [location.search]);
 
-  // 1. Initial Data Load
   useEffect(() => {
     loadData();
   }, []);
 
-  // 2. Real-time Listener: Updates table instantly on any DB change
   useEffect(() => {
     const channel = supabase
       .channel('document-requests-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'document_requests' },
-        () => {
-          loadData(); 
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'document_requests' }, () => {
+          setTimeout(() => loadData(), 1000); 
+      }).subscribe();
+    return () => supabase.removeChannel(channel);
   }, []);
 
   useEffect(() => {
     filterRequests();
+    setSelectedRequests([]); 
   }, [selectedStatus, searchTerm, requests]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedStatus, searchTerm]);
 
   const loadData = async () => {
     try {
-      setLoading(true);
       const [requestsData, templatesData, residentsData] = await Promise.all([
         db.requests.getAll(),
         db.templates.getAll(),
         db.residents.getAll()
       ]);
-      
       setRequests(requestsData);
       setTemplates(templatesData);
       setResidents(residentsData);
+      triggerSidebarUpdate();
     } catch (error) {
-      toast.error('Failed to load data');
-      console.error('Error loading data:', error);
+      console.error('Data load error:', error);
     } finally {
       setLoading(false);
     }
@@ -100,13 +108,10 @@ const DocumentRequestsPage = () => {
   const filterRequests = () => {
     let filtered = [...requests];
     
-    // --- UPDATED LOGIC FOR ALL AND ARCHIVE ---
     if (selectedStatus === 'all') {
-      // Hide both archived AND rejected from the "All" view
-      filtered = filtered.filter(req => req.status !== 'archived' && req.status !== 'rejected');
+      filtered = filtered.filter(req => !['archived', 'rejected', 'revoked'].includes(req.status));
     } else if (selectedStatus === 'archived') {
-      // Show BOTH manually archived AND rejected documents in the Archive tab
-      filtered = filtered.filter(req => req.status === 'archived' || req.status === 'rejected');
+      filtered = filtered.filter(req => ['archived', 'rejected', 'revoked'].includes(req.status));
     } else {
       filtered = filtered.filter(req => req.status === selectedStatus);
     }
@@ -124,223 +129,146 @@ const DocumentRequestsPage = () => {
 
   // --- ACTIONS ---
 
-  const handleCreateRequest = async (formData) => {
+  const handleEditRequest = async (request) => {
+    const newPurpose = window.prompt("Update the purpose for this request:", request.purpose || '');
+    if (newPurpose === null || newPurpose === request.purpose) return;
+
     try {
-      setLoading(true);
-      let supportingDocUrl = null;
+      const toastId = toast.loading('Updating request...');
+      setRequests(prev => prev.map(r => r.id === request.id ? { ...r, purpose: newPurpose } : r)); 
+      await supabase.from('document_requests').update({ purpose: newPurpose }).eq('id', request.id);
+      await logDataModification(user.id, 'document_requests', request.id, 'DOCUMENT_UPDATED', { purpose: request.purpose }, { purpose: newPurpose });
+      toast.success('Request updated!', { id: toastId });
+    } catch (error) {
+      toast.error(`Edit failed: ${error.message}`);
+    }
+  };
 
-      // 1. If it's a duplicate request, upload the notarized document to Supabase Storage
-      if (formData.notarizedDocFile) {
-        const file = formData.notarizedDocFile;
-        // Clean filename and create a path
-        const filePath = `supporting_docs/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from('documents') 
-          .upload(filePath, file);
-
-        if (uploadError) throw uploadError;
-        
-        const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
-        supportingDocUrl = urlData.publicUrl;
-      }
-
-      // 2. Prepare database payload
-      const payload = { ...formData };
-      delete payload.notarizedDocFile; 
-
+  const handleRenewDocument = async (request) => {
+    if (!window.confirm(`Renew this request for ${request.resident?.first_name}?`)) return;
+    try {
+      const toastId = toast.loading('Renewing document...');
       await db.requests.create({
-        ...payload,
-        supporting_doc_url: supportingDocUrl,
+        resident_id: request.resident_id || request.resident?.id,
+        template_id: request.template_id || request.template?.id,
+        request_type: request.request_type,
+        purpose: request.purpose,
         status: 'pending',
         created_by: user.id, 
         created_at: new Date().toISOString()
       });
-      
-      toast.success('Request created successfully!');
-      setShowForm(false);
-      await loadData(); // Force sync
+      toast.success('Renewed! Check the Pending tab.', { id: toastId });
+      await loadData(); 
     } catch (error) {
-      toast.error(`Create failed: ${error.message}`);
-      console.error('Create error:', error);
-    } finally {
-      setLoading(false);
+      toast.error(`Renewal failed: ${error.message}`);
     }
   };
 
-  const handleProcessRequest = async (request) => {
-    if (!window.confirm('Process this document request? This will generate the PDF and update the status.')) return;
+  const handleRevokeDocument = async (request) => {
+    const reason = window.prompt('Enter reason for revoking this document:');
+    if (reason === null) return; 
+    try {
+      setRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'revoked' } : r));
+      triggerSidebarUpdate();
+      await db.requests.updateStatus(request.id, 'revoked', user.id, { rejection_reason: reason });
+      await logDataModification(user.id, 'document_requests', request.id, 'DOCUMENT_REVOKED', { status: request.status }, { status: 'revoked', reason });
+      toast.success('Document revoked.');
+    } catch (error) {
+      toast.error(`Revoke Error: ${error.message}`);
+    }
+  };
 
-    const oldStatus = request.status;
-
+  const handleProcessRequest = async (request, skipConfirm = false) => {
+    if (!skipConfirm && !window.confirm('Accept and process this request?')) return;
     try {
       setProcessingRequest(request.id);
-      
-      // INSTANT UI UPDATE
       setRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'completed' } : r));
+      triggerSidebarUpdate();
 
-      // 1. Prepare data & Generate PDF
       const templateData = prepareTemplateData(request.resident, settings, { purpose: request.purpose });
-      const { blob, fileName } = await generatePDFDocument(
-        request.template.template_content,
-        templateData,
-        `${request.request_type || 'Document'}_${request.resident.last_name}.pdf`
-      );
+      const { blob, fileName } = await generatePDFDocument(request.template.template_content, templateData, `${request.request_type}_${request.resident.last_name}.pdf`);
+      
+      const uniqueFileName = `${Date.now()}_${fileName.replace(/\s+/g, '_')}`;
+      const filePath = `processed_requests/${uniqueFileName}`;
+      await supabase.storage.from('documents').upload(filePath, blob, { contentType: 'application/pdf', upsert: false });
+      const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
 
-      // 2. SUPABASE STORAGE UPLOAD 
-      let uploadParams = {};
-      try {
-        const uniqueFileName = `${Date.now()}_${fileName.replace(/\s+/g, '_')}`;
-        const filePath = `processed_requests/${uniqueFileName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('documents')
-          .upload(filePath, blob, {
-            contentType: 'application/pdf',
-            upsert: false
-          });
-
-        if (uploadError) throw uploadError;
-
-        const { data: urlData } = supabase.storage
-          .from('documents')
-          .getPublicUrl(filePath);
-
-        if (urlData) {
-          uploadParams = { 
-            document_url: urlData.publicUrl, 
-            storage_path: filePath 
-          };
-          toast.success('Saved to Supabase Storage');
-        }
-      } catch (storageError) {
-        console.warn('Storage upload skipped/failed:', storageError);
-        toast.error('Could not upload to Storage, but will still process document.', { icon: '⚠️' });
-      }
-
-      // 3. CALCULATE EXPIRATION DATE
       const validityDays = request.template?.validity_days || 180;
-      const expirationDate = new Date();
-      expirationDate.setDate(expirationDate.getDate() + validityDays);
-      
-      uploadParams.expiration_date = expirationDate.toISOString().split('T')[0];
+      const expDate = new Date();
+      expDate.setDate(expDate.getDate() + validityDays);
 
-      // 4. Update Database Status to Completed
-      await db.requests.updateStatus(request.id, 'completed', user.id, uploadParams);
+      await db.requests.updateStatus(request.id, 'completed', user.id, {
+        document_url: urlData.publicUrl,
+        storage_path: filePath,
+        expiration_date: expDate.toISOString().split('T')[0]
+      });
 
-      // 5. SAFE AUDIT LOG
-      try {
-        await logDataModification(
-          user.id,
-          'document_requests',
-          request.id,
-          ACTIONS?.DOCUMENT_APPROVED || 'DOCUMENT_APPROVED', 
-          { status: oldStatus },
-          { status: 'completed' }
-        );
-      } catch (auditErr) {
-        console.warn("Audit log skipped", auditErr);
+      if (!skipConfirm) {
+        toast.success('Document accepted & processed!');
+        if (viewingRequest) setViewingRequest(null);
       }
-
-      toast.success('Document processed successfully!');
-      if (viewingRequest) setViewingRequest(null);
-      
-      previewPDF(blob); 
-      await loadData(); // Force sync to get accurate URLs
-
+      return true;
     } catch (error) {
-      toast.error(`Processing Error: ${error.message}`);
-      console.error('Error processing request:', error);
-      await loadData(); // Revert on fail
+      toast.error(`Error: ${error.message}`);
+      return false;
     } finally {
       setProcessingRequest(null);
     }
   };
 
-  const handleRejectRequest = async (request) => {
-    const reason = window.prompt('Enter rejection reason (optional):');
-    if (reason === null) return; 
-    
-    const oldStatus = request.status;
-
+  const handleReleaseDocument = async (request, skipConfirm = false) => {
+    if (!skipConfirm && !window.confirm('Mark this document as released?')) return;
     try {
-      // INSTANT UI UPDATE
-      setRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'rejected' } : r));
-
-      await db.requests.updateStatus(request.id, 'rejected', user.id, { rejection_reason: reason });
-
-      try {
-        await logDataModification(
-          user.id, 'document_requests', request.id, 'DOCUMENT_REJECTED',
-          { status: oldStatus }, { status: 'rejected', reason }
-        );
-      } catch (auditErr) {
-        console.warn("Audit log skipped", auditErr);
-      }
-
-      toast.success('Request rejected');
-      if (viewingRequest) setViewingRequest(null);
-      
-      await loadData(); // Sync DB
-
-    } catch (error) {
-      toast.error(`Rejection Error: ${error.message}`);
-      console.error('Reject error:', error);
-      await loadData(); // Revert on fail
-    }
-  };
-
-  const handleReleaseDocument = async (request) => {
-    if (!window.confirm('Mark this document as released to the resident?')) return;
-    const oldStatus = request.status;
-
-    try {
-      // INSTANT UI UPDATE
       setRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'released' } : r));
+      triggerSidebarUpdate();
 
       await db.requests.updateStatus(request.id, 'released', user.id);
-      
-      try {
-        await logDataModification(
-          user.id, 'document_requests', request.id, 'DOCUMENT_RELEASED',
-          { status: oldStatus }, { status: 'released' }
-        );
-      } catch (auditErr) {}
-
-      toast.success('Document marked as released');
-      if (viewingRequest) setViewingRequest(null);
-      
-      await loadData(); // Sync DB
+      if (!skipConfirm) {
+        toast.success('Marked as Released');
+        if (viewingRequest) setViewingRequest(null);
+      }
+      return true;
     } catch (error) {
-      toast.error(`Release Error: ${error.message}`);
-      await loadData(); // Revert on fail
+      return false;
     }
   };
 
   const handleArchiveDocument = async (request) => {
-    if (!window.confirm('Are you sure you want to archive this document? It will be removed from the main list.')) return;
-    const oldStatus = request.status;
-
+    if (!window.confirm('Move this request to the Archive?')) return;
     try {
-      // INSTANT UI UPDATE
       setRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'archived' } : r));
-
+      triggerSidebarUpdate();
       await db.requests.updateStatus(request.id, 'archived', user.id);
-      
-      try {
-        await logDataModification(
-          user.id, 'document_requests', request.id, 'DOCUMENT_ARCHIVED',
-          { status: oldStatus }, { status: 'archived' }
-        );
-      } catch (auditErr) {}
-
-      toast.success('Document archived successfully');
+      toast.success('Archived successfully');
       if (viewingRequest) setViewingRequest(null);
-      
-      await loadData(); // Sync DB
     } catch (error) {
-      toast.error(`Archive Error: ${error.message}`);
-      await loadData(); // Revert on fail
+      toast.error('Archive failed');
+    }
+  };
+
+  const handleRetrieveDocument = async (request) => {
+    if (!window.confirm('Retrieve this document from archive/rejected?')) return;
+    const newStatus = (request.document_url || request.storage_path) ? 'completed' : 'pending';
+    const toastId = toast.loading('Retrieving...');
+    try {
+      setRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: newStatus } : r));
+      triggerSidebarUpdate();
+      await db.requests.updateStatus(request.id, newStatus, user.id);
+      toast.success(`Retrieved to ${newStatus.toUpperCase()}`, { id: toastId });
+    } catch (error) {
+      toast.error('Retrieve failed', { id: toastId });
+    }
+  };
+
+  const handlePrintDocument = async (request) => {
+    try {
+      const tid = toast.loading('Opening Print Preview...');
+      const templateData = prepareTemplateData(request.resident, settings, { purpose: request.purpose });
+      const { blob } = await generatePDFDocument(request.template.template_content, templateData, `print_${request.id}.pdf`);
+      previewPDF(blob);
+      toast.dismiss(tid);
+    } catch (error) {
+      toast.error('Print failed');
     }
   };
 
@@ -349,191 +277,346 @@ const DocumentRequestsPage = () => {
       const templateData = prepareTemplateData(request.resident, settings, { purpose: request.purpose });
       const { blob, fileName } = await generatePDFDocument(request.template.template_content, templateData, `${request.request_type}_${request.resident.last_name}.pdf`);
       downloadPDF(blob, fileName);
-      toast.success('Download started');
     } catch (error) {
-      toast.error(`Download failed: ${error.message}`);
+      toast.error('Download failed');
     }
   };
 
-  // --- HELPERS ---
+  const handleCreateRequest = async (formData) => {
+    try {
+      setLoading(true);
+      let supportingDocUrl = null;
+      if (formData.notarizedDocFile) {
+        const file = formData.notarizedDocFile;
+        const filePath = `supporting_docs/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+        await supabase.storage.from('documents').upload(filePath, file);
+        const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
+        supportingDocUrl = urlData.publicUrl;
+      }
+      const payload = { ...formData };
+      delete payload.notarizedDocFile; 
+      await db.requests.create({ ...payload, supporting_doc_url: supportingDocUrl, status: 'pending', created_by: user.id });
+      toast.success('Request Created!');
+      setShowForm(false);
+      await loadData(); 
+    } catch (error) {
+      toast.error('Create failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleSelectAll = (e) => {
+    if (e.target.checked) setSelectedRequests(currentRequests.map(req => req.id)); 
+    else setSelectedRequests([]);
+  };
+
+  const toggleSelectRequest = (id) => {
+    setSelectedRequests(prev => prev.includes(id) ? prev.filter(reqId => reqId !== id) : [...prev, id]);
+  };
+
+  const handleBatchProcess = async () => {
+    if (!window.confirm(`Process ${selectedRequests.length} pending requests?`)) return;
+    setIsBatchProcessing(true);
+    const tid = toast.loading('Batch processing...');
+    for (const id of selectedRequests) {
+      const req = requests.find(r => r.id === id);
+      if (req?.status === 'pending') await handleProcessRequest(req, true);
+    }
+    toast.success('Batch Processing Complete', { id: tid });
+    setSelectedRequests([]); setIsBatchProcessing(false); 
+  };
+
+  const handleBatchRelease = async () => {
+    if (!window.confirm(`Release ${selectedRequests.length} documents?`)) return;
+    setIsBatchProcessing(true);
+    const tid = toast.loading('Releasing documents...');
+    for (const id of selectedRequests) {
+      const req = requests.find(r => r.id === id);
+      if (req?.status === 'completed') await handleReleaseDocument(req, true);
+    }
+    toast.success('Batch Release Complete', { id: tid });
+    setSelectedRequests([]); setIsBatchProcessing(false); 
+  };
 
   const getStatusBadgeClass = (status) => {
-    const statusMap = { pending: 'badge-warning', processing: 'badge-info', completed: 'badge-success', rejected: 'badge-danger', released: 'badge-success', archived: 'badge-secondary' };
+    const statusMap = { pending: 'badge-warning', processing: 'badge-info', completed: 'badge-success', rejected: 'badge-danger', revoked: 'badge-danger', released: 'badge-success', archived: 'badge-secondary' };
     return statusMap[status] || 'badge-info';
   };
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     let parsedString = dateString.replace(' ', 'T');
-    if (!/(Z|[+-]\d{2}(:\d{2})?)$/.test(parsedString)) {
-      parsedString += 'Z';
-    }
-    return new Date(parsedString).toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      year: 'numeric', 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
+    if (!/(Z|[+-]\d{2}(:\d{2})?)$/.test(parsedString)) parsedString += 'Z';
+    return new Date(parsedString).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
-  const canProcessDocs = !['record_keeper', 'view_only', 'clerk'].includes(user?.role);
+  const getPageTitle = () => selectedStatus === 'all' ? 'All Document Requests' : `${selectedStatus.charAt(0).toUpperCase() + selectedStatus.slice(1)} Requests`;
 
-  // Dynamic Title Generator
-  const getPageTitle = () => {
-    if (selectedStatus === 'all') return 'All Document Requests';
-    return `${selectedStatus.charAt(0).toUpperCase() + selectedStatus.slice(1)} Requests`;
-  };
+  // --- PAGINATION MATH ---
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentRequests = filteredRequests.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filteredRequests.length / itemsPerPage) || 1;
 
-  return (
-    <div className="document-requests-page">
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          {/* UPDATED DYNAMIC TITLE */}
-          <h1>{getPageTitle()}</h1>
-          <p>Process and manage barangay document requests</p>
-        </div>
-        {user?.role !== 'view_only' && (
-          <button className="btn btn-primary" onClick={() => setShowForm(true)}>
-            <Plus size={20} />
-            New Request
-          </button>
-        )}
-      </div>
+  // --- ACTION BUTTONS HELPER ---
+  const renderActionButtons = (request) => (
+    <div className="action-buttons" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+      <button className="btn-icon" onClick={() => setViewingRequest(request)} title="View Details">
+        <Eye size={18} />
+      </button>
+      <button className="btn-icon" onClick={() => handleDownloadDocument(request)} title="Download PDF">
+        <Download size={18} />
+      </button>
 
-      <div className="requests-controls">
-        <div className="search-box">
-          <Search size={20} />
-          <input
-            type="text"
-            placeholder="Search by resident name or doc type..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-      </div>
+      {canProcessDocs && (
+        <>
+          {request.status === 'pending' && (
+            <>
+              {/* Everyone can edit */}
+              <button className="btn-icon" style={{ background: '#f3f4f6', color: '#374151' }} onClick={() => handleEditRequest(request)} title="Edit Request Details">
+                <Edit size={18} />
+              </button>
+              
+              {/* ONLY ADMIN CAN ACCEPT OR ARCHIVE PENDING DOCS */}
+              {isAdmin && (
+                <>
+                  <button className="btn-icon btn-success" onClick={() => handleProcessRequest(request)} disabled={processingRequest === request.id} title="Accept & Generate PDF">
+                    {processingRequest === request.id ? <div className="spinner-small"></div> : <CheckCircle size={18} />}
+                  </button>
+                  <button className="btn-icon btn-danger" onClick={() => handleArchiveDocument(request)} title="Archive Document">
+                    <Archive size={18} />
+                  </button>
+                </>
+              )}
+            </>
+          )}
 
-      {loading && !showForm ? (
-        <div className="loading-state">
-          <div className="spinner"></div>
-          <p>Loading data...</p>
-        </div>
-      ) : (
-        <div className="card">
-          <div className="table-responsive">
-            <table>
-              <thead>
-                <tr>
-                  <th>Resident</th>
-                  <th>Document Type</th>
-                  <th>Status</th>
-                  <th>Date Requested</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRequests.length === 0 ? (
-                  <tr>
-                    <td colSpan="5" className="empty-row" style={{ textAlign: 'center', padding: '20px' }}>No requests found matching your filters.</td>
-                  </tr>
-                ) : (
-                  filteredRequests.map((request) => (
-                    <tr key={request.id}>
-                      <td>
-                        <strong>{request.resident?.first_name} {request.resident?.last_name}</strong>
-                      </td>
-                      <td><span className="document-badge">{request.request_type || request.template?.template_name}</span></td>
-                      <td>
-                        <span className={`badge ${getStatusBadgeClass(request.status)}`}>
-                          {request.status.toUpperCase()}
-                        </span>
-                      </td>
-                      <td>{formatDate(request.created_at)}</td>
-                      <td>
-                        <div className="action-buttons">
-                          <button className="btn-icon" onClick={() => setViewingRequest(request)} title="View Details">
-                            <Eye size={18} />
-                          </button>
-                          
-                          <button className="btn-icon" onClick={() => handleDownloadDocument(request)} title="Download PDF">
-                            <Download size={18} />
-                          </button>
-                          
-                          {canProcessDocs && (
-                            <>
-                              {request.status === 'pending' && (
-                                <>
-                                  <button
-                                    className="btn-icon btn-success"
-                                    onClick={() => handleProcessRequest(request)}
-                                    disabled={processingRequest === request.id}
-                                    title="Process & Upload"
-                                  >
-                                    {processingRequest === request.id ? <div className="spinner-small"></div> : <CheckCircle size={18} />}
-                                  </button>
-                                  <button className="btn-icon btn-danger" onClick={() => handleRejectRequest(request)} title="Reject"><XCircle size={18} /></button>
-                                </>
-                              )}
+          {request.status === 'completed' && (
+            <>
+              {/* Clerks/Record Keepers CAN print and release completed docs */}
+              <button className="btn-icon" style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }} onClick={() => handlePrintDocument(request)} title="Print Document">
+                <Printer size={18} />
+              </button>
+              <button className="btn-icon btn-success" onClick={() => handleReleaseDocument(request)} title="Mark as Released">
+                <Send size={18} />
+              </button>
+            </>
+          )}
 
-                              {request.status === 'completed' && (
-                                <button className="btn-icon btn-success" onClick={() => handleReleaseDocument(request)} title="Mark as Released"><Send size={18} /></button>
-                              )}
+          {request.status === 'released' && (
+            <>
+              <button className="btn-icon btn-primary" onClick={() => handleRenewDocument(request)} title="Renew / Duplicate Request">
+                <Copy size={18} />
+              </button>
+              <button className="btn-icon btn-danger" onClick={() => handleRevokeDocument(request)} title="Revoke Document">
+                <Ban size={18} />
+              </button>
+              {/* RESTRICTED TO ADMIN */}
+              {isAdmin && (
+                <button className="btn-icon" style={{ background: '#e2e8f0', color: '#475569' }} onClick={() => handleArchiveDocument(request)} title="Archive Document">
+                  <Archive size={18} />
+                </button>
+              )}
+            </>
+          )}
 
-                              {/* --- UPDATED ARCHIVE BUTTON (HIDDEN FOR REJECTED) --- */}
-                              {['completed', 'released'].includes(request.status) && (
-                                <button className="btn-icon btn-danger" style={{ color: '#ef4444' }} onClick={() => handleArchiveDocument(request)} title="Archive Document">
-                                  <Archive size={18} />
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Document Details Modal */}
-      {viewingRequest && (
-        <Modal
-          isOpen={!!viewingRequest}
-          onClose={() => setViewingRequest(null)}
-          title="Document Details & Preview"
-          size="xl" 
-        >
-          <DocumentRequestDetails 
-            request={viewingRequest}
-            onClose={() => setViewingRequest(null)}
-            onApprove={canProcessDocs ? handleProcessRequest : null}
-            onReject={canProcessDocs ? handleRejectRequest : null}
-            onDownload={handleDownloadDocument}
-          />
-        </Modal>
-      )}
-
-      {/* Create Request Modal */}
-      {showForm && (
-        <Modal
-          isOpen={showForm}
-          onClose={() => setShowForm(false)}
-          title="Create New Document Request"
-          size="xl" 
-        >
-          <DocumentRequestForm
-            templates={templates}
-            residents={residents}
-            allRequests={requests} 
-            onSubmit={handleCreateRequest}
-            onCancel={() => setShowForm(false)}
-          />
-        </Modal>
+          {['archived', 'rejected', 'revoked'].includes(request.status) && (
+            <>
+              {/* RESTRICTED TO ADMIN */}
+              {isAdmin && (
+                <button className="btn-icon btn-primary" onClick={() => handleRetrieveDocument(request)} title="Retrieve Document">
+                  <RefreshCw size={18} />
+                </button>
+              )}
+              <button className="btn-icon" style={{ background: '#dbeafe', color: '#1d4ed8' }} onClick={() => handleRenewDocument(request)} title="Renew / Duplicate Request">
+                <Copy size={18} />
+              </button>
+            </>
+          )}
+        </>
       )}
     </div>
+  );
+
+  return (
+    <>
+      {/* MOBILE RESPONSIVE CSS INJECTED DIRECTLY */}
+      <style>{`
+        .desktop-table-container { display: block; }
+        .mobile-cards-container { display: none; }
+        
+        @media (max-width: 768px) {
+          .desktop-table-container { display: none; }
+          .mobile-cards-container { display: flex; flex-direction: column; gap: 1rem; }
+          
+          .document-requests-page .page-header { flex-direction: column !important; align-items: flex-start !important; gap: 1rem; }
+          .document-requests-page .page-header button { width: 100%; justify-content: center; }
+          
+          .batch-actions-bar { flex-direction: column !important; align-items: stretch !important; gap: 1rem; text-align: center; }
+          .batch-actions-bar .batch-buttons { display: flex; flex-direction: column; gap: 0.5rem; width: 100%; }
+          .batch-actions-bar .batch-buttons button { width: 100%; justify-content: center; }
+
+          .pagination-controls { flex-direction: column !important; gap: 1rem; text-align: center; }
+          .pagination-controls button { flex: 1; }
+          .pagination-controls > div { width: 100%; justify-content: space-between; }
+        }
+      `}</style>
+
+      <div className="document-requests-page">
+        <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div><h1>{getPageTitle()}</h1><p>Process and manage barangay document requests</p></div>
+          {user?.role !== 'view_only' && (
+            <button className="btn btn-primary" onClick={() => setShowForm(true)}><Plus size={20} /> New Request</button>
+          )}
+        </div>
+
+        {selectedRequests.length > 0 && canProcessDocs && (
+          <div className="batch-actions-bar" style={{ backgroundColor: 'var(--primary-50)', border: '1px solid var(--primary-200)', padding: '12px 20px', borderRadius: '8px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', animation: 'fadeIn 0.2s ease-in-out' }}>
+            <span style={{ fontWeight: '600', color: 'var(--primary-700)' }}>{selectedRequests.length} request(s) selected</span>
+            <div className="batch-buttons" style={{ display: 'flex', gap: '10px' }}>
+              {/* BATCH ACCEPT STRICTLY FOR ADMIN ONLY */}
+              {selectedStatus === 'pending' && isAdmin && (
+                <button className="btn btn-primary" onClick={handleBatchProcess} disabled={isBatchProcessing}><CheckSquare size={18} style={{marginRight: '6px'}} /> Accept Selected</button>
+              )}
+              {/* BATCH RELEASE FOR CLERKS AND ADMINS */}
+              {selectedStatus === 'completed' && (
+                <button className="btn btn-success" onClick={handleBatchRelease} disabled={isBatchProcessing}><Send size={18} style={{marginRight: '6px'}} /> Release Selected</button>
+              )}
+              {selectedStatus !== 'pending' && selectedStatus !== 'completed' && <span style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem' }}>Batch actions available in Pending/Completed</span>}
+            </div>
+          </div>
+        )}
+
+        <div className="requests-controls">
+          <div className="search-box"><Search size={20} /><input type="text" placeholder="Search by name or type..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
+        </div>
+
+        {loading && !showForm ? (
+          <div className="loading-state"><div className="spinner"></div><p>Loading data...</p></div>
+        ) : (
+          <>
+            {/* DESKTOP VIEW: STANDARD TABLE */}
+            <div className="card desktop-table-container">
+              <div className="table-responsive">
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '40px', textAlign: 'center' }}>
+                        <input type="checkbox" onChange={toggleSelectAll} checked={currentRequests.length > 0 && selectedRequests.length === currentRequests.length} />
+                      </th>
+                      <th>Resident</th>
+                      <th>Document Type</th>
+                      <th>Status</th>
+                      <th>Date Requested</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {currentRequests.length === 0 ? (
+                      <tr><td colSpan="6" className="empty-row" style={{ textAlign: 'center', padding: '20px' }}>No requests found matching your filters.</td></tr>
+                    ) : (
+                      currentRequests.map((request) => (
+                        <tr key={request.id} style={{ backgroundColor: selectedRequests.includes(request.id) ? 'var(--primary-50)' : 'transparent' }}>
+                          <td style={{ textAlign: 'center' }}>
+                            <input type="checkbox" checked={selectedRequests.includes(request.id)} onChange={() => toggleSelectRequest(request.id)} />
+                          </td>
+                          <td><strong>{request.resident?.first_name} {request.resident?.last_name}</strong></td>
+                          <td><span className="document-badge">{request.request_type || request.template?.template_name}</span></td>
+                          <td><span className={`badge ${getStatusBadgeClass(request.status)}`}>{request.status.toUpperCase()}</span></td>
+                          <td>{formatDate(request.created_at)}</td>
+                          <td>{renderActionButtons(request)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* MOBILE VIEW: CARD LAYOUT */}
+            <div className="mobile-cards-container">
+              {currentRequests.length > 0 && (
+                <div style={{ padding: '12px', background: '#fff', borderRadius: '8px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <input type="checkbox" onChange={toggleSelectAll} checked={currentRequests.length > 0 && selectedRequests.length === currentRequests.length} />
+                  <strong style={{ color: 'var(--text-secondary)' }}>Select All on Page</strong>
+                </div>
+              )}
+              
+              {currentRequests.length === 0 ? (
+                <div className="empty-row" style={{ textAlign: 'center', padding: '20px', background: '#fff', borderRadius: '8px', border: '1px solid var(--border)' }}>No requests found.</div>
+              ) : (
+                currentRequests.map((request) => (
+                  <div key={request.id} style={{ background: selectedRequests.includes(request.id) ? 'var(--primary-50)' : '#fff', border: selectedRequests.includes(request.id) ? '1px solid var(--primary-300)' : '1px solid var(--border)', borderRadius: '8px', padding: '15px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <input type="checkbox" checked={selectedRequests.includes(request.id)} onChange={() => toggleSelectRequest(request.id)} style={{ transform: 'scale(1.2)' }} />
+                        <span style={{ fontSize: '1.05rem', fontWeight: '600', color: 'var(--text-primary)' }}>{request.resident?.first_name} {request.resident?.last_name}</span>
+                      </div>
+                      <span className={`badge ${getStatusBadgeClass(request.status)}`} style={{ fontSize: '0.7rem' }}>{request.status.toUpperCase()}</span>
+                    </div>
+                    
+                    <div style={{ marginBottom: '8px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                      <strong>Document:</strong> <span className="document-badge" style={{ marginLeft: '5px' }}>{request.request_type || request.template?.template_name}</span>
+                    </div>
+                    <div style={{ marginBottom: '16px', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>
+                      <strong>Requested:</strong> {formatDate(request.created_at)}
+                    </div>
+                    
+                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
+                      {renderActionButtons(request)}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* --- PAGINATION CONTROLS --- */}
+            {filteredRequests.length > itemsPerPage && (
+              <div className="pagination-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', marginTop: '1rem', background: 'var(--neutral-50)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                  Showing <strong>{indexOfFirstItem + 1}</strong> to <strong>{Math.min(indexOfLastItem, filteredRequests.length)}</strong> of <strong>{filteredRequests.length}</strong>
+                </span>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <button className="btn btn-secondary" style={{ padding: '6px 10px', margin: 0 }} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                    <ChevronLeft size={16} /> Prev
+                  </button>
+                  
+                  <span style={{ fontSize: '0.875rem', fontWeight: '500', padding: '0 10px' }}>
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  
+                  <button className="btn btn-secondary" style={{ padding: '6px 10px', margin: 0 }} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+                    Next <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* DETAILS MODAL (Locked out for non-admins on pending docs) */}
+        {viewingRequest && (
+          <Modal isOpen={!!viewingRequest} onClose={() => setViewingRequest(null)} title="Document Details & Preview" size="xl">
+            <DocumentRequestDetails 
+              request={viewingRequest} 
+              onClose={() => setViewingRequest(null)} 
+              // ONLY pass handleProcessRequest if it's NOT pending OR if user is admin
+              onApprove={(viewingRequest.status === 'pending' && !isAdmin) ? null : handleProcessRequest} 
+              onReject={isAdmin ? handleArchiveDocument : null} 
+              onDownload={handleDownloadDocument} 
+            />
+          </Modal>
+        )}
+
+        {showForm && (
+          <Modal isOpen={showForm} onClose={() => setShowForm(false)} title="Create New Document Request" size="xl">
+            <DocumentRequestForm templates={templates} residents={residents} allRequests={requests} onSubmit={handleCreateRequest} onCancel={() => setShowForm(false)} />
+          </Modal>
+        )}
+      </div>
+    </>
   );
 };
 
