@@ -54,60 +54,72 @@ const replaceVariables = (templateText, data) => {
   return result;
 };
 
-// --- UPDATED ADDRESS LOGIC ---
-
-// 1. Gets House No, Street, and Purok smartly
+// --- ADDRESS LOGIC ---
 const formatAddress = (resident) => {
   const parts = [];
-  if (resident.full_address) parts.push(resident.full_address);
-  if (resident.purok) {
-    // Prevent duplicating the word "Purok"
+  if (resident?.full_address) parts.push(resident.full_address);
+  if (resident?.purok) {
     const purokText = resident.purok.toLowerCase().includes('purok') ? resident.purok : `Purok ${resident.purok}`;
     parts.push(purokText);
   }
   return parts.join(', ');
 };
 
-// 2. Combines everything including Barangay, City, Province, and Zip Code
 const formatFullAddress = (resident, city, province) => {
   const baseAddress = formatAddress(resident);
-  let brgy = resident.barangay || '';
+  let brgy = resident?.barangay || '';
   if (brgy && !brgy.toLowerCase().startsWith('brgy') && !brgy.toLowerCase().startsWith('barangay')) {
       brgy = `Barangay ${brgy}`;
   }
   
-  // Cleanly combine province and zip
-  const prov = province || resident.province || '';
-  const zip = resident.zip_code ? ` ${resident.zip_code}` : '';
+  const prov = province || resident?.province || '';
+  const zip = resident?.zip_code ? ` ${resident.zip_code}` : '';
   const provinceWithZip = `${prov}${zip}`.trim();
 
-  // filter(Boolean) safely removes empty strings so we don't get double commas
   return [
     baseAddress, 
     brgy, 
-    city || resident.city_municipality, 
+    city || resident?.city_municipality, 
     provinceWithZip
   ].filter(Boolean).join(', ');
 };
 
-const calculateResidencyYears = (createdAt) => {
-  if (!createdAt) return '0';
-  try {
-    const years = new Date().getFullYear() - new Date(createdAt).getFullYear();
-    return Math.max(0, years).toString();
-  } catch (error) {
-    return '0';
+// --- PERFECT RESIDENCY LOGIC ---
+// Extracts just the year (e.g. "2008") from "2008-12-23"
+const getResidentSinceYear = (resident) => {
+  if (resident?.residency_start_date) {
+    try {
+      return new Date(resident.residency_start_date).getFullYear().toString();
+    } catch (e) {
+      return resident.residency_start_date.substring(0, 4); // Fallback string slice
+    }
   }
+  
+  // Fallback to the year the account was registered
+  if (resident?.created_at) {
+    return new Date(resident.created_at).getFullYear().toString();
+  }
+  return new Date().getFullYear().toString();
+};
+
+// Calculates the duration (e.g. "17") based on the start date
+const calculateResidencyDuration = (resident) => {
+  const startYear = Number(getResidentSinceYear(resident));
+  const currentYear = new Date().getFullYear();
+  return Math.max(0, currentYear - startYear).toString();
 };
 
 export const prepareTemplateData = (resident = {}, settings = {}, additionalData = {}) => {
   try {
     const getSet = (key, fallback) => {
+      let val = null;
       if (Array.isArray(settings)) {
         const found = settings.find(s => s.setting_key === key);
-        return found && found.setting_value ? found.setting_value : fallback;
+        if (found && found.setting_value) val = found.setting_value;
+      } else if (settings[key]) {
+        val = settings[key];
       }
-      return settings[key] || fallback;
+      return val && String(val).trim() !== '' ? String(val) : fallback;
     };
 
     const nameParts = [resident.first_name, resident.middle_name, resident.last_name, resident.suffix].filter(Boolean);
@@ -115,8 +127,18 @@ export const prepareTemplateData = (resident = {}, settings = {}, additionalData
     
     const city = getSet('city_municipality', resident.city_municipality || 'Calamba City');
     const province = getSet('province', resident.province || 'Laguna');
+    const brgy = getSet('barangay_name', resident.barangay || '');
 
-    return {
+    const rawKagawads = getSet('barangay_kagawads', '');
+    const kagawadList = rawKagawads.split('\n').filter(name => name.trim() !== '');
+
+    const fullAddressString = resident.complete_address || resident.full_address || '';
+
+    // Calculate EXACTLY from your database column
+    const startYear = getResidentSinceYear(resident);
+    const duration = calculateResidencyDuration(resident);
+
+    const templateData = {
       id: resident.id || '',
       first_name: resident.first_name || '',
       middle_name: resident.middle_name || '',
@@ -130,10 +152,9 @@ export const prepareTemplateData = (resident = {}, settings = {}, additionalData
       civil_status: resident.civil_status || '',
       nationality: resident.nationality || 'Filipino',
       
-      // NEW & UPDATED: Address Variables
-      street_address: formatAddress(resident), 
-      complete_address: formatFullAddress(resident, city, province),
-      full_address: formatFullAddress(resident, city, province), // Overrides old variable so existing templates won't break
+      complete_address: fullAddressString,
+      full_address: fullAddressString, 
+      address: fullAddressString,
       
       mobile_number: resident.mobile_number || '',
       email: resident.email || '',
@@ -143,11 +164,18 @@ export const prepareTemplateData = (resident = {}, settings = {}, additionalData
       pwd_status: resident.pwd_status ? 'Yes' : 'No',
       senior_citizen: resident.senior_citizen ? 'Yes' : 'No',
       
-      barangay_name: getSet('barangay_name', resident.barangay || ''),
+      barangay_name: brgy,
+      barangay: brgy,
       barangay_chairman: getSet('barangay_chairman', ''),
-      barangay_kagawad_list: getSet('barangay_kagawad_list', ''),
+      sk_chairman: getSet('sk_chairman', ''),
+      
+      all_kagawads_list: kagawadList.join('<br>'),
+      barangay_kagawad_list: kagawadList.join('<br>'),
+
       city: city,
+      city_municipality: city,
       province_name: province,
+      province: province, 
       region: getSet('region', 'Region IV-A'),
       contact_number: getSet('contact_number', ''),
       email_address: getSet('email_address', ''),
@@ -155,9 +183,21 @@ export const prepareTemplateData = (resident = {}, settings = {}, additionalData
       date_issued: format(new Date(), 'MMMM dd, yyyy'),
       date_issued_short: format(new Date(), 'MM/dd/yyyy'),
       year: format(new Date(), 'yyyy'),
-      residency_years: calculateResidencyYears(resident.created_at),
+      purpose: additionalData?.purpose || 'whatever legal purpose it may serve',
+      
+      // FINALLY! These will map perfectly based on "residency_start_date"
+      resident_since: startYear, // Outputs: "2008"
+      residency_duration: duration, // Outputs: "18" (or 17)
+      residency_years: duration, // Keeping this so your old template doesn't break
+      
       ...additionalData
     };
+
+    kagawadList.forEach((name, index) => {
+      templateData[`kagawad_${index + 1}`] = name;
+    });
+
+    return templateData;
   } catch (error) {
     console.error('Error preparing data:', error);
     throw new Error('Failed to prepare template data');
@@ -177,7 +217,6 @@ export const generatePDFDocument = async (templateContent, data, documentName = 
     const margin = 20;
     const contentWidth = pageWidth - (margin * 2);
     
-    // --- 1. DRAW OFFICIAL HEADER ---
     let currentY = 15;
     const logoSize = 28;
     
@@ -215,14 +254,12 @@ export const generatePDFDocument = async (templateContent, data, documentName = 
     
     currentY += 15; 
 
-    // --- 2. PREPARE HTML & INJECT VARIABLES ---
     const htmlWithData = replaceVariables(templateContent, data);
     const preppedHtml = htmlWithData.replace(/\{\{thumbprint_boxes\}\}/g, '<thumbprints></thumbprints>');
 
     const parser = new DOMParser();
     const dom = parser.parseFromString(preppedHtml, 'text/html');
 
-    // --- 3. ADVANCED RICH-TEXT RENDER ENGINE ---
     const lineHeight = 6;
     doc.setFontSize(12);
 
@@ -377,7 +414,6 @@ export const generatePDFDocument = async (templateContent, data, documentName = 
         currentY += 4; 
     });
     
-    // --- 4. DRAW FOOTER ---
     const footerY = pageHeight - 15;
     doc.setFontSize(10);
     doc.setFont('helvetica', 'italic');

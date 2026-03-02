@@ -4,10 +4,9 @@ import { useSettings } from '../context/SettingsContext';
 import { PageHeader, Breadcrumbs } from '../components/layout';
 import { 
   BarangayInfoSettings, 
-  SystemSettings, 
-  
+  SystemSettings 
 } from '../components/settings';
-import { Building2, Settings, Palette, ShieldCheck } from 'lucide-react';
+import { Building2, Settings, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import './SettingsPage.css';
@@ -17,11 +16,10 @@ const SettingsPage = () => {
   const { settings, refreshSettings } = useSettings();
   const [activeTab, setActiveTab] = useState('barangay');
 
-  // Define tabs including the new Security/Session tab
   const tabs = [
     { id: 'barangay', label: 'Barangay Info', icon: Building2 },
     { id: 'system', label: 'System', icon: Settings },
-    
+    { id: 'security', label: 'Security', icon: ShieldCheck } 
   ];
 
   return (
@@ -63,10 +61,15 @@ const SettingsPage = () => {
           </div>
         )}
 
-
         {activeTab === 'security' && (
           <div className="tab-pane fade-in">
-            <SessionManagement />
+            {/* Removed the broken SessionManagement component. 
+                Using a placeholder until you build the security module. */}
+            <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', background: 'var(--surface)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+               <ShieldCheck size={48} style={{ color: 'var(--neutral-400)', marginBottom: '1rem' }} />
+               <h3>Security & Sessions</h3>
+               <p>This module is currently under construction.</p>
+            </div>
           </div>
         )}
       </div>

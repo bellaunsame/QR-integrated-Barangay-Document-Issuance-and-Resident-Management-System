@@ -1,268 +1,238 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSettings } from '../../context/SettingsContext';
-import { Building2, Phone, Mail, Save, RefreshCw } from 'lucide-react';
-import { Input } from '../common';
-import toast from 'react-hot-toast'; // Required for notifications
-import './BarangayInfoSettings.css';
+import { supabase } from '../../services/supabaseClient'; 
+import { Save, Building2, Users } from 'lucide-react';
+import toast from 'react-hot-toast';
 
-/**
- * BarangayInfoSettings Component
- * Manages barangay administrative information and contact details.
- * Integrates with SettingsContext to persist data to the Supabase backend.
- */
 const BarangayInfoSettings = () => {
-  const { settings, updateSettings } = useSettings();
+  const { settings, refreshSettings } = useSettings();
   const [loading, setLoading] = useState(false);
   
-  // Initialize form state with data from SettingsContext
-  // FIXED: Changed captain_name to barangay_chairman and kagawad_names to barangay_kagawad_list
+  // Main form state
   const [formData, setFormData] = useState({
-    barangay_name: settings?.barangay_name || '',
-    city_municipality: settings?.city_municipality || '',
-    province: settings?.province || '',
-    region: settings?.region || '',
-    zip_code: settings?.zip_code || '',
-    contact_number: settings?.contact_number || '',
-    email_address: settings?.email_address || '',
-    barangay_chairman: settings?.barangay_chairman || '',
-    barangay_kagawad_list: settings?.barangay_kagawad_list || '',
-    sk_chairman: settings?.sk_chairman || '',
-    barangay_website: settings?.barangay_website || '',
-    enable_email_notifications: settings?.enable_email_notifications ?? true
+    barangay_name: '',
+    city_municipality: '',
+    province: '',
+    contact_number: '',
+    email_address: '',
+    barangay_chairman: '',
+    sk_chairman: '',
+    barangay_kagawads: ''
   });
 
+  // State specifically for the 7 Kagawad boxes
+  const [kagawadList, setKagawadList] = useState(Array(7).fill(''));
+
+  // Load existing settings into the form
+  useEffect(() => {
+    if (settings) {
+      // Helper function to safely extract values from settings array or object
+      const getSet = (key, fallback = '') => {
+        if (Array.isArray(settings)) {
+          const found = settings.find(s => s.setting_key === key);
+          return found && found.setting_value ? found.setting_value : fallback;
+        }
+        return settings[key] || fallback;
+      };
+
+      setFormData({
+        barangay_name: getSet('barangay_name'),
+        city_municipality: getSet('city_municipality'),
+        province: getSet('province'),
+        contact_number: getSet('contact_number'),
+        email_address: getSet('email_address'),
+        barangay_chairman: getSet('barangay_chairman'),
+        sk_chairman: getSet('sk_chairman'),
+        barangay_kagawads: getSet('barangay_kagawads')
+      });
+
+      // Parse the saved kagawads into exactly 7 slots
+      const initialKagawads = getSet('barangay_kagawads', '');
+      const parsed = initialKagawads.split('\n').filter(name => name.trim() !== '');
+      
+      const fixedList = Array(7).fill('');
+      for (let i = 0; i < 7; i++) {
+        if (parsed[i]) fixedList[i] = parsed[i];
+      }
+      setKagawadList(fixedList);
+    }
+  }, [settings]);
+
+  // Handle standard text inputs
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  /**
-   * Validates and submits the updated barangay information.
-   */
+  // Handle specific Kagawad input changes
+  const handleKagawadChange = (index, value) => {
+    const newList = [...kagawadList];
+    newList[index] = value;
+    setKagawadList(newList);
+    // Combine the 7 boxes into a single string with line breaks for the database
+    setFormData(prev => ({ ...prev, barangay_kagawads: newList.join('\n') }));
+  };
+
+  // Save changes to the database
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    // Field Validation
-    if (!formData.barangay_name) {
-      toast.error('Barangay name is required');
-      return;
-    }
-
-    // Standard Philippine Mobile Format Check (e.g., 09123456789)
-    const phoneRegex = /^09\d{9}$/;
-    if (formData.contact_number && !phoneRegex.test(formData.contact_number)) {
-      toast.error('Invalid phone number format (Use: 09XXXXXXXXX)');
-      return;
-    }
-
     setLoading(true);
-
+    
     try {
-      // Calls the updateSettings function provided by SettingsContext
-      await updateSettings(formData);
-      toast.success('Barangay information updated successfully!');
+      // Loop through all form data and update the settings table directly using Supabase
+      const updates = Object.keys(formData).map(key => {
+        return supabase
+          .from('system_settings') // FIXED: Now points to the correct table name!
+          .upsert(
+            { setting_key: key, setting_value: String(formData[key]) }, 
+            { onConflict: 'setting_key' } 
+          );
+      });
+      
+      const results = await Promise.all(updates);
+
+      // Check if any of the updates threw an error
+      for (const res of results) {
+        if (res.error) throw res.error;
+      }
+      
+      await refreshSettings();
+      toast.success('Barangay Information updated successfully!');
     } catch (error) {
-      console.error('Error updating barangay info:', error);
-      toast.error(error.message || 'Failed to update settings');
+      toast.error('Failed to update settings. Check console for details.');
+      console.error("Settings Update Error:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  /**
-   * Resets the form fields to the last saved state in the database.
-   */
-  const handleReset = () => {
-    if (window.confirm('Discard unsaved changes and reset form?')) {
-      setFormData({
-        barangay_name: settings?.barangay_name || '',
-        city_municipality: settings?.city_municipality || '',
-        province: settings?.province || '',
-        region: settings?.region || '',
-        zip_code: settings?.zip_code || '',
-        contact_number: settings?.contact_number || '',
-        email_address: settings?.email_address || '',
-        barangay_chairman: settings?.barangay_chairman || '',
-        barangay_kagawad_list: settings?.barangay_kagawad_list || '',
-        sk_chairman: settings?.sk_chairman || '',
-        barangay_website: settings?.barangay_website || '',
-      });
-      toast('Form has been reset');
-    }
-  };
-
   return (
-    <div className="barangay-info-settings">
-      <form onSubmit={handleSubmit}>
-        {/* Basic Information Section */}
-        <div className="settings-section">
-          <div className="section-header">
-            <Building2 size={20} />
-            <h3>Basic Information</h3>
-          </div>
-
-          <div className="form-grid">
-            <Input
-              label="Barangay Name"
+    <form onSubmit={handleSubmit} className="settings-form">
+      
+      {/* SECTION 1: General Location Info */}
+      <div className="settings-section">
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: 'var(--primary-700)' }}>
+          <Building2 size={20} /> General Information
+        </h3>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
+          <div className="form-group">
+            <label>Barangay Name</label>
+            <input
+              type="text"
               name="barangay_name"
               value={formData.barangay_name}
               onChange={handleChange}
-              placeholder="Enter barangay name"
-              required
+              placeholder="e.g. Barangay Dos"
+              className="form-control"
             />
-
-            <Input
-              label="City/Municipality"
+          </div>
+          <div className="form-group">
+            <label>City / Municipality</label>
+            <input
+              type="text"
               name="city_municipality"
               value={formData.city_municipality}
               onChange={handleChange}
-              placeholder="Enter city or municipality"
-              required
+              placeholder="e.g. Cabuyao City"
+              className="form-control"
             />
-
-            <Input
-              label="Province"
+          </div>
+          <div className="form-group">
+            <label>Province</label>
+            <input
+              type="text"
               name="province"
               value={formData.province}
               onChange={handleChange}
-              placeholder="Enter province"
-              required
-            />
-
-            <Input
-              label="Region"
-              name="region"
-              value={formData.region}
-              onChange={handleChange}
-              placeholder="e.g., NCR, Region IV-A"
-              required
-            />
-
-            <Input
-              label="ZIP Code"
-              name="zip_code"
-              value={formData.zip_code}
-              onChange={handleChange}
-              placeholder="Enter ZIP code"
+              placeholder="e.g. Laguna"
+              className="form-control"
             />
           </div>
-        </div>
-
-        {/* Contact Information Section */}
-        <div className="settings-section">
-          <div className="section-header">
-            <Phone size={20} />
-            <h3>Contact Information</h3>
-          </div>
-
-          <div className="form-grid">
-            <Input
-              label="Contact Number"
+          <div className="form-group">
+            <label>Contact Number</label>
+            <input
+              type="text"
               name="contact_number"
-              icon={<Phone size={18} />}
               value={formData.contact_number}
               onChange={handleChange}
-              placeholder="09123456789"
-            />
-
-            <Input
-              label="Email Address"
-              name="email_address"
-              type="email"
-              icon={<Mail size={18} />}
-              value={formData.email_address}
-              onChange={handleChange}
-              placeholder="barangay@example.com"
-            />
-
-            <Input
-              label="Website (Optional)"
-              name="barangay_website"
-              value={formData.barangay_website}
-              onChange={handleChange}
-              placeholder="https://www.barangay.gov.ph"
+              placeholder="e.g. (049) 123-4567"
+              className="form-control"
             />
           </div>
         </div>
+      </div>
 
-        {/* Officials Section */}
-        <div className="settings-section">
-          <div className="section-header">
-            <Building2 size={20} />
-            <h3>Barangay Officials</h3>
-          </div>
+      <hr style={{ margin: '24px 0', borderColor: 'var(--border)' }} />
 
-          <div className="form-grid">
-            {/* FIXED: Changed to barangay_chairman */}
-            <Input
-              label="Barangay Chairman"
+      {/* SECTION 2: Barangay Officials */}
+      <div className="settings-section">
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: 'var(--primary-700)' }}>
+          <Users size={20} /> Barangay Officials
+        </h3>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+          <div className="form-group">
+            <label>Barangay Chairman (Punong Barangay)</label>
+            <input
+              type="text"
               name="barangay_chairman"
               value={formData.barangay_chairman}
               onChange={handleChange}
               placeholder="Full name of barangay chairman"
+              className="form-control"
             />
-
-            <Input
-              label="SK Chairman"
+          </div>
+          <div className="form-group">
+            <label>SK Chairman</label>
+            <input
+              type="text"
               name="sk_chairman"
               value={formData.sk_chairman}
               onChange={handleChange}
               placeholder="Full name of SK chairman"
+              className="form-control"
             />
-
-            {/* FIXED: Changed to barangay_kagawad_list */}
-            <div className="form-group full-width">
-              <label htmlFor="barangay_kagawad_list">
-                Barangay Kagawads
-                <span className="label-hint">(One per line)</span>
-              </label>
-              <textarea
-                id="barangay_kagawad_list"
-                name="barangay_kagawad_list"
-                value={formData.barangay_kagawad_list}
-                onChange={handleChange}
-                placeholder="Enter kagawad names, one per line"
-                rows="6"
-                className="form-control"
-              />
-            </div>
           </div>
         </div>
 
-        {/* Form Actions */}
-        <div className="settings-actions">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={handleReset}
-            disabled={loading}
-          >
-            <RefreshCw size={20} />
-            Reset
-          </button>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={loading}
-          >
-            {loading ? (
-              <>
-                <div className="spinner-small"></div>
-                Saving...
-              </>
-            ) : (
-              <>
-                <Save size={20} />
-                Save Changes
-              </>
-            )}
-          </button>
+        {/* The 7 Fixed Kagawad Input Boxes */}
+        <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+          <label style={{ marginBottom: '12px', display: 'block', fontWeight: 'bold' }}>
+            Barangay Kagawads (7 Members)
+          </label>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '15px', background: 'var(--neutral-50)', padding: '20px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+            {kagawadList.map((kagawad, index) => {
+              const ordinals = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th'];
+              
+              return (
+                <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontWeight: '600', color: 'var(--text-secondary)', minWidth: '90px' }}>
+                    {ordinals[index]} Kagawad:
+                  </span>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder={`Enter ${ordinals[index]} Kagawad name...`}
+                    value={kagawad}
+                    onChange={(e) => handleKagawadChange(index, e.target.value)}
+                    style={{ flex: 1, margin: 0 }}
+                  />
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </form>
-    </div>
+      </div>
+
+      <div className="form-actions" style={{ marginTop: '30px', display: 'flex', justifyContent: 'flex-end' }}>
+        <button type="submit" className="btn btn-primary" disabled={loading} style={{ padding: '10px 24px' }}>
+          {loading ? <div className="spinner-small"></div> : <Save size={18} style={{ marginRight: '8px' }} />}
+          {loading ? 'Saving...' : 'Save Barangay Info'}
+        </button>
+      </div>
+    </form>
   );
 };
 

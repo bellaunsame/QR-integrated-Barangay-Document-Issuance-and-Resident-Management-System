@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { db } from '../services/supabaseClient';
 import toast from 'react-hot-toast';
 import { TemplateForm } from '../components/documents';
-import { FileText, Plus, Edit2, Trash2, Eye } from 'lucide-react';
+import { FileText, Plus, Edit2, Trash2, CheckCircle, XCircle } from 'lucide-react';
 import './DocumentTemplatesPage.css';
 
 const DocumentTemplatesPage = () => {
@@ -65,15 +65,17 @@ const DocumentTemplatesPage = () => {
       const isForeignKeyError = errorString.includes('foreign key') || error.code === '23503';
 
       if (isForeignKeyError) {
-        toast.error('Cannot delete: Template is used by existing requests.');
-        const confirmDeactivate = window.confirm(
-          `"${template.template_name}" cannot be deleted because it is being used.\n\nWould you like to DEACTIVATE it instead?`
-        );
-        if (confirmDeactivate) {
-          await db.templates.update(template.id, { is_active: false });
-          toast.success('Template deactivated successfully!');
-          await loadTemplates();
-        }
+        // Delay the confirm slightly so the user can read the first error toast if they want
+        setTimeout(async () => {
+          const confirmDeactivate = window.confirm(
+            `"${template.template_name}" cannot be deleted because it has existing document requests tied to it.\n\nWould you like to DEACTIVATE it instead so it stops showing up in forms?`
+          );
+          if (confirmDeactivate) {
+            await db.templates.update(template.id, { is_active: false });
+            toast.success('Template deactivated successfully!');
+            await loadTemplates();
+          }
+        }, 100);
       } else {
         toast.error('Failed to delete template: ' + error.message);
       }
@@ -123,6 +125,16 @@ const DocumentTemplatesPage = () => {
           <div className="spinner"></div>
           <p>Loading templates...</p>
         </div>
+      ) : templates.length === 0 ? (
+        // FIXED: Empty state is now correctly placed outside the grid layout
+        <div className="empty-state-full">
+          <FileText size={64} style={{ color: 'var(--text-tertiary)', marginBottom: '16px' }} />
+          <h3>No templates yet</h3>
+          <p>Create your first document template to get started</p>
+          <button className="btn btn-primary" onClick={openAddModal} style={{ marginTop: '16px' }}>
+            <Plus size={20} /> Create Template
+          </button>
+        </div>
       ) : (
         <div className="templates-grid">
           {templates.map((template) => (
@@ -140,14 +152,15 @@ const DocumentTemplatesPage = () => {
                 {template.description || 'No description provided'}
               </p>
               <div className="template-actions">
-                <button className="btn-icon" onClick={() => handleEdit(template)} title="Preview / Edit">
-                  <Eye size={18} />
-                </button>
-                <button className="btn-icon" onClick={() => handleEdit(template)} title="Edit">
+                <button className="btn-icon" onClick={() => handleEdit(template)} title="Edit Template">
                   <Edit2 size={18} />
                 </button>
-                <button className="btn-icon btn-secondary" onClick={() => handleToggleActive(template)} title={template.is_active ? 'Deactivate' : 'Activate'}>
-                  {template.is_active ? '✓' : '○'}
+                <button 
+                  className={`btn-icon ${template.is_active ? 'btn-secondary' : 'btn-success'}`} 
+                  onClick={() => handleToggleActive(template)} 
+                  title={template.is_active ? 'Deactivate' : 'Activate'}
+                >
+                  {template.is_active ? <XCircle size={18} /> : <CheckCircle size={18} />}
                 </button>
                 <button className="btn-icon btn-danger" onClick={() => handleDelete(template)} title="Delete">
                   <Trash2 size={18} />
@@ -155,21 +168,10 @@ const DocumentTemplatesPage = () => {
               </div>
             </div>
           ))}
-
-          {templates.length === 0 && (
-            <div className="empty-state-full">
-              <FileText size={64} />
-              <h3>No templates yet</h3>
-              <p>Create your first document template to get started</p>
-              <button className="btn btn-primary" onClick={openAddModal}>
-                <Plus size={20} /> Create Template
-              </button>
-            </div>
-          )}
         </div>
       )}
 
-      {/* Renders the newly decoupled TemplateForm inside a clean modal wrapper */}
+      {/* Modal Wrapper */}
       {showModal && (
         <div className="modal-overlay workspace-overlay" onClick={closeModal}>
           <div className="workspace-modal" onClick={(e) => e.stopPropagation()}>
