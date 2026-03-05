@@ -64,6 +64,10 @@ const LoginPage = () => {
     return `${s}s`;
   };
 
+  // --- TEMPLATE ID SETUP ---
+  // Use the ID of the template where you pasted that HTML code
+  const EMAILJS_TEMPLATE_ID = 'template_qzkqkvf'; // Change this if you put the HTML in template_simad99
+
   // --- STEP 1: FORGOT PASSWORD LOGIC (SENDS ONLY TEMP PASS) ---
   const handleForgotPassword = async () => {
     if (lockoutTimer > 0) {
@@ -103,20 +107,21 @@ const LoginPage = () => {
         password_hash: hashedTemp,
         is_verified: false,
         needs_password_change: true,
-        current_otp: null, // Unified OTP fields
+        current_otp: null, 
         otp_expiry: null 
       });
 
-      // Send Email 1: Temporary Password Only
+      // Send Email 1: Uses the Unified HTML Template
       await emailjs.send(
         'service_178ko1n', 
-        'template_qzkqkvf', 
+        EMAILJS_TEMPLATE_ID, 
         {
-          to_email: emailVal,
-          to_name: userData.full_name,
-          otp_code: tempPassword, // Send only the password
-          email_subject_message: "You requested a password reset. Please use this temporary password to log in. You will receive an OTP for verification after logging in:",
-          barangay_name: "Dos Tibag"
+          to_email: emailVal, // Required for the EmailJS "To" field
+          header_text: "System Security: Password Reset",
+          name: userData.full_name,
+          time: new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' }),
+          message: `You requested a password reset. Please use this Temporary Password to log in: ${tempPassword}`,
+          qr_code_html: "" // Passed empty so it doesn't show a broken image
         },
         'pfTdQReY0nVV3CjnY'
       );
@@ -170,23 +175,24 @@ const LoginPage = () => {
           otp_expiry: expiryTime.toISOString()
         });
 
-        // Send Email 2: OTP Only
+        // Send Email 2: Uses the Unified HTML Template
         await emailjs.send(
           'service_178ko1n', 
-          'template_qzkqkvf', 
+          EMAILJS_TEMPLATE_ID, 
           {
             to_email: formData.email,
-            to_name: userData.full_name,
-            otp_code: newOtp, 
-            email_subject_message: "Here is your 6-digit verification code to securely access your account:",
-            barangay_name: "Dos Tibag"
+            header_text: "System Security: Account Verification",
+            name: userData.full_name,
+            time: new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' }),
+            message: `Here is your 6-digit verification code to securely access your account: ${newOtp}`,
+            qr_code_html: "" 
           },
           'pfTdQReY0nVV3CjnY'
         );
 
         toast.success("OTP sent! Please check your Gmail.", { id: 'otp-toast' });
         navigate('/verify-otp', { state: { email: formData.email } });
-        return; // Stop execution here
+        return; 
       }
 
       // ------------------------------------------------------------------
@@ -212,15 +218,17 @@ const LoginPage = () => {
           otp_expiry: expiryTime.toISOString()
         });
 
-        // Send Device Verification Email using template_simad99
+        // Send Email 3: Uses the Unified HTML Template
         await emailjs.send(
           'service_178ko1n',     
-          'template_simad99',   // <--- New Template Triggered Here
+          EMAILJS_TEMPLATE_ID, 
           {
             to_email: formData.email,
-            to_name: userData.full_name,
-            otp_code: newOtp, 
-            // Add any other variables here if template_simad99 requires them
+            header_text: "System Security: New Device Detected",
+            name: userData.full_name,
+            time: new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' }),
+            message: `We detected a login attempt from an unrecognized device. Please use this 6-digit verification code to confirm it is you: ${newOtp}`,
+            qr_code_html: "" 
           },
           'pfTdQReY0nVV3CjnY'
         );
