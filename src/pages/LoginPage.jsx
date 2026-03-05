@@ -103,7 +103,8 @@ const LoginPage = () => {
         password_hash: hashedTemp,
         is_verified: false,
         needs_password_change: true,
-        otp_code: null 
+        current_otp: null, // Unified OTP fields
+        otp_expiry: null 
       });
 
       // Send Email 1: Temporary Password Only
@@ -127,7 +128,7 @@ const LoginPage = () => {
     }
   };
 
-  // --- STEP 2: LOGIN LOGIC (SENDS OTP IF NEEDED) ---
+  // --- STEP 2: LOGIN LOGIC (HANDLES DEVICE VERIFICATION & RECOVERY) ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (lockoutTimer > 0) return; 
@@ -154,17 +155,19 @@ const LoginPage = () => {
       // Attempt to log in with the password provided
       await login(formData.email, formData.password);
 
-      // --- IF LOGIN SUCCEEDS BUT UNVERIFIED (They used the Temp Pass) ---
+      // ------------------------------------------------------------------
+      // FLOW A: USER USED TEMP PASSWORD & NEEDS TO VERIFY RECOVERY
+      // ------------------------------------------------------------------
       if (userData && userData.is_verified === false) {
-        
         toast.loading("Sending verification code to email...", { id: 'otp-toast' });
         
-        // Generate the 6-digit OTP
         const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiryTime = new Date();
+        expiryTime.setMinutes(expiryTime.getMinutes() + 10); // 10 min expiry
         
-        // Save the new OTP to the database
         await db.users.update(userData.id, { 
-          otp_code: newOtp 
+          current_otp: newOtp,
+          otp_expiry: expiryTime.toISOString()
         });
 
         // Send Email 2: OTP Only
@@ -174,7 +177,7 @@ const LoginPage = () => {
           {
             to_email: formData.email,
             to_name: userData.full_name,
-            otp_code: newOtp, // Send only the OTP
+            otp_code: newOtp, 
             email_subject_message: "Here is your 6-digit verification code to securely access your account:",
             barangay_name: "Dos Tibag"
           },
@@ -183,9 +186,47 @@ const LoginPage = () => {
 
         toast.success("OTP sent! Please check your Gmail.", { id: 'otp-toast' });
         navigate('/verify-otp', { state: { email: formData.email } });
-      } else {
-        // Normal verified user login
+        return; // Stop execution here
+      }
+
+      // ------------------------------------------------------------------
+      // FLOW B: NEW DEVICE VERIFICATION CHECK (Standard Login)
+      // ------------------------------------------------------------------
+      const currentDeviceId = localStorage.getItem('trusted_device_id');
+      const isTrustedDevice = userData.known_devices?.includes(currentDeviceId);
+
+      if (isTrustedDevice) {
+        // DEVICE IS TRUSTED: Complete login normally
+        toast.success("Login successful!");
         navigate('/dashboard');
+      } else {
+        // DEVICE IS UNKNOWN: Freeze login and send Device OTP
+        toast.loading("Unrecognized device detected. Sending verification code...", { id: 'otp-toast' });
+        
+        const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiryTime = new Date();
+        expiryTime.setMinutes(expiryTime.getMinutes() + 10); // 10 min expiry
+
+        await db.users.update(userData.id, { 
+          current_otp: newOtp,
+          otp_expiry: expiryTime.toISOString()
+        });
+
+        // Send Device Verification Email using template_simad99
+        await emailjs.send(
+          'service_178ko1n',     
+          'template_simad99',   // <--- New Template Triggered Here
+          {
+            to_email: formData.email,
+            to_name: userData.full_name,
+            otp_code: newOtp, 
+            // Add any other variables here if template_simad99 requires them
+          },
+          'pfTdQReY0nVV3CjnY'
+        );
+
+        toast.success("New device! OTP sent to your Gmail.", { id: 'otp-toast' });
+        navigate('/verify-otp', { state: { email: formData.email } });
       }
 
     } catch (err) {

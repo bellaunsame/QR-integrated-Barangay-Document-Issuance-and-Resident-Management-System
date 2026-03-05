@@ -2,12 +2,12 @@ import { useState } from 'react';
 import { validateForm } from '../../services/security/inputSanitizer';
 import { Input } from '../common';
 import { Save, X, User, MapPin, Phone, Mail, Calendar, Briefcase } from 'lucide-react';
+import toast from 'react-hot-toast'; 
 import './ResidentForm.css';
 
 /**
  * ResidentForm Component
- * 
- * Form for adding or editing resident information
+ * Form for adding or editing resident information (Single Page Version)
  */
 const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
   const [formData, setFormData] = useState({
@@ -27,6 +27,9 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
     city_municipality: resident?.city_municipality || '',
     province: resident?.province || '',
     zip_code: resident?.zip_code || '',
+    // --- NEW: Added Residency fields to state ---
+    residency_type: resident?.residency_type || 'Permanent',
+    residency_start_date: resident?.residency_start_date || '',
     mobile_number: resident?.mobile_number || '',
     email: resident?.email || '',
     occupation: resident?.occupation || '',
@@ -49,7 +52,7 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
       [name]: type === 'checkbox' ? checked : value
     }));
 
-    // Clear error for this field
+    // Clear error for this field as the user types
     if (errors[name]) {
       setErrors(prev => {
         const newErrors = { ...prev };
@@ -65,21 +68,36 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
     setErrors({});
 
     try {
-      // Define validation rules
+      // --- NEW: AGE RESTRICTION CHECK (>4 Years Old) ---
+      if (formData.date_of_birth) {
+        const dob = new Date(formData.date_of_birth);
+        const today = new Date();
+        let age = today.getFullYear() - dob.getFullYear();
+        const m = today.getMonth() - dob.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+            age--;
+        }
+        
+        if (age <= 4) {
+          toast.error("Registration blocked: Resident must be older than 4 years old.");
+          document.querySelector('[name="date_of_birth"]')?.focus();
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Define validation rules based on required UI fields
       const validationRules = {
         first_name: { required: true, type: 'name', minLength: 2 },
         last_name: { required: true, type: 'name', minLength: 2 },
         middle_name: { type: 'name' },
         date_of_birth: { required: true, type: 'date' },
-        place_of_birth: { type: 'address' },
         gender: { required: true },
-        civil_status: { required: true },
         street: { required: true, type: 'address' },
         barangay: { required: true, type: 'address' },
         city_municipality: { required: true, type: 'address' },
         province: { required: true, type: 'address' },
-        mobile_number: { type: 'phone' },
-        email: { type: 'email' }
+        mobile_number: { required: true, type: 'phone' } 
       };
 
       // Validate form
@@ -88,11 +106,47 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
       if (!validation.isValid) {
         setErrors(validation.errors);
         setLoading(false);
+        
+        toast.error('Please fix the highlighted errors before saving.', { duration: 4000 });
+        
+        const firstErrorKey = Object.keys(validation.errors)[0];
+        
+        setTimeout(() => {
+          const errorElement = document.querySelector(`[name="${firstErrorKey}"]`);
+          if (errorElement) {
+            errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            errorElement.focus(); 
+          }
+        }, 100);
+
         return;
       }
 
-      // Submit with sanitized data
-      await onSubmit(validation.sanitizedData);
+      // Map the validated data to the database schema
+      const dbPayload = {
+        first_name: validation.sanitizedData.first_name,
+        last_name: validation.sanitizedData.last_name,
+        middle_name: validation.sanitizedData.middle_name,
+        date_of_birth: validation.sanitizedData.date_of_birth,
+        gender: validation.sanitizedData.gender,
+        contact_number: validation.sanitizedData.mobile_number, 
+        full_address: [ 
+            validation.sanitizedData.house_number, 
+            validation.sanitizedData.street, 
+            validation.sanitizedData.purok, 
+            validation.sanitizedData.barangay, 
+            validation.sanitizedData.city_municipality, 
+            validation.sanitizedData.province, 
+            validation.sanitizedData.zip_code
+        ].filter(Boolean).join(' '),
+        
+        // --- NEW: Injecting Residency Type & Start Date safely ---
+        residency_type: formData.residency_type || 'Permanent',
+        residency_start_date: formData.residency_start_date || new Date().toISOString().split('T')[0], 
+        qr_code_url: '' 
+      };
+
+      await onSubmit(dbPayload);
 
     } catch (error) {
       console.error('Form submission error:', error);
@@ -113,7 +167,7 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
 
         <div className="form-grid">
           <Input
-            label="First Name"
+            label="First Name *"
             name="first_name"
             value={formData.first_name}
             onChange={handleChange}
@@ -130,7 +184,7 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
           />
 
           <Input
-            label="Last Name"
+            label="Last Name *"
             name="last_name"
             value={formData.last_name}
             onChange={handleChange}
@@ -156,15 +210,18 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
               value={formData.gender}
               onChange={handleChange}
               required
+              className={errors.gender ? 'has-error' : ''}
             >
+              <option value="" disabled>Select gender</option>
               {genderOptions.map(option => (
                 <option key={option} value={option}>{option}</option>
               ))}
             </select>
+            {errors.gender && <span className="error-text">{errors.gender[0]}</span>}
           </div>
 
           <Input
-            label="Date of Birth"
+            label="Date of Birth *"
             name="date_of_birth"
             type="date"
             value={formData.date_of_birth}
@@ -191,11 +248,14 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
               value={formData.civil_status}
               onChange={handleChange}
               required
+              className={errors.civil_status ? 'has-error' : ''}
             >
+              <option value="" disabled>Select status</option>
               {civilStatusOptions.map(option => (
                 <option key={option} value={option}>{option}</option>
               ))}
             </select>
+            {errors.civil_status && <span className="error-text">{errors.civil_status[0]}</span>}
           </div>
 
           <Input
@@ -223,7 +283,7 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
           />
 
           <Input
-            label="Street"
+            label="Street *"
             name="street"
             value={formData.street}
             onChange={handleChange}
@@ -239,7 +299,7 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
           />
 
           <Input
-            label="Barangay"
+            label="Barangay *"
             name="barangay"
             value={formData.barangay}
             onChange={handleChange}
@@ -248,7 +308,7 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
           />
 
           <Input
-            label="City/Municipality"
+            label="City/Municipality *"
             name="city_municipality"
             value={formData.city_municipality}
             onChange={handleChange}
@@ -257,7 +317,7 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
           />
 
           <Input
-            label="Province"
+            label="Province *"
             name="province"
             value={formData.province}
             onChange={handleChange}
@@ -272,6 +332,32 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
             onChange={handleChange}
             placeholder="4500"
           />
+
+          {/* --- NEW: Residency Type UI added to match the Modal --- */}
+          <div className="form-group">
+            <label htmlFor="residency_type">
+              Residency Type <span className="required">*</span>
+            </label>
+            <select
+              id="residency_type"
+              name="residency_type"
+              value={formData.residency_type}
+              onChange={handleChange}
+              required
+            >
+              <option value="Permanent">Permanent</option>
+              <option value="Tenant">Tenant</option>
+              <option value="Boarder">Boarder</option>
+            </select>
+          </div>
+
+          <Input
+            label="Date Started Residing"
+            name="residency_start_date"
+            type="date"
+            value={formData.residency_start_date}
+            onChange={handleChange}
+          />
         </div>
       </div>
 
@@ -284,13 +370,14 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
 
         <div className="form-grid">
           <Input
-            label="Mobile Number"
+            label="Mobile Number *"
             name="mobile_number"
             icon={<Phone size={18} />}
             value={formData.mobile_number}
             onChange={handleChange}
             error={errors.mobile_number?.[0]}
             placeholder="09XX-XXX-XXXX"
+            required
           />
 
           <Input

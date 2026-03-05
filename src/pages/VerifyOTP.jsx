@@ -13,30 +13,62 @@ const VerifyOTP = () => {
   // Get the email passed from the Login page
   const email = location.state?.email;
 
+  // Protect the route if accessed directly without an email
+  if (!email) {
+    navigate('/login');
+    return null;
+  }
+
   const handleVerify = async (e) => {
     e.preventDefault();
     if (otp.length !== 6) return toast.error('Please enter a 6-digit code');
 
     setLoading(true);
     try {
-      // 1. Check if the OTP matches for this email
+      // 1. Fetch the user by email
       const user = await db.users.getByEmail(email);
 
-      if (user && user.otp_code === otp) {
-        // 2. Update the user to verified
+      if (!user) {
+        toast.error("User not found.");
+        setLoading(false);
+        return;
+      }
+
+      const now = new Date();
+      const expiry = new Date(user.otp_expiry);
+
+      // 2. Check if OTP matches AND has not expired
+      if (user.current_otp === otp) {
+        
+        if (now > expiry) {
+          toast.error("This code has expired. Please log in again to get a new one.");
+          setLoading(false);
+          return;
+        }
+
+        // --- DEVICE VERIFICATION SUCCESSFUL ---
+        
+        // 3. Generate a unique Device ID for this browser and save it
+        const newDeviceId = crypto.randomUUID();
+        localStorage.setItem('trusted_device_id', newDeviceId);
+
+        // 4. Add the new device to the user's known_devices array
+        const updatedDevices = [...(user.known_devices || []), newDeviceId];
+
+        // 5. Update the user in Supabase
         await db.users.update(user.id, { 
-          is_verified: true,
-          otp_code: null // Clear the code after use
+          is_verified: true, // Keep your original verification flag
+          current_otp: null, // Clear the OTP so it can't be reused
+          otp_expiry: null,  // Clear the expiry
+          known_devices: updatedDevices // Save the trusted device
         });
 
-        toast.success('Account verified successfully!');
+        toast.success('Device verified successfully!');
         
-        // --- 3. NEW LOGIC: INTERCEPT FOR PASSWORD CHANGE ---
+        // 6. ROUTING LOGIC: Intercept for password change or go to dashboard
         if (user.needs_password_change === true) {
-          // Send them to the forced password reset screen
           navigate('/force-password-change');
         } else {
-          // Standard login sends them to the dashboard
           navigate('/dashboard');
         }
 
@@ -56,9 +88,9 @@ const VerifyOTP = () => {
       <div className="login-card">
         <div className="login-header">
           <ShieldCheck size={48} color="#3b82f6" />
-          <h1 className="login-title">Gmail Verification</h1>
+          <h1 className="login-title">Device Verification</h1>
           <p className="login-subtitle">
-            A 6-digit code was sent to <strong>{email}</strong>
+            A 6-digit security code was sent to <strong>{email}</strong>
           </p>
         </div>
 
@@ -76,7 +108,7 @@ const VerifyOTP = () => {
           </div>
 
           <button type="submit" className="btn-login" disabled={loading}>
-            {loading ? 'Verifying...' : 'Verify Account'}
+            {loading ? 'Verifying...' : 'Verify Device'}
           </button>
         </form>
       </div>

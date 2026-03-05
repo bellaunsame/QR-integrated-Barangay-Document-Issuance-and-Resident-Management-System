@@ -17,7 +17,7 @@ import ResidentViewModal from '../components/residents/ResidentViewModal';
 import ResidentFormModal from '../components/residents/ResidentFormModal';
 import CameraCaptureModal from '../components/residents/CameraCaptureModal';
 
-import { Users, Plus, Search, Edit2, Archive, QrCode, Mail, Download, Eye, User, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { Users, Plus, Search, Edit2, Archive, QrCode, Mail, Download, Eye, User, ChevronLeft, ChevronRight, RefreshCw, Home } from 'lucide-react';
 import './ResidentsPage.css';
 
 const ResidentsPage = () => {
@@ -30,10 +30,10 @@ const ResidentsPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   
-  // --- NEW: VIEW MODE STATE (Active vs Archived) ---
-  const [viewMode, setViewMode] = useState('active'); // 'active' or 'archived'
+  // VIEW MODE STATE (Active vs Archived)
+  const [viewMode, setViewMode] = useState('active'); 
 
-  // --- PAGINATION STATES ---
+  // PAGINATION STATES
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   
@@ -43,15 +43,18 @@ const ResidentsPage = () => {
   const [editingResident, setEditingResident] = useState(null);
   const [activeCamera, setActiveCamera] = useState(null); 
   
-  const [formData, setFormData] = useState(getEmptyFormData({
-    barangay: getSetting('barangay_name', 'Barangay'),
-    city_municipality: getSetting('city_municipality', ''),
-    province: getSetting('province', '')
-  }));
+  const [formData, setFormData] = useState({
+    ...getEmptyFormData({
+      barangay: getSetting('barangay_name', 'Barangay'),
+      city_municipality: getSetting('city_municipality', ''),
+      province: getSetting('province', '')
+    }),
+    residency_type: 'Permanent' 
+  });
   const [errors, setErrors] = useState({});
   const webcamRef = useRef(null);
 
-  // --- DATE RESTRICTIONS ---
+  // DATE RESTRICTIONS
   const todayDateStr = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).split('/').reverse().join('-');
   const maxDate = todayDateStr; 
   
@@ -65,14 +68,13 @@ const ResidentsPage = () => {
 
   useEffect(() => { loadResidents(); }, []);
   
-  // Re-run filter when search, data, OR viewMode changes
   useEffect(() => { filterResidents(); }, [searchTerm, allResidents, viewMode]);
 
   const loadResidents = async () => {
     try {
       setLoading(true);
       const data = await db.residents.getAll();
-      setAllResidents(data); // Save ALL residents to state
+      setAllResidents(data); 
     } catch (error) {
       toast.error('Failed to load residents');
     } finally {
@@ -81,12 +83,10 @@ const ResidentsPage = () => {
   };
 
   const filterResidents = () => {
-    // 1. Filter by status (Active or Archived)
     let filtered = allResidents.filter(res => 
       viewMode === 'archived' ? res.status === 'archived' : res.status !== 'archived'
     );
 
-    // 2. Filter by search term
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
       filtered = filtered.filter(resident => 
@@ -99,6 +99,15 @@ const ResidentsPage = () => {
 
     setFilteredResidents(filtered);
     setCurrentPage(1); 
+  };
+
+  // TRANSIENT CHECKER (Less than 6 Months)
+  const checkIfTransient = (dateString) => {
+    if (!dateString) return false;
+    const start = new Date(dateString);
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    return start > sixMonthsAgo;
   };
 
   const handleInputChange = (e) => {
@@ -188,7 +197,6 @@ const ResidentsPage = () => {
     try {
       const sanitizedData = { ...formData, ...validation.sanitizedData };
       
-      // CHECK FOR DUPLICATE RESIDENTS
       if (!editingResident) {
         const { data: existingResidents, error: searchError } = await supabase
           .from('residents')
@@ -209,14 +217,22 @@ const ResidentsPage = () => {
 
       const safeKeys = Object.keys(getEmptyFormData());
       const payload = {};
+      
       safeKeys.forEach(key => { if (sanitizedData[key] !== undefined) payload[key] = sanitizedData[key]; });
+
+      // FORCE INCLUSION of new residency_type column
+      payload.residency_type = sanitizedData.residency_type || 'Permanent';
+
       Object.keys(payload).forEach(key => { if (payload[key] === "") payload[key] = null; });
 
-      payload.number_of_children = payload.number_of_children === null ? null : parseInt(payload.number_of_children, 10);
-      payload.father_age = payload.father_age === null ? null : parseInt(payload.father_age, 10);
-      payload.mother_age = payload.mother_age === null ? null : parseInt(payload.mother_age, 10);
-      payload.spouse_age = payload.spouse_age === null ? null : parseInt(payload.spouse_age, 10);
-      payload.monthly_income = payload.monthly_income === null ? null : parseFloat(payload.monthly_income);
+      const safeParseInt = (val) => (val === null || val === "" || isNaN(parseInt(val, 10))) ? null : parseInt(val, 10);
+      const safeParseFloat = (val) => (val === null || val === "" || isNaN(parseFloat(val))) ? null : parseFloat(val);
+
+      payload.number_of_children = safeParseInt(payload.number_of_children);
+      payload.father_age = safeParseInt(payload.father_age);
+      payload.mother_age = safeParseInt(payload.mother_age);
+      payload.spouse_age = safeParseInt(payload.spouse_age);
+      payload.monthly_income = safeParseFloat(payload.monthly_income);
 
       let res;
       if (editingResident) {
@@ -232,9 +248,13 @@ const ResidentsPage = () => {
         await generateQRForResident(res);
         toast.success('Resident added');
       }
+      
       await loadResidents();
       closeModal();
-    } catch (error) { toast.error('Failed to save resident'); } 
+    } catch (error) { 
+      toast.error('Failed to save resident'); 
+      console.error("SUPABASE ERROR DETAILS:", error); 
+    } 
     finally { setLoading(false); }
   };
 
@@ -281,6 +301,7 @@ const ResidentsPage = () => {
     setEditingResident(resident);
     const safeData = { ...resident };
     Object.keys(safeData).forEach(k => { if (safeData[k] === null) safeData[k] = ''; });
+    if (!safeData.residency_type) safeData.residency_type = 'Permanent';
     setFormData(safeData); setErrors({}); setShowModal(true);
   };
 
@@ -298,7 +319,6 @@ const ResidentsPage = () => {
     finally { setLoading(false); }
   };
 
-  // --- NEW: RESTORE ARCHIVED RESIDENT ---
   const handleRestoreResident = async (resident) => {
     if (!window.confirm(`Restore ${resident.first_name} ${resident.last_name} back to active residents?`)) return;
     try {
@@ -315,13 +335,15 @@ const ResidentsPage = () => {
 
   const openAddModal = () => {
     setEditingResident(null);
-    setFormData(getEmptyFormData({ barangay: getSetting('barangay_name', 'Barangay'), city_municipality: getSetting('city_municipality', ''), province: getSetting('province', '') }));
+    setFormData({
+      ...getEmptyFormData({ barangay: getSetting('barangay_name', 'Barangay'), city_municipality: getSetting('city_municipality', ''), province: getSetting('province', '') }),
+      residency_type: 'Permanent'
+    });
     setErrors({}); setShowModal(true);
   };
 
   const closeModal = () => { setShowModal(false); setEditingResident(null); setErrors({}); };
 
-  // --- PAGINATION MATH ---
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentResidents = filteredResidents.slice(indexOfFirstItem, indexOfLastItem);
@@ -336,6 +358,13 @@ const ResidentsPage = () => {
         .view-toggle { display: flex; gap: 10px; }
         .view-toggle button { flex: 1; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); transition: all 0.2s; }
         .view-toggle button.active-tab { background: var(--primary-50); color: var(--primary-700); border-color: var(--primary-300); }
+        
+        /* New styling for residency status badges */
+        .status-cell { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+        .badge-permanent { background: #dcfce7; color: #3730a3; border: 1px solid #bbf7d0; padding: 4px 8px; font-weight: 600; }
+        .badge-tenant { background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; padding: 4px 8px; font-weight: 600; }
+        .badge-boarder { background: #fae8ff; color: #86198f; border: 1px solid #f5d0fe; padding: 4px 8px; font-weight: 600; }
+        .badge-transient { background: #fef08a; color: #a16207; border: 1px solid #fde047; padding: 4px 8px; font-weight: 600; }
 
         @media (max-width: 768px) {
           .desktop-table-container { display: none; }
@@ -389,12 +418,22 @@ const ResidentsPage = () => {
               <div className="table-responsive">
                 <table>
                   <thead>
-                    <tr><th>Name</th><th>Address</th><th>Contact</th><th style={{textAlign:'center'}}>Docs</th><th>Age/Gender</th><th>QR</th><th>Actions</th></tr>
+                    {/* NEW: Added a dedicated Residency Status Column */}
+                    <tr>
+                      <th>Name</th>
+                      <th>Address</th>
+                      <th>Residency Status</th>
+                      <th>Contact</th>
+                      <th style={{textAlign:'center'}}>Docs</th>
+                      <th>Age/Gender</th>
+                      <th>QR</th>
+                      <th>Actions</th>
+                    </tr>
                   </thead>
                   <tbody>
                     {currentResidents.length === 0 ? (
                       <tr>
-                        <td colSpan="7" className="empty-row" style={{ textAlign: 'center', padding: '3rem' }}>
+                        <td colSpan="8" className="empty-row" style={{ textAlign: 'center', padding: '3rem' }}>
                           {viewMode === 'archived' ? <Archive size={40} style={{ color: 'var(--neutral-400)', marginBottom: '1rem' }} /> : <Users size={40} style={{ color: 'var(--neutral-400)', marginBottom: '1rem' }} />}
                           <p>{viewMode === 'archived' ? 'No archived residents found.' : 'No active residents found.'}</p>
                         </td>
@@ -408,7 +447,28 @@ const ResidentsPage = () => {
                               <div style={{ display: 'flex', flexDirection: 'column' }}><strong>{r.first_name} {r.last_name} {r.suffix}</strong><small>{r.civil_status}</small></div>
                             </div>
                           </td>
-                          <td>{r.full_address}, {r.barangay}</td>
+                          <td>
+                            {r.full_address}, {r.barangay}
+                          </td>
+                          {/* NEW: Dedicated Status Cell */}
+                          <td>
+                            <div className="status-cell">
+                               <span className={`badge ${
+                                 r.residency_type === 'Tenant' ? 'badge-tenant' : 
+                                 r.residency_type === 'Boarder' ? 'badge-boarder' : 
+                                 'badge-permanent'
+                               }`}>
+                                 <Home size={12} style={{marginRight: '4px', display:'inline'}} />
+                                 {r.residency_type || 'Permanent'}
+                               </span>
+                               
+                               {checkIfTransient(r.residency_start_date) && (
+                                 <span className="badge badge-transient">
+                                    Transient (&lt;6 Mos)
+                                 </span>
+                               )}
+                            </div>
+                          </td>
                           <td><div className="contact-cell"><span>{r.mobile_number || 'N/A'}</span><small>{r.email || 'No email'}</small></div></td>
                           <td style={{ textAlign: 'center' }}><span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--primary-600)' }}>{r.document_requests?.length || 0}</span></td>
                           <td>{calculateAge(r.date_of_birth)} yrs / {r.gender}</td>
@@ -428,7 +488,6 @@ const ResidentsPage = () => {
                                       )}
                                     </>
                                   ) : (
-                                    // ARCHIVED VIEW ACTIONS
                                     <button className="btn-icon btn-primary" onClick={() => handleRestoreResident(r)} title="Restore Resident"><RefreshCw size={18} /></button>
                                   )}
                                 </>
@@ -456,6 +515,23 @@ const ResidentsPage = () => {
                         <div style={{ fontSize: '1.05rem', fontWeight: '600', color: 'var(--text-primary)' }}>{r.first_name} {r.last_name} {r.suffix}</div>
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{r.civil_status} • {calculateAge(r.date_of_birth)} yrs • {r.gender}</div>
                       </div>
+                    </div>
+
+                    {/* NEW: Prominent Mobile Status display */}
+                    <div style={{ marginBottom: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                       <span className={`badge ${
+                         r.residency_type === 'Tenant' ? 'badge-tenant' : 
+                         r.residency_type === 'Boarder' ? 'badge-boarder' : 
+                         'badge-permanent'
+                       }`}>
+                         <Home size={12} style={{marginRight: '4px', display:'inline'}} />
+                         {r.residency_type || 'Permanent'}
+                       </span>
+                       {checkIfTransient(r.residency_start_date) && (
+                         <span className="badge badge-transient">
+                            Transient (&lt;6 Mos)
+                         </span>
+                       )}
                     </div>
 
                     <div style={{ marginBottom: '8px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
