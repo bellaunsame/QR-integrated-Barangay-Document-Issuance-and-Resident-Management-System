@@ -1,30 +1,30 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { db } from '../services/supabaseClient';
-import { useAuth } from '../context/AuthContext'; // Added for session start
+import { useAuth } from '../context/AuthContext'; 
 import toast from 'react-hot-toast';
-import emailjs from '@emailjs/browser'; // Added for resending email
+import emailjs from '@emailjs/browser'; 
 import { ShieldCheck, RefreshCw } from 'lucide-react';
+
+// --- ADDED THIS IMPORT FOR THE SECURITY DASHBOARD ---
+import { logAuth, ACTIONS } from '../services/security/auditLogger'; 
 
 const VerifyOTP = () => {
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
-  const [resendTimer, setResendTimer] = useState(60); // 60-second cooldown timer
+  const [resendTimer, setResendTimer] = useState(60); 
   
   const location = useLocation();
   const navigate = useNavigate();
-  const { startUserSession } = useAuth(); // Import the session starter
+  const { startUserSession } = useAuth(); 
   
-  // Get the email passed from the Login page
   const email = location.state?.email;
 
-  // Protect the route if accessed directly without an email
   if (!email) {
     navigate('/login');
     return null;
   }
 
-  // --- COUNTDOWN TIMER EFFECT FOR RESEND BUTTON ---
   useEffect(() => {
     let interval;
     if (resendTimer > 0) {
@@ -35,7 +35,6 @@ const VerifyOTP = () => {
     return () => clearInterval(interval);
   }, [resendTimer]);
 
-  // --- 1. HANDLE VERIFICATION ---
   const handleVerify = async (e) => {
     e.preventDefault();
     if (otp.length !== 6) return toast.error('Please enter a 6-digit code');
@@ -73,7 +72,12 @@ const VerifyOTP = () => {
           known_devices: updatedDevices 
         });
 
-        // Officially log the user in to the application
+        // --- NEW: LOG THIS EVENT SO IT SHOWS UP ON THE DASHBOARD! ---
+        await logAuth(ACTIONS.NEW_DEVICE_VERIFIED, user.id, { 
+          email: user.email, 
+          device_id: newDeviceId 
+        });
+
         await startUserSession(user);
 
         toast.success('Device verified successfully!');
@@ -95,9 +99,8 @@ const VerifyOTP = () => {
     }
   };
 
-  // --- 2. HANDLE RESEND OTP ---
   const handleResendOTP = async () => {
-    if (resendTimer > 0) return; // Prevent clicking if timer is active
+    if (resendTimer > 0) return; 
 
     const loadingToast = toast.loading("Generating new code...");
     setLoading(true);
@@ -106,18 +109,15 @@ const VerifyOTP = () => {
       const user = await db.users.getByEmail(email);
       if (!user) throw new Error("User not found.");
 
-      // Generate new 6-digit OTP and new 10-minute expiry
       const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
       const expiryTime = new Date();
       expiryTime.setMinutes(expiryTime.getMinutes() + 10);
 
-      // Update Database
       await db.users.update(user.id, {
         current_otp: newOtp,
         otp_expiry: expiryTime.toISOString()
       });
 
-      // Send via EmailJS (Make sure this matches the template ID in LoginPage)
       const EMAILJS_TEMPLATE_ID = 'template_qzkqkvf'; 
       
       await emailjs.send(
@@ -139,8 +139,8 @@ const VerifyOTP = () => {
       );
 
       toast.success("A new code has been sent to your email!", { id: loadingToast });
-      setOtp(''); // Clear the input field
-      setResendTimer(60); // Restart the 60-second cooldown
+      setOtp(''); 
+      setResendTimer(60); 
 
     } catch (error) {
       console.error("Resend Error:", error);
@@ -182,7 +182,6 @@ const VerifyOTP = () => {
           </button>
         </form>
 
-        {/* --- NEW: RESEND OTP CONTROLS --- */}
         <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '14px', color: '#64748b' }}>
           Didn't receive the code? <br />
           <button 

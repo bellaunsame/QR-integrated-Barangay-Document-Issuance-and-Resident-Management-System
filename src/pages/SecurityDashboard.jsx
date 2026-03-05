@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import { 
   Activity, Search, Filter, Download, RefreshCw, User,
   Trash2, Edit, Plus, Eye, Calendar, Wifi, WifiOff, X, Shield, 
-  AlertTriangle, XCircle
+  AlertTriangle, XCircle, Smartphone // Added Smartphone icon
 } from 'lucide-react';
 import { usePagination } from '../hooks';
 import { getSecuritySummary, queryAuditLogs, exportAuditLogs, SEVERITY } from '../services/security/auditLogger';
@@ -42,9 +42,16 @@ const SecurityAuditTab = () => {
 
   const loadSecurityData = async () => {
     const summaryData = await getSecuritySummary(7);
-    const logs = await queryAuditLogs({ limit: 10 });
+    
+    // Fetch logs AND join with the users table so we get actual names instead of raw IDs
+    const { data: logs } = await supabase
+      .from('audit_logs')
+      .select(`*, user:users(full_name)`)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
     setSummary(summaryData);
-    setRecentLogs(logs);
+    setRecentLogs(logs || []);
   };
 
   const handleExport = async () => {
@@ -55,6 +62,17 @@ const SecurityAuditTab = () => {
     a.href = url;
     a.download = `audit-logs-${new Date().toISOString()}.csv`;
     a.click();
+  };
+
+  // Helper to color-code specific security events
+  const getEventBadge = (action, severity) => {
+    if (action === 'NEW_DEVICE_VERIFIED') {
+      return <Badge variant="warning" icon={<Smartphone size={14}/>}>New Device Authorized</Badge>;
+    }
+    if (action === 'LOGIN_FAILED' || action === 'RATE_LIMIT_EXCEEDED') {
+      return <Badge variant="danger" icon={<AlertTriangle size={14}/>}>{action}</Badge>;
+    }
+    return <Badge variant={severity === 'CRITICAL' ? 'danger' : 'gray'}>{action}</Badge>;
   };
 
   if (!summary) return <LoadingSpinner text="Loading audit data..." />;
@@ -106,15 +124,28 @@ const SecurityAuditTab = () => {
             </thead>
             <tbody>
               {recentLogs.map(log => (
-                <tr key={log.id}>
+                <tr key={log.id} style={{ 
+                  backgroundColor: log.action === 'NEW_DEVICE_VERIFIED' ? '#fefce8' : 'transparent' 
+                }}>
                   <td>{formatDateTime(log.created_at)}</td>
                   <td>
-                    <Badge variant={log.severity === 'CRITICAL' ? 'danger' : 'gray'}>{log.action}</Badge>
+                    {getEventBadge(log.action, log.severity)}
                   </td>
-                  <td>{log.user_id || 'System'}</td>
-                  <td>{log.ip_address}</td>
+                  <td>
+                    {/* Show the actual name if available, otherwise show ID, otherwise System */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <User size={14} color="var(--text-tertiary)" />
+                      {log.user?.full_name || log.user_id || 'System'}
+                    </div>
+                  </td>
+                  <td>{log.ip_address || 'Unknown IP'}</td>
                 </tr>
               ))}
+              {recentLogs.length === 0 && (
+                <tr>
+                  <td colSpan="4" style={{ textAlign: 'center', padding: '2rem' }}>No recent security events.</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -245,8 +276,6 @@ const ActivityLogTab = () => {
           <Button variant="secondary" icon={<Filter size={20} />} onClick={() => setShowFilters(!showFilters)}>Filters</Button>
         </div>
 
-        {/* Add your existing filters-panel UI here if you want it visible */}
-
         {filteredLogs().length === 0 ? (
           <EmptyState icon={<Activity size={48} />} title="No activity logs found" />
         ) : (
@@ -264,8 +293,9 @@ const ActivityLogTab = () => {
             <p><strong>Action:</strong> {selectedLog.action}</p>
             <p><strong>User:</strong> {selectedLog.user?.full_name}</p>
             <p><strong>Table:</strong> {selectedLog.table_name}</p>
+            <p><strong>IP Address:</strong> {selectedLog.ip_address}</p>
             <pre style={{ background: '#f1f5f9', padding: '1rem', borderRadius: '8px', overflowX: 'auto' }}>
-              {JSON.stringify(selectedLog.new_data || selectedLog.old_data, null, 2)}
+              {JSON.stringify(selectedLog.new_data || selectedLog.old_data || selectedLog.details, null, 2)}
             </pre>
           </div>
         </Modal>

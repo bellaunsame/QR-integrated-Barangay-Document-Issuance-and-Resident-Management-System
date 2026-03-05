@@ -2,7 +2,7 @@
  * Audit Logger Service
  * Comprehensive logging for security events, user actions, and data changes.
  */
-import { db, supabase } from '../supabaseClient';
+import { db, supabase } from '../services/supabaseClient'; // Fixed import path
 
 export const SEVERITY = {
   INFO: 'info',
@@ -28,7 +28,9 @@ export const ACTIONS = {
   RATE_LIMIT_EXCEEDED: 'rate_limit_exceeded',
   SUSPICIOUS_ACTIVITY: 'suspicious_activity',
   DATA_EXPORTED: 'data_exported',
-  REPORT_GENERATED: 'report_generated'
+  REPORT_GENERATED: 'report_generated',
+  // ---> NEW: Added Device Verification Action <---
+  NEW_DEVICE_VERIFIED: 'NEW_DEVICE_VERIFIED' 
 };
 
 /**
@@ -87,9 +89,9 @@ export const logAuditEvent = async (event) => {
  * CONVENIENCE WRAPPERS
  */
 
-// ---> NEW: BRUTE-FORCE DETECTION ADDED HERE <---
+// ---> BRUTE-FORCE DETECTION <---
 export const logAuth = async (action, userId = null, details = {}) => {
-  let severity = (action === ACTIONS.LOGIN_SUCCESS || action === ACTIONS.LOGOUT) 
+  let severity = (action === ACTIONS.LOGIN_SUCCESS || action === ACTIONS.LOGOUT || action === ACTIONS.NEW_DEVICE_VERIFIED) 
     ? SEVERITY.INFO 
     : SEVERITY.WARNING;
 
@@ -185,7 +187,7 @@ export const queryAuditLogs = async (filters = {}) => {
   }
 };
 
-// ---> NEW: SAFER JSON PARSING FOR DETAILS <---
+// ---> SAFER JSON PARSING FOR DETAILS <---
 export const getSecuritySummary = async (days = 7) => {
   try {
     const logs = await queryAuditLogs({ limit: 1000 });
