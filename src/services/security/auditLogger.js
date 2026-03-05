@@ -2,7 +2,7 @@
  * Audit Logger Service
  * Comprehensive logging for security events, user actions, and data changes.
  */
-import { db, supabase } from '../services/supabaseClient'; // Fixed import path
+import { db, supabase } from '../supabaseClient';// Fixed import path
 
 export const SEVERITY = {
   INFO: 'info',
