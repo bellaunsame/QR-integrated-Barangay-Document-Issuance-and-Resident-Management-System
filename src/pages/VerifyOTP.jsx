@@ -60,11 +60,21 @@ const VerifyOTP = () => {
         }
 
         // --- DEVICE VERIFICATION SUCCESSFUL ---
-        const newDeviceId = crypto.randomUUID();
-        localStorage.setItem('trusted_device_id', newDeviceId);
+        
+        // 1. Check if this browser ALREADY has an ID. If not, make one.
+        let deviceId = localStorage.getItem('trusted_device_id');
+        if (!deviceId) {
+          deviceId = crypto.randomUUID();
+          localStorage.setItem('trusted_device_id', deviceId);
+        }
 
-        const updatedDevices = [...(user.known_devices || []), newDeviceId];
+        // 2. Add the device to the user's known_devices array (preventing duplicates)
+        const updatedDevices = [...(user.known_devices || [])];
+        if (!updatedDevices.includes(deviceId)) {
+          updatedDevices.push(deviceId);
+        }
 
+        // 3. Update the user in Supabase
         await db.users.update(user.id, { 
           is_verified: true, 
           current_otp: null, 
@@ -72,12 +82,13 @@ const VerifyOTP = () => {
           known_devices: updatedDevices 
         });
 
-        // --- NEW: LOG THIS EVENT SO IT SHOWS UP ON THE DASHBOARD! ---
+        // 4. LOG THIS EVENT SO IT SHOWS UP ON THE DASHBOARD!
         await logAuth(ACTIONS.NEW_DEVICE_VERIFIED, user.id, { 
           email: user.email, 
-          device_id: newDeviceId 
+          device_id: deviceId 
         });
 
+        // 5. Start the session
         await startUserSession(user);
 
         toast.success('Device verified successfully!');
