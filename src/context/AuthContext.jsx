@@ -98,7 +98,7 @@ export const AuthProvider = ({ children }) => {
     } catch { return 'unknown'; }
   };
 
-  // --- MODIFIED: Login now accepts a flag to skip setting the session ---
+  // --- THE FIX IS HERE: Login ONLY verifies credentials now. No Toasts! ---
   const login = async (email, password, skipSessionSetup = false) => {
     try {
       setLoading(true);
@@ -134,12 +134,12 @@ export const AuthProvider = ({ children }) => {
 
       loginRateLimiter.reset(email);
 
-      // If we are waiting for OTP verification, STOP here and return the user data.
+      // If OTP is required, we stop here and let LoginPage handle the rest
       if (skipSessionSetup) {
         return userData;
       }
       
-      // If no OTP is needed, proceed to start the session normally.
+      // Otherwise, start session immediately
       await startUserSession(userData);
       return userData;
 
@@ -150,7 +150,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // --- NEW: Extracted session logic so it can be called AFTER OTP is verified ---
+  // --- NEW: Session logic extracted so VerifyOTP can call it later ---
   const startUserSession = async (userData) => {
     const ip = await getClientIP();
     const isMobile = /Mobi|Android/i.test(navigator.userAgent);
@@ -191,6 +191,8 @@ export const AuthProvider = ({ children }) => {
     sessionManager.startSession();
 
     await logAuth(ACTIONS.LOGIN_SUCCESS, userData.id, { email: userData.email, role: userData.role, ip });
+    
+    // NOTE: Intentionally NO TOAST here. The toast is handled in LoginPage or VerifyOTP.
   };
 
   const logout = async () => {
