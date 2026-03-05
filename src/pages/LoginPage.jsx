@@ -65,10 +65,9 @@ const LoginPage = () => {
   };
 
   // --- TEMPLATE ID SETUP ---
-  // Use the ID of the template where you pasted that HTML code
-  const EMAILJS_TEMPLATE_ID = 'template_qzkqkvf'; // Change this if you put the HTML in template_simad99
+  const EMAILJS_TEMPLATE_ID = 'template_qzkqkvf'; // Change to template_simad99 if needed
 
-  // --- STEP 1: FORGOT PASSWORD LOGIC (SENDS ONLY TEMP PASS) ---
+  // --- STEP 1: FORGOT PASSWORD LOGIC ---
   const handleForgotPassword = async () => {
     if (lockoutTimer > 0) {
       toast.error(`Please wait ${formatTime(lockoutTimer)} before trying again.`);
@@ -96,13 +95,10 @@ const LoginPage = () => {
         return;
       }
 
-      // Generate ONLY the Temporary Password
       const tempPassword = Math.random().toString(36).slice(-8);
-      
       const { hashPassword } = await import('../services/security/passwordService');
       const hashedTemp = await hashPassword(tempPassword);
 
-      // Update DB, flag them for password change, and clear any old OTP
       await db.users.update(userData.id, { 
         password_hash: hashedTemp,
         is_verified: false,
@@ -111,17 +107,24 @@ const LoginPage = () => {
         otp_expiry: null 
       });
 
-      // Send Email 1: Uses the Unified HTML Template
+      // Email 1: Super Payload
       await emailjs.send(
         'service_178ko1n', 
         EMAILJS_TEMPLATE_ID, 
         {
-          to_email: emailVal, // Required for the EmailJS "To" field
-          header_text: "System Security: Password Reset",
+          to_email: emailVal, 
+          // Name variations
+          to_name: userData.full_name,
           name: userData.full_name,
+          user_name: userData.full_name,
+          // Code variations
+          otp_code: tempPassword,
+          code: tempPassword,
+          message: tempPassword,
+          // Context
+          header_text: "System Security: Password Reset",
           time: new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' }),
-          message: `You requested a password reset. Please use this Temporary Password to log in: ${tempPassword}`,
-          qr_code_html: "" // Passed empty so it doesn't show a broken image
+          qr_code_html: "" 
         },
         'pfTdQReY0nVV3CjnY'
       );
@@ -133,7 +136,7 @@ const LoginPage = () => {
     }
   };
 
-  // --- STEP 2: LOGIN LOGIC (HANDLES DEVICE VERIFICATION & RECOVERY) ---
+  // --- STEP 2: LOGIN LOGIC ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (lockoutTimer > 0) return; 
@@ -157,34 +160,38 @@ const LoginPage = () => {
         return;
       }
 
-      // Attempt to log in with the password provided
       await login(formData.email, formData.password);
 
-      // ------------------------------------------------------------------
       // FLOW A: USER USED TEMP PASSWORD & NEEDS TO VERIFY RECOVERY
-      // ------------------------------------------------------------------
       if (userData && userData.is_verified === false) {
         toast.loading("Sending verification code to email...", { id: 'otp-toast' });
         
         const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
         const expiryTime = new Date();
-        expiryTime.setMinutes(expiryTime.getMinutes() + 10); // 10 min expiry
+        expiryTime.setMinutes(expiryTime.getMinutes() + 10); 
         
         await db.users.update(userData.id, { 
           current_otp: newOtp,
           otp_expiry: expiryTime.toISOString()
         });
 
-        // Send Email 2: Uses the Unified HTML Template
+        // Email 2: Super Payload
         await emailjs.send(
           'service_178ko1n', 
           EMAILJS_TEMPLATE_ID, 
           {
             to_email: formData.email,
-            header_text: "System Security: Account Verification",
+            // Name variations
+            to_name: userData.full_name,
             name: userData.full_name,
+            user_name: userData.full_name,
+            // Code variations
+            otp_code: newOtp, 
+            code: newOtp,
+            message: newOtp,
+            // Context
+            header_text: "System Security: Account Verification",
             time: new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' }),
-            message: `Here is your 6-digit verification code to securely access your account: ${newOtp}`,
             qr_code_html: "" 
           },
           'pfTdQReY0nVV3CjnY'
@@ -195,39 +202,42 @@ const LoginPage = () => {
         return; 
       }
 
-      // ------------------------------------------------------------------
       // FLOW B: NEW DEVICE VERIFICATION CHECK (Standard Login)
-      // ------------------------------------------------------------------
       const currentDeviceId = localStorage.getItem('trusted_device_id');
       const isTrustedDevice = userData.known_devices?.includes(currentDeviceId);
 
       if (isTrustedDevice) {
-        // DEVICE IS TRUSTED: Complete login normally
         toast.success("Login successful!");
         navigate('/dashboard');
       } else {
-        // DEVICE IS UNKNOWN: Freeze login and send Device OTP
         toast.loading("Unrecognized device detected. Sending verification code...", { id: 'otp-toast' });
         
         const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
         const expiryTime = new Date();
-        expiryTime.setMinutes(expiryTime.getMinutes() + 10); // 10 min expiry
+        expiryTime.setMinutes(expiryTime.getMinutes() + 10); 
 
         await db.users.update(userData.id, { 
           current_otp: newOtp,
           otp_expiry: expiryTime.toISOString()
         });
 
-        // Send Email 3: Uses the Unified HTML Template
+        // Email 3: Super Payload
         await emailjs.send(
           'service_178ko1n',     
           EMAILJS_TEMPLATE_ID, 
           {
             to_email: formData.email,
-            header_text: "System Security: New Device Detected",
+            // Name variations
+            to_name: userData.full_name,
             name: userData.full_name,
+            user_name: userData.full_name,
+            // Code variations
+            otp_code: newOtp, 
+            code: newOtp,
+            message: newOtp,
+            // Context
+            header_text: "System Security: New Device Detected",
             time: new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' }),
-            message: `We detected a login attempt from an unrecognized device. Please use this 6-digit verification code to confirm it is you: ${newOtp}`,
             qr_code_html: "" 
           },
           'pfTdQReY0nVV3CjnY'
