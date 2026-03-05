@@ -19,7 +19,8 @@ const backgroundImages = [bg1, bg2, bg3, bg4, bg5];
 
 const LoginPage = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  // --- ADDED startUserSession HERE ---
+  const { login, startUserSession } = useAuth(); 
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -65,7 +66,7 @@ const LoginPage = () => {
   };
 
   // --- TEMPLATE ID SETUP ---
-  const EMAILJS_TEMPLATE_ID = 'template_qzkqkvf'; // Change to template_simad99 if needed
+  const EMAILJS_TEMPLATE_ID = 'template_qzkqkvf'; 
 
   // --- STEP 1: FORGOT PASSWORD LOGIC ---
   const handleForgotPassword = async () => {
@@ -113,15 +114,12 @@ const LoginPage = () => {
         EMAILJS_TEMPLATE_ID, 
         {
           to_email: emailVal, 
-          // Name variations
           to_name: userData.full_name,
           name: userData.full_name,
           user_name: userData.full_name,
-          // Code variations
           otp_code: tempPassword,
           code: tempPassword,
           message: tempPassword,
-          // Context
           header_text: "System Security: Password Reset",
           time: new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' }),
           qr_code_html: "" 
@@ -152,7 +150,7 @@ const LoginPage = () => {
     }
 
     try {
-      const userData = await db.users.getByEmail(formData.email);
+      const userData = await db.users.getByEmail(emailVal);
 
       if (userData && userData.is_active === false) {
         setError('This account has been deactivated. Please contact the Super Admin.');
@@ -160,11 +158,12 @@ const LoginPage = () => {
         return;
       }
 
-      await login(formData.email, formData.password);
+      // --- CRITICAL FIX: 'true' flag skips session creation so they aren't logged in yet! ---
+      const authenticatedUser = await login(emailVal, formData.password, true);
 
       // FLOW A: USER USED TEMP PASSWORD & NEEDS TO VERIFY RECOVERY
       if (userData && userData.is_verified === false) {
-        toast.loading("Sending verification code to email...", { id: 'otp-toast' });
+        const otpToastId = toast.loading("Sending verification code to email...");
         
         const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
         const expiryTime = new Date();
@@ -180,16 +179,13 @@ const LoginPage = () => {
           'service_178ko1n', 
           EMAILJS_TEMPLATE_ID, 
           {
-            to_email: formData.email,
-            // Name variations
+            to_email: emailVal,
             to_name: userData.full_name,
             name: userData.full_name,
             user_name: userData.full_name,
-            // Code variations
             otp_code: newOtp, 
             code: newOtp,
             message: newOtp,
-            // Context
             header_text: "System Security: Account Verification",
             time: new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' }),
             qr_code_html: "" 
@@ -197,20 +193,24 @@ const LoginPage = () => {
           'pfTdQReY0nVV3CjnY'
         );
 
-        toast.success("OTP sent! Please check your Gmail.", { id: 'otp-toast' });
-        navigate('/verify-otp', { state: { email: formData.email } });
+        toast.success("OTP sent! Please check your Gmail.", { id: otpToastId });
+        navigate('/verify-otp', { state: { email: emailVal } });
         return; 
       }
 
-      // FLOW B: NEW DEVICE VERIFICATION CHECK (Standard Login)
+      // FLOW B: NEW DEVICE VERIFICATION CHECK
       const currentDeviceId = localStorage.getItem('trusted_device_id');
       const isTrustedDevice = userData.known_devices?.includes(currentDeviceId);
 
       if (isTrustedDevice) {
-        toast.success("Login successful!");
+        // --- CRITICAL FIX: Device is trusted, so we officially start the session now! ---
+        await startUserSession(authenticatedUser);
+        
+        toast.success(`Welcome back, ${userData.full_name}!`);
         navigate('/dashboard');
       } else {
-        toast.loading("Unrecognized device detected. Sending verification code...", { id: 'otp-toast' });
+        // DEVICE UNKNOWN: Freeze redirect, send OTP
+        const deviceToastId = toast.loading("Unrecognized device detected. Sending verification code...");
         
         const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
         const expiryTime = new Date();
@@ -226,16 +226,13 @@ const LoginPage = () => {
           'service_178ko1n',     
           EMAILJS_TEMPLATE_ID, 
           {
-            to_email: formData.email,
-            // Name variations
+            to_email: emailVal,
             to_name: userData.full_name,
             name: userData.full_name,
             user_name: userData.full_name,
-            // Code variations
             otp_code: newOtp, 
             code: newOtp,
             message: newOtp,
-            // Context
             header_text: "System Security: New Device Detected",
             time: new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' }),
             qr_code_html: "" 
@@ -243,13 +240,12 @@ const LoginPage = () => {
           'pfTdQReY0nVV3CjnY'
         );
 
-        toast.success("New device! OTP sent to your Gmail.", { id: 'otp-toast' });
-        navigate('/verify-otp', { state: { email: formData.email } });
+        toast.success("New device! OTP sent to your Gmail.", { id: deviceToastId });
+        navigate('/verify-otp', { state: { email: emailVal } });
       }
 
     } catch (err) {
       const errorMsg = err.message || 'Invalid credentials';
-      
       const timeMatch = errorMsg.match(/(\d+)\s*(s|sec|second)/i);
       
       if (timeMatch && timeMatch[1]) {

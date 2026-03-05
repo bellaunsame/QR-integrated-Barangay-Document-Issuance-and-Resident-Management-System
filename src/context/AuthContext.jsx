@@ -27,13 +27,12 @@ export const AuthProvider = ({ children }) => {
       return null;
     }
   });
-  const [session, setSession] = useState(null); // Optional now, since you use custom sessions
+  const [session, setSession] = useState(null); 
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
-    // 1. Initialize Security Protocols
     initializeCSRF();
     
     sessionManager.initialize({
@@ -47,11 +46,7 @@ export const AuthProvider = ({ children }) => {
       onTimeout: () => handleSessionTimeout()
     });
 
-    // 2. Initial Session Check (Using YOUR custom logic, not Supabase's built-in logic)
     checkUser();
-
-    // REMOVED: supabase.auth.onAuthStateChange 
-    // It was destroying your session because you are using custom auth, not Supabase auth!
   }, []);
 
   const checkUser = async () => {
@@ -59,16 +54,12 @@ export const AuthProvider = ({ children }) => {
       const storedUser = localStorage.getItem('user');
       const sessionId = localStorage.getItem('current_session_id');
       
-      // Since you use custom auth, we check your localStorage and your custom sessionId!
       if (storedUser && sessionId) {
         const parsedUser = JSON.parse(storedUser);
         setUser(parsedUser);
         sessionManager.startSession();
-        
-        // Fetch fresh user data in the background just to keep things updated
         loadUserData(parsedUser.id);
       } else {
-        // No valid local session found
         setUser(null);
         localStorage.removeItem('user');
         localStorage.removeItem('current_session_id');
@@ -107,11 +98,11 @@ export const AuthProvider = ({ children }) => {
     } catch { return 'unknown'; }
   };
 
-  const login = async (email, password) => {
+  // --- MODIFIED: Login now accepts a flag to skip setting the session ---
+  const login = async (email, password, skipSessionSetup = false) => {
     try {
       setLoading(true);
 
-      // SECURITY: Rate Limiting
       const rateCheck = loginRateLimiter.isAllowed(email);
       if (!rateCheck.allowed) {
         const msg = `Too many attempts. Try again in ${rateCheck.retryAfter}s.`;
@@ -119,7 +110,6 @@ export const AuthProvider = ({ children }) => {
         throw new Error(msg);
       }
 
-      // Fetch user
       const { data: userData, error } = await supabase
         .from('users')
         .select('*')
@@ -131,7 +121,6 @@ export const AuthProvider = ({ children }) => {
         throw new Error('Invalid email or password');
       }
 
-      // SECURITY: Bcrypt Verification
       const isValidPassword = await verifyPassword(password, userData.password_hash || userData.password);
       if (!isValidPassword) {
         await logAuth(ACTIONS.LOGIN_FAILED, userData.id, { email, reason: 'Invalid password' });
@@ -143,63 +132,65 @@ export const AuthProvider = ({ children }) => {
         throw new Error('Account inactive. Contact administrator.');
       }
 
-      // SUCCESS
       loginRateLimiter.reset(email);
-      
-      // --- START SESSION TRACKING ---
-      const ip = await getClientIP();
-      const isMobile = /Mobi|Android/i.test(navigator.userAgent);
-      const isTablet = /(ipad|tablet|(android(?!.*mobile))|(windows(?!.*phone)(.*touch))|kindle|playbook|silk|(puffin(?!.*(IP|AP|WP))))/.test(navigator.userAgent.toLowerCase());
-      
-      let deviceType = 'desktop';
-      if (isTablet) deviceType = 'tablet';
-      else if (isMobile) deviceType = 'mobile';
 
-      let browserName = 'Browser';
-      if (navigator.userAgent.includes('Chrome')) browserName = 'Chrome';
-      else if (navigator.userAgent.includes('Firefox')) browserName = 'Firefox';
-      else if (navigator.userAgent.includes('Safari') && !navigator.userAgent.includes('Chrome')) browserName = 'Safari';
-      else if (navigator.userAgent.includes('Edge')) browserName = 'Edge';
-
-      const deviceName = `${navigator.platform || 'Device'} - ${browserName}`;
-
-      const sessionData = {
-        user_id: userData.id,
-        device_type: deviceType,
-        device_name: deviceName,
-        ip_address: ip,
-        location: 'Cabuyao City, Philippines' 
-      };
-
-      const { data: newSession, error: sessionError } = await supabase
-        .from('user_sessions')
-        .insert(sessionData)
-        .select()
-        .single();
-
-      if (!sessionError && newSession) {
-        localStorage.setItem('current_session_id', newSession.id);
-      } else {
-        console.error("Failed to save session to database:", sessionError);
+      // If we are waiting for OTP verification, STOP here and return the user data.
+      if (skipSessionSetup) {
+        return userData;
       }
-      // --- END SESSION TRACKING ---
-
-      setUser(userData);
-      localStorage.setItem('user', JSON.stringify(userData));
-      sessionManager.startSession();
-
-      // Audit Log
-      await logAuth(ACTIONS.LOGIN_SUCCESS, userData.id, { email, role: userData.role, ip });
-
-      toast.success(`Welcome back, ${userData.full_name}!`);
+      
+      // If no OTP is needed, proceed to start the session normally.
+      await startUserSession(userData);
       return userData;
 
     } catch (err) {
-      toast.error(err.message);
       throw err;
     } finally {
       setLoading(false);
     }
+  };
+
+  // --- NEW: Extracted session logic so it can be called AFTER OTP is verified ---
+  const startUserSession = async (userData) => {
+    const ip = await getClientIP();
+    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+    const isTablet = /(ipad|tablet|(android(?!.*mobile))|(windows(?!.*phone)(.*touch))|kindle|playbook|silk|(puffin(?!.*(IP|AP|WP))))/.test(navigator.userAgent.toLowerCase());
+    
+    let deviceType = 'desktop';
+    if (isTablet) deviceType = 'tablet';
+    else if (isMobile) deviceType = 'mobile';
+
+    let browserName = 'Browser';
+    if (navigator.userAgent.includes('Chrome')) browserName = 'Chrome';
+    else if (navigator.userAgent.includes('Firefox')) browserName = 'Firefox';
+    else if (navigator.userAgent.includes('Safari') && !navigator.userAgent.includes('Chrome')) browserName = 'Safari';
+    else if (navigator.userAgent.includes('Edge')) browserName = 'Edge';
+
+    const deviceName = `${navigator.platform || 'Device'} - ${browserName}`;
+
+    const sessionData = {
+      user_id: userData.id,
+      device_type: deviceType,
+      device_name: deviceName,
+      ip_address: ip,
+      location: 'Cabuyao City, Philippines' 
+    };
+
+    const { data: newSession, error: sessionError } = await supabase
+      .from('user_sessions')
+      .insert(sessionData)
+      .select()
+      .single();
+
+    if (!sessionError && newSession) {
+      localStorage.setItem('current_session_id', newSession.id);
+    }
+
+    setUser(userData);
+    localStorage.setItem('user', JSON.stringify(userData));
+    sessionManager.startSession();
+
+    await logAuth(ACTIONS.LOGIN_SUCCESS, userData.id, { email: userData.email, role: userData.role, ip });
   };
 
   const logout = async () => {
@@ -209,12 +200,10 @@ export const AuthProvider = ({ children }) => {
         await logAuth(ACTIONS.LOGOUT, user.id, { email: user.email });
       }
       
-      // --- START SESSION CLEANUP ---
       const sessionId = localStorage.getItem('current_session_id');
       if (sessionId) {
         await supabase.from('user_sessions').delete().eq('id', sessionId);
       }
-      // --- END SESSION CLEANUP ---
 
       setUser(null);
       setSession(null);
@@ -231,7 +220,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // HELPER: Role & Permission Checks
   const hasRole = (roles) => {
     if (!user) return false;
     return Array.isArray(roles) ? roles.includes(user.role) : user.role === roles;
@@ -256,7 +244,8 @@ export const AuthProvider = ({ children }) => {
     login,
     logout,
     hasRole,
-    hasPermission
+    hasPermission,
+    startUserSession // Exported so VerifyOTP can trigger it
   };
 
   return (
