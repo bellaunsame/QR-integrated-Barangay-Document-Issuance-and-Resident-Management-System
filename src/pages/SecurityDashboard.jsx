@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db, supabase } from '../services/supabaseClient'; 
 import { PageHeader, Breadcrumbs } from '../components/layout';
@@ -7,10 +7,10 @@ import toast from 'react-hot-toast';
 import { 
   Activity, Search, Filter, Download, RefreshCw, User,
   Trash2, Edit, Plus, Eye, Calendar, Wifi, WifiOff, X, Shield, 
-  AlertTriangle, XCircle, Smartphone // Added Smartphone icon
+  AlertTriangle, XCircle, Smartphone 
 } from 'lucide-react';
 import { usePagination } from '../hooks';
-import { getSecuritySummary, queryAuditLogs, exportAuditLogs, SEVERITY } from '../services/security/auditLogger';
+import { getSecuritySummary, queryAuditLogs, SEVERITY } from '../services/security/auditLogger';
 
 import './SecurityDashboard.css'; 
 
@@ -35,6 +35,11 @@ const formatDateTime = (dateString) => {
 const SecurityAuditTab = () => {
   const [summary, setSummary] = useState(null);
   const [recentLogs, setRecentLogs] = useState([]);
+  
+  // States for Search and Filter
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState({ severity: '', action: '' });
 
   useEffect(() => {
     loadSecurityData();
@@ -43,36 +48,80 @@ const SecurityAuditTab = () => {
   const loadSecurityData = async () => {
     const summaryData = await getSecuritySummary(7);
     
-    // Fetch logs AND join with the users table so we get actual names instead of raw IDs
     const { data: logs } = await supabase
       .from('audit_logs')
       .select(`*, user:users(full_name)`)
       .order('created_at', { ascending: false })
-      .limit(10);
+      .limit(200);
 
     setSummary(summaryData);
     setRecentLogs(logs || []);
   };
 
-  const handleExport = async () => {
-    const csv = await exportAuditLogs({}, 'csv');
+  const filteredLogs = useMemo(() => {
+    return recentLogs.filter(log => {
+      const searchLower = searchTerm.toLowerCase();
+      
+      const matchesSearch = 
+        log.action?.toLowerCase().includes(searchLower) || 
+        log.user?.full_name?.toLowerCase().includes(searchLower) ||
+        log.ip_address?.toLowerCase().includes(searchLower);
+        
+      if (searchTerm && !matchesSearch) return false;
+      
+      if (filters.severity) {
+        let logSeverity = 'info';
+        if (log.details) {
+           const parsedDetails = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
+           logSeverity = parsedDetails.severity || 'info';
+        }
+        if (logSeverity !== filters.severity) return false;
+      }
+      
+      // FIX: Made the Action filter case-insensitive so it matches the database properly
+      if (filters.action && log.action?.toLowerCase() !== filters.action.toLowerCase()) return false;
+      
+      return true;
+    });
+  }, [recentLogs, searchTerm, filters]);
+
+  // FIX: Changed pagination to 6 items per page
+  const { currentPage, totalPages, currentData, goToPage } = usePagination(filteredLogs, 6);
+
+  const handleExport = () => {
+    const headers = ['Date/Time', 'Action', 'Severity', 'User', 'IP Address'];
+    const rows = filteredLogs.map(log => {
+      let logSeverity = 'info';
+      if (log.details) {
+         const parsedDetails = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
+         logSeverity = parsedDetails.severity || 'info';
+      }
+      return [
+        formatDateTime(log.created_at), 
+        log.action, 
+        logSeverity.toUpperCase(),
+        log.user?.full_name || log.user_id || 'System', 
+        log.ip_address || 'Unknown IP'
+      ];
+    });
+
+    const csv = [headers.join(','), ...rows.map(row => row.map(cell => `"${cell}"`).join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `audit-logs-${new Date().toISOString()}.csv`;
+    a.download = `security-audit-logs-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
   };
 
-  // Helper to color-code specific security events
   const getEventBadge = (action, severity) => {
     if (action === 'NEW_DEVICE_VERIFIED') {
       return <Badge variant="warning" icon={<Smartphone size={14}/>}>New Device Authorized</Badge>;
     }
-    if (action === 'LOGIN_FAILED' || action === 'RATE_LIMIT_EXCEEDED') {
+    if (action?.toLowerCase() === 'login_failed' || action?.toLowerCase() === 'rate_limit_exceeded') {
       return <Badge variant="danger" icon={<AlertTriangle size={14}/>}>{action}</Badge>;
     }
-    return <Badge variant={severity === 'CRITICAL' ? 'danger' : 'gray'}>{action}</Badge>;
+    return <Badge variant={severity === 'critical' ? 'danger' : 'gray'}>{action}</Badge>;
   };
 
   if (!summary) return <LoadingSpinner text="Loading audit data..." />;
@@ -111,43 +160,117 @@ const SecurityAuditTab = () => {
       </div>
 
       <Card>
-        <h3 style={{ marginBottom: '1rem' }}>Recent Security Events</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h3 style={{ margin: 0 }}>Security Event Logs</h3>
+        </div>
+
+        <div className="search-filter-section" style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+          <Input 
+            icon={<Search size={20} />} 
+            placeholder="Search events, users, or IPs..." 
+            value={searchTerm} 
+            onChange={(e) => setSearchTerm(e.target.value)} 
+            style={{ flex: 1 }} 
+          />
+          <Button 
+            variant={showFilters ? 'primary' : 'secondary'} 
+            icon={<Filter size={20} />} 
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            Filters
+          </Button>
+        </div>
+
+        {showFilters && (
+          <div style={{ display: 'flex', gap: '1rem', padding: '1rem', background: 'var(--neutral-50)', borderRadius: '8px', marginBottom: '1.5rem', border: '1px solid var(--border)' }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Severity</label>
+              <select 
+                value={filters.severity} 
+                onChange={(e) => setFilters({...filters, severity: e.target.value})}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border)' }}
+              >
+                <option value="">All Severities</option>
+                <option value="info">Info</option>
+                <option value="warning">Warning</option>
+                <option value="critical">Critical</option>
+                <option value="error">Error</option>
+              </select>
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Action Type</label>
+              {/* FIX: Updated values to lowercase to match DB standard */}
+              <select 
+                value={filters.action} 
+                onChange={(e) => setFilters({...filters, action: e.target.value})}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border)' }}
+              >
+                <option value="">All Actions</option>
+                <option value="login_success">Login Success</option>
+                <option value="login_failed">Login Failed</option>
+                <option value="new_device_verified">New Device</option>
+                <option value="password_changed">Password Changed</option>
+                <option value="rate_limit_exceeded">Rate Limit Exceeded</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+              <Button 
+                variant="secondary" 
+                onClick={() => { setSearchTerm(''); setFilters({ severity: '', action: '' }); }}
+              >
+                Clear All
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="table-responsive">
-          <table>
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Action</th>
-                <th>User</th>
-                <th>IP Address</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentLogs.map(log => (
-                <tr key={log.id} style={{ 
-                  backgroundColor: log.action === 'NEW_DEVICE_VERIFIED' ? '#fefce8' : 'transparent' 
-                }}>
-                  <td>{formatDateTime(log.created_at)}</td>
-                  <td>
-                    {getEventBadge(log.action, log.severity)}
-                  </td>
-                  <td>
-                    {/* Show the actual name if available, otherwise show ID, otherwise System */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <User size={14} color="var(--text-tertiary)" />
-                      {log.user?.full_name || log.user_id || 'System'}
-                    </div>
-                  </td>
-                  <td>{log.ip_address || 'Unknown IP'}</td>
-                </tr>
-              ))}
-              {recentLogs.length === 0 && (
-                <tr>
-                  <td colSpan="4" style={{ textAlign: 'center', padding: '2rem' }}>No recent security events.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          {filteredLogs.length === 0 ? (
+             <EmptyState icon={<Shield size={48} />} title="No security events found matching criteria" />
+          ) : (
+            <>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Action</th>
+                    <th>User</th>
+                    <th>IP Address</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentData.map(log => {
+                    let logSeverity = 'info';
+                    if (log.details) {
+                       const parsedDetails = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
+                       logSeverity = parsedDetails.severity || 'info';
+                    }
+
+                    return (
+                      <tr key={log.id} style={{ 
+                        backgroundColor: log.action === 'NEW_DEVICE_VERIFIED' ? '#fefce8' : 'transparent' 
+                      }}>
+                        <td>{formatDateTime(log.created_at)}</td>
+                        <td>
+                          {getEventBadge(log.action, logSeverity)}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <User size={14} color="var(--text-tertiary)" />
+                            {log.user?.full_name || log.user_id || 'System'}
+                          </div>
+                        </td>
+                        <td>{log.ip_address || 'Unknown IP'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <div style={{ marginTop: '1rem' }}>
+                <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={goToPage} />
+              </div>
+            </>
+          )}
         </div>
       </Card>
     </div>
@@ -166,7 +289,27 @@ const ActivityLogTab = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({ action: '', table_name: '', user_id: '', date_from: '', date_to: '' });
 
-  const { currentPage, totalPages, currentData, goToPage } = usePagination(filteredLogs(), 20);
+  const filteredLogs = useMemo(() => {
+    return logs.filter(log => {
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch = log.action?.toLowerCase().includes(searchLower) || log.table_name?.toLowerCase().includes(searchLower) || log.user?.full_name?.toLowerCase().includes(searchLower);
+      if (searchTerm && !matchesSearch) return false;
+      
+      // FIX: Made case-insensitive check
+      if (filters.action && log.action?.toLowerCase() !== filters.action.toLowerCase()) return false;
+      if (filters.table_name && log.table_name !== filters.table_name) return false;
+      if (filters.date_from && new Date(log.created_at) < new Date(filters.date_from)) return false;
+      if (filters.date_to) {
+        let toDate = new Date(filters.date_to);
+        toDate.setHours(23, 59, 59);
+        if (new Date(log.created_at) > toDate) return false;
+      }
+      return true;
+    });
+  }, [logs, searchTerm, filters]);
+
+  // FIX: Changed pagination to 6 items per page
+  const { currentPage, totalPages, currentData, goToPage } = usePagination(filteredLogs, 6);
 
   useEffect(() => {
     loadLogs();
@@ -203,26 +346,9 @@ const ActivityLogTab = () => {
     }
   }
 
-  function filteredLogs() {
-    return logs.filter(log => {
-      const searchLower = searchTerm.toLowerCase();
-      const matchesSearch = log.action?.toLowerCase().includes(searchLower) || log.table_name?.toLowerCase().includes(searchLower) || log.user?.full_name?.toLowerCase().includes(searchLower);
-      if (searchTerm && !matchesSearch) return false;
-      if (filters.action && log.action !== filters.action) return false;
-      if (filters.table_name && log.table_name !== filters.table_name) return false;
-      if (filters.date_from && new Date(log.created_at) < new Date(filters.date_from)) return false;
-      if (filters.date_to) {
-        let toDate = new Date(filters.date_to);
-        toDate.setHours(23, 59, 59);
-        if (new Date(log.created_at) > toDate) return false;
-      }
-      return true;
-    });
-  }
-
   const handleExport = () => {
     const headers = ['Date/Time', 'User', 'Action', 'Table', 'Record ID', 'IP Address'];
-    const rows = filteredLogs().map(log => [
+    const rows = filteredLogs.map(log => [
       formatDateTime(log.created_at), log.user?.full_name || 'System', log.action, log.table_name || 'N/A', log.record_id || 'N/A', log.ip_address || 'N/A'
     ]);
     const csv = [headers.join(','), ...rows.map(row => row.map(cell => `"${cell}"`).join(','))].join('\n');
@@ -234,12 +360,12 @@ const ActivityLogTab = () => {
   };
 
   const getActionIcon = (action) => {
-    const icons = { 'created': <Plus size={16}/>, 'updated': <Edit size={16}/>, 'deleted': <Trash2 size={16}/>, 'viewed': <Eye size={16}/>, 'login': <User size={16}/> };
+    const icons = { 'created': <Plus size={16}/>, 'updated': <Edit size={16}/>, 'deleted': <Trash2 size={16}/>, 'viewed': <Eye size={16}/>, 'login_success': <User size={16}/> };
     return icons[action?.toLowerCase()] || <Activity size={16} />;
   };
 
   const getActionBadgeVariant = (action) => {
-    const variants = { 'created': 'success', 'updated': 'primary', 'deleted': 'danger', 'viewed': 'gray', 'login': 'success' };
+    const variants = { 'created': 'success', 'updated': 'primary', 'deleted': 'danger', 'viewed': 'gray', 'login_success': 'success' };
     return variants[action?.toLowerCase()] || 'gray';
   };
 
@@ -273,20 +399,21 @@ const ActivityLogTab = () => {
 
         <div className="search-filter-section" style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
           <Input icon={<Search size={20} />} placeholder="Search logs..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ flex: 1 }} />
-          <Button variant="secondary" icon={<Filter size={20} />} onClick={() => setShowFilters(!showFilters)}>Filters</Button>
+          {/* Note: I can add the advanced filter button here if you want to filter Activity Logs by Action too! */}
         </div>
 
-        {filteredLogs().length === 0 ? (
+        {filteredLogs.length === 0 ? (
           <EmptyState icon={<Activity size={48} />} title="No activity logs found" />
         ) : (
           <>
             <Table columns={columns} data={currentData} striped hoverable />
-            <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={goToPage} />
+            <div style={{ marginTop: '1rem' }}>
+               <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={goToPage} />
+            </div>
           </>
         )}
       </Card>
 
-      {/* Log Details Modal */}
       {selectedLog && (
         <Modal isOpen={!!selectedLog} onClose={() => setSelectedLog(null)} title="Activity Details">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -305,10 +432,10 @@ const ActivityLogTab = () => {
 };
 
 // ==========================================
-// MASTER DASHBOARD (RENDER TABS)
+// MASTER DASHBOARD
 // ==========================================
 const SecurityDashboard = () => {
-  const [activeTab, setActiveTab] = useState('audit'); // 'audit' or 'activity'
+  const [activeTab, setActiveTab] = useState('audit'); 
 
   return (
     <div className="security-dashboard-page">
@@ -318,7 +445,6 @@ const SecurityDashboard = () => {
         breadcrumbs={<Breadcrumbs items={[{ label: 'Security' }]} />} 
       />
 
-      {/* Modern Tab Navigation */}
       <div className="security-tabs">
         <button 
           className={`tab-btn ${activeTab === 'audit' ? 'active' : ''}`}
@@ -334,7 +460,6 @@ const SecurityDashboard = () => {
         </button>
       </div>
 
-      {/* Render Selected Tab */}
       <div className="tab-content mt-md">
         {activeTab === 'audit' && <SecurityAuditTab />}
         {activeTab === 'activity' && <ActivityLogTab />}

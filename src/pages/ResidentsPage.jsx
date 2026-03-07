@@ -12,12 +12,14 @@ import { validateForm } from '../services/security/inputSanitizer';
 import { logDataModification, ACTIONS } from '../services/security/auditLogger';
 import { calculateAge, getEmptyFormData } from '../utils/residentUtils';
 
-// Sub-components
+// UI Components & Hooks
+import { Pagination } from '../components/common'; // <-- Imported Pagination component
+import { usePagination } from '../hooks'; // <-- Imported custom hook
 import ResidentViewModal from '../components/residents/ResidentViewModal';
 import ResidentFormModal from '../components/residents/ResidentFormModal';
 import CameraCaptureModal from '../components/residents/CameraCaptureModal';
 
-import { Users, Plus, Search, Edit2, Archive, QrCode, Mail, Download, Eye, User, ChevronLeft, ChevronRight, RefreshCw, Home } from 'lucide-react';
+import { Users, Plus, Search, Edit2, Archive, QrCode, Mail, Download, Eye, User, RefreshCw, Home } from 'lucide-react';
 import './ResidentsPage.css';
 
 const ResidentsPage = () => {
@@ -33,10 +35,14 @@ const ResidentsPage = () => {
   // VIEW MODE STATE (Active vs Archived)
   const [viewMode, setViewMode] = useState('active'); 
 
-  // PAGINATION STATES
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
-  
+  // --- PAGINATION HOOK ---
+  const { 
+    currentPage, 
+    totalPages, 
+    currentData: currentResidents, 
+    goToPage 
+  } = usePagination(filteredResidents, 5); // Fetches exactly 5 residents per page
+
   // Modal states
   const [showModal, setShowModal] = useState(false);
   const [viewingResident, setViewingResident] = useState(null); 
@@ -98,7 +104,6 @@ const ResidentsPage = () => {
     }
 
     setFilteredResidents(filtered);
-    setCurrentPage(1); 
   };
 
   // TRANSIENT CHECKER (Less than 6 Months)
@@ -344,11 +349,6 @@ const ResidentsPage = () => {
 
   const closeModal = () => { setShowModal(false); setEditingResident(null); setErrors({}); };
 
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentResidents = filteredResidents.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(filteredResidents.length / itemsPerPage) || 1;
-
   return (
     <>
       <style>{`
@@ -375,10 +375,6 @@ const ResidentsPage = () => {
           
           .residents-controls { flex-direction: column !important; align-items: stretch !important; gap: 1rem; }
           .search-box { width: 100%; }
-
-          .pagination-controls { flex-direction: column !important; gap: 1rem; text-align: center; }
-          .pagination-controls button { flex: 1; }
-          .pagination-controls > div { width: 100%; justify-content: space-between; }
         }
       `}</style>
 
@@ -418,7 +414,6 @@ const ResidentsPage = () => {
               <div className="table-responsive">
                 <table>
                   <thead>
-                    {/* NEW: Added a dedicated Residency Status Column */}
                     <tr>
                       <th>Name</th>
                       <th>Address</th>
@@ -450,7 +445,6 @@ const ResidentsPage = () => {
                           <td>
                             {r.full_address}, {r.barangay}
                           </td>
-                          {/* NEW: Dedicated Status Cell */}
                           <td>
                             <div className="status-cell">
                                <span className={`badge ${
@@ -517,7 +511,6 @@ const ResidentsPage = () => {
                       </div>
                     </div>
 
-                    {/* NEW: Prominent Mobile Status display */}
                     <div style={{ marginBottom: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                        <span className={`badge ${
                          r.residency_type === 'Tenant' ? 'badge-tenant' : 
@@ -570,36 +563,13 @@ const ResidentsPage = () => {
               )}
             </div>
 
-            {/* PAGINATION CONTROLS */}
-            {filteredResidents.length > itemsPerPage && (
-              <div className="pagination-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', borderTop: '1px solid var(--border)', background: 'var(--neutral-50)' }}>
-                <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-                  Showing <strong>{indexOfFirstItem + 1}</strong> to <strong>{Math.min(indexOfLastItem, filteredResidents.length)}</strong> of <strong>{filteredResidents.length}</strong> entries
-                </span>
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <button 
-                    className="btn btn-secondary" 
-                    style={{ padding: '6px 10px', margin: 0 }}
-                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
-                    disabled={currentPage === 1}
-                  >
-                    <ChevronLeft size={16} /> Prev
-                  </button>
-                  
-                  <span style={{ fontSize: '0.875rem', fontWeight: '500', padding: '0 10px' }}>
-                    Page {currentPage} of {totalPages}
-                  </span>
-                  
-                  <button 
-                    className="btn btn-secondary" 
-                    style={{ padding: '6px 10px', margin: 0 }}
-                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
-                    disabled={currentPage === totalPages}
-                  >
-                    Next <ChevronRight size={16} />
-                  </button>
+            {/* --- NEW PAGINATION SECTION --- */}
+            {filteredResidents.length > 5 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '1rem', padding: '1rem', background: 'var(--neutral-50)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                <div style={{ textAlign: 'center', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                  Showing <strong>{((currentPage - 1) * 5) + 1}</strong> to <strong>{Math.min(currentPage * 5, filteredResidents.length)}</strong> of <strong>{filteredResidents.length}</strong> residents
                 </div>
+                <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={goToPage} />
               </div>
             )}
           </>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { db } from '../services/supabaseClient';
@@ -19,6 +19,11 @@ import {
   BarChart3,
   Filter
 } from 'lucide-react';
+
+// --- IMPORTS FOR PAGINATION ---
+import { Pagination } from '../components/common'; 
+import { usePagination } from '../hooks';
+
 import './DashboardPage.css';
 
 const DashboardPage = () => {
@@ -32,10 +37,9 @@ const DashboardPage = () => {
     totalRequests: 0
   });
   
-  const [recentRequests, setRecentRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // --- CHART STATES ---
+  // --- CHART & DATA STATES ---
   const [allRawRequests, setAllRawRequests] = useState([]); 
   const [chartData, setChartData] = useState([]);
   const [timeFilter, setTimeFilter] = useState('month'); 
@@ -85,14 +89,24 @@ const DashboardPage = () => {
         totalRequests: allRequests.length
       });
 
-      setRecentRequests(allRequests.slice(0, 10));
-
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     } finally {
       setLoading(false);
     }
   };
+
+  // --- SORT AND PAGINATE REQUESTS ---
+  const sortedRequests = useMemo(() => {
+    return [...allRawRequests].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  }, [allRawRequests]);
+
+  const { 
+    currentPage, 
+    totalPages, 
+    currentData: currentRecentRequests, 
+    goToPage 
+  } = usePagination(sortedRequests, 3); // <--- Set to exactly 3 items per page
 
   const processChartData = (requests, filterOption) => {
     const now = new Date();
@@ -281,7 +295,6 @@ const DashboardPage = () => {
                 margin={{ top: 20, right: 30, left: 0, bottom: 20 }} 
               >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-                {/* FIX: Removed angle={-35} and textAnchor="end", and shortened height */}
                 <XAxis 
                   dataKey="name" 
                   tick={{ fill: 'var(--text-secondary)', fontSize: 12 }}
@@ -316,27 +329,41 @@ const DashboardPage = () => {
           </div>
           
           <div>
-            {recentRequests.length === 0 ? (
+            {currentRecentRequests.length === 0 ? (
               <div className="empty-state">
                 <FileText size={48} />
                 <h3>No requests yet</h3>
                 <p>Document requests will appear here</p>
               </div>
             ) : (
-              <div className="requests-card-grid">
-                {recentRequests.map((request) => (
-                  <DocumentRequestCard 
-                    key={request.id} 
-                    request={request} 
-                    showActions={false} 
-                  />
-                ))}
-              </div>
+              <>
+                <div className="requests-card-grid">
+                  {currentRecentRequests.map((request) => (
+                    <DocumentRequestCard 
+                      key={request.id} 
+                      request={request} 
+                      showActions={false} 
+                    />
+                  ))}
+                </div>
+                
+                {/* --- UPDATED PAGINATION CONTROLS --- */}
+                <div style={{ marginTop: '1.5rem', background: 'var(--surface)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <div style={{ textAlign: 'center', marginBottom: '10px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                    Showing {currentRecentRequests.length} of {sortedRequests.length} total requests
+                  </div>
+                  
+                  {/* Buttons will ONLY show if there are 4 or more requests */}
+                  {sortedRequests.length > 3 && (
+                     <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={goToPage} />
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>
 
-        {/* --- Quick Actions updated for Clerk --- */}
+        {/* Quick Actions */}
         <div className="quick-actions">
           <h3>Quick Actions</h3>
           <div className="action-cards">

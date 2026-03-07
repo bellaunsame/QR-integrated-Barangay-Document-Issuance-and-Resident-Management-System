@@ -10,12 +10,13 @@ import { useLocation } from 'react-router-dom';
 // Security & Audit Imports
 import { logDataModification, ACTIONS } from '../services/security/auditLogger';
 
-// UI Components
-import { Modal } from '../components/common';
+// UI Components & Hooks
+import { Modal, Pagination } from '../components/common'; 
+import { usePagination } from '../hooks'; 
 import DocumentRequestForm from '../components/documents/DocumentRequestForm';
 import DocumentRequestDetails from '../components/documents/DocumentRequestDetails';
 import { 
-  Search, Eye, Download, CheckCircle, XCircle, Send, Plus, Archive, CheckSquare, Printer, RefreshCw, Edit, Copy, Ban, ChevronLeft, ChevronRight
+  Search, Eye, Download, CheckCircle, XCircle, Send, Plus, Archive, CheckSquare, Printer, RefreshCw, Edit, Copy, Ban
 } from 'lucide-react';
 import './DocumentRequestsPage.css';
 
@@ -42,9 +43,17 @@ const DocumentRequestsPage = () => {
   const [selectedRequests, setSelectedRequests] = useState([]);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
 
-  // --- PAGINATION STATES ---
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  // --- NEW: PAGINATION HOOK SET TO 5 ---
+  const { 
+    currentPage, 
+    totalPages, 
+    currentData: currentRequests, 
+    goToPage 
+  } = usePagination(filteredRequests, 5); // <--- Changed from 10 to 5
+
+  const itemsPerPage = 5;
+  const indexOfFirstItem = (currentPage - 1) * itemsPerPage;
+  const indexOfLastItem = currentPage * itemsPerPage;
 
   // --- ROLE PERMISSIONS ---
   const canProcessDocs = ['admin', 'clerk', 'record_keeper'].includes(user?.role);
@@ -82,10 +91,6 @@ const DocumentRequestsPage = () => {
     filterRequests();
     setSelectedRequests([]); 
   }, [selectedStatus, searchTerm, requests]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [selectedStatus, searchTerm]);
 
   const loadData = async () => {
     try {
@@ -353,12 +358,6 @@ const DocumentRequestsPage = () => {
 
   const getPageTitle = () => selectedStatus === 'all' ? 'All Document Requests' : `${selectedStatus.charAt(0).toUpperCase() + selectedStatus.slice(1)} Requests`;
 
-  // --- PAGINATION MATH ---
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentRequests = filteredRequests.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(filteredRequests.length / itemsPerPage) || 1;
-
   // --- ACTION BUTTONS HELPER ---
   const renderActionButtons = (request) => (
     <div className="action-buttons" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -373,12 +372,9 @@ const DocumentRequestsPage = () => {
         <>
           {request.status === 'pending' && (
             <>
-              {/* Everyone can edit */}
               <button className="btn-icon" style={{ background: '#f3f4f6', color: '#374151' }} onClick={() => handleEditRequest(request)} title="Edit Request Details">
                 <Edit size={18} />
               </button>
-              
-              {/* ONLY ADMIN CAN ACCEPT OR ARCHIVE PENDING DOCS */}
               {isAdmin && (
                 <>
                   <button className="btn-icon btn-success" onClick={() => handleProcessRequest(request)} disabled={processingRequest === request.id} title="Accept & Generate PDF">
@@ -394,7 +390,6 @@ const DocumentRequestsPage = () => {
 
           {request.status === 'completed' && (
             <>
-              {/* Clerks/Record Keepers CAN print and release completed docs */}
               <button className="btn-icon" style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }} onClick={() => handlePrintDocument(request)} title="Print Document">
                 <Printer size={18} />
               </button>
@@ -412,7 +407,6 @@ const DocumentRequestsPage = () => {
               <button className="btn-icon btn-danger" onClick={() => handleRevokeDocument(request)} title="Revoke Document">
                 <Ban size={18} />
               </button>
-              {/* RESTRICTED TO ADMIN */}
               {isAdmin && (
                 <button className="btn-icon" style={{ background: '#e2e8f0', color: '#475569' }} onClick={() => handleArchiveDocument(request)} title="Archive Document">
                   <Archive size={18} />
@@ -423,7 +417,6 @@ const DocumentRequestsPage = () => {
 
           {['archived', 'rejected', 'revoked'].includes(request.status) && (
             <>
-              {/* RESTRICTED TO ADMIN */}
               {isAdmin && (
                 <button className="btn-icon btn-primary" onClick={() => handleRetrieveDocument(request)} title="Retrieve Document">
                   <RefreshCw size={18} />
@@ -441,7 +434,6 @@ const DocumentRequestsPage = () => {
 
   return (
     <>
-      {/* MOBILE RESPONSIVE CSS INJECTED DIRECTLY */}
       <style>{`
         .desktop-table-container { display: block; }
         .mobile-cards-container { display: none; }
@@ -458,8 +450,6 @@ const DocumentRequestsPage = () => {
           .batch-actions-bar .batch-buttons button { width: 100%; justify-content: center; }
 
           .pagination-controls { flex-direction: column !important; gap: 1rem; text-align: center; }
-          .pagination-controls button { flex: 1; }
-          .pagination-controls > div { width: 100%; justify-content: space-between; }
         }
       `}</style>
 
@@ -475,11 +465,9 @@ const DocumentRequestsPage = () => {
           <div className="batch-actions-bar" style={{ backgroundColor: 'var(--primary-50)', border: '1px solid var(--primary-200)', padding: '12px 20px', borderRadius: '8px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', animation: 'fadeIn 0.2s ease-in-out' }}>
             <span style={{ fontWeight: '600', color: 'var(--primary-700)' }}>{selectedRequests.length} request(s) selected</span>
             <div className="batch-buttons" style={{ display: 'flex', gap: '10px' }}>
-              {/* BATCH ACCEPT STRICTLY FOR ADMIN ONLY */}
               {selectedStatus === 'pending' && isAdmin && (
                 <button className="btn btn-primary" onClick={handleBatchProcess} disabled={isBatchProcessing}><CheckSquare size={18} style={{marginRight: '6px'}} /> Accept Selected</button>
               )}
-              {/* BATCH RELEASE FOR CLERKS AND ADMINS */}
               {selectedStatus === 'completed' && (
                 <button className="btn btn-success" onClick={handleBatchRelease} disabled={isBatchProcessing}><Send size={18} style={{marginRight: '6px'}} /> Release Selected</button>
               )}
@@ -496,7 +484,7 @@ const DocumentRequestsPage = () => {
           <div className="loading-state"><div className="spinner"></div><p>Loading data...</p></div>
         ) : (
           <>
-            {/* DESKTOP VIEW: STANDARD TABLE */}
+            {/* DESKTOP VIEW */}
             <div className="card desktop-table-container">
               <div className="table-responsive">
                 <table>
@@ -534,7 +522,7 @@ const DocumentRequestsPage = () => {
               </div>
             </div>
 
-            {/* MOBILE VIEW: CARD LAYOUT */}
+            {/* MOBILE VIEW */}
             <div className="mobile-cards-container">
               {currentRequests.length > 0 && (
                 <div style={{ padding: '12px', background: '#fff', borderRadius: '8px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -571,38 +559,23 @@ const DocumentRequestsPage = () => {
               )}
             </div>
 
-            {/* --- PAGINATION CONTROLS --- */}
+            {/* --- NEW PAGINATION CONTROLS --- */}
             {filteredRequests.length > itemsPerPage && (
-              <div className="pagination-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', marginTop: '1rem', background: 'var(--neutral-50)', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-                  Showing <strong>{indexOfFirstItem + 1}</strong> to <strong>{Math.min(indexOfLastItem, filteredRequests.length)}</strong> of <strong>{filteredRequests.length}</strong>
-                </span>
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <button className="btn btn-secondary" style={{ padding: '6px 10px', margin: 0 }} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
-                    <ChevronLeft size={16} /> Prev
-                  </button>
-                  
-                  <span style={{ fontSize: '0.875rem', fontWeight: '500', padding: '0 10px' }}>
-                    Page {currentPage} of {totalPages}
-                  </span>
-                  
-                  <button className="btn btn-secondary" style={{ padding: '6px 10px', margin: 0 }} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
-                    Next <ChevronRight size={16} />
-                  </button>
+              <div className="pagination-controls" style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '1rem', padding: '1rem', background: 'var(--neutral-50)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                <div style={{ textAlign: 'center', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                  Showing <strong>{((currentPage - 1) * itemsPerPage) + 1}</strong> to <strong>{Math.min(currentPage * itemsPerPage, filteredRequests.length)}</strong> of <strong>{filteredRequests.length}</strong> requests
                 </div>
+                <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={goToPage} />
               </div>
             )}
           </>
         )}
 
-        {/* DETAILS MODAL (Locked out for non-admins on pending docs) */}
         {viewingRequest && (
           <Modal isOpen={!!viewingRequest} onClose={() => setViewingRequest(null)} title="Document Details & Preview" size="xl">
             <DocumentRequestDetails 
               request={viewingRequest} 
               onClose={() => setViewingRequest(null)} 
-              // ONLY pass handleProcessRequest if it's NOT pending OR if user is admin
               onApprove={(viewingRequest.status === 'pending' && !isAdmin) ? null : handleProcessRequest} 
               onReject={isAdmin ? handleArchiveDocument : null} 
               onDownload={handleDownloadDocument} 

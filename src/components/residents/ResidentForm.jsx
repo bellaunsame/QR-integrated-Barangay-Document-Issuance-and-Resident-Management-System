@@ -27,7 +27,6 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
     city_municipality: resident?.city_municipality || '',
     province: resident?.province || '',
     zip_code: resident?.zip_code || '',
-    // --- NEW: Added Residency fields to state ---
     residency_type: resident?.residency_type || 'Permanent',
     residency_start_date: resident?.residency_start_date || '',
     mobile_number: resident?.mobile_number || '',
@@ -47,9 +46,16 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
+    
+    // Prevent leading spaces and purely space-filled inputs
+    let sanitizedValue = type === 'checkbox' ? checked : value;
+    if (typeof sanitizedValue === 'string') {
+      sanitizedValue = sanitizedValue.trimStart(); 
+    }
+
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: sanitizedValue
     }));
 
     // Clear error for this field as the user types
@@ -68,7 +74,7 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
     setErrors({});
 
     try {
-      // --- NEW: AGE RESTRICTION CHECK (>4 Years Old) ---
+      // AGE RESTRICTION CHECK (>4 Years Old)
       if (formData.date_of_birth) {
         const dob = new Date(formData.date_of_birth);
         const today = new Date();
@@ -97,7 +103,8 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
         barangay: { required: true, type: 'address' },
         city_municipality: { required: true, type: 'address' },
         province: { required: true, type: 'address' },
-        mobile_number: { required: true, type: 'phone' } 
+        mobile_number: { required: true, type: 'phone' },
+        email: { required: true, type: 'email' } // <-- Email is now explicitly required
       };
 
       // Validate form
@@ -140,7 +147,6 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
             validation.sanitizedData.zip_code
         ].filter(Boolean).join(' '),
         
-        // --- NEW: Injecting Residency Type & Start Date safely ---
         residency_type: formData.residency_type || 'Permanent',
         residency_start_date: formData.residency_start_date || new Date().toISOString().split('T')[0], 
         qr_code_url: '' 
@@ -333,7 +339,6 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
             placeholder="4500"
           />
 
-          {/* --- NEW: Residency Type UI added to match the Modal --- */}
           <div className="form-group">
             <label htmlFor="residency_type">
               Residency Type <span className="required">*</span>
@@ -381,7 +386,7 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
           />
 
           <Input
-            label="Email Address"
+            label="Email Address *"
             name="email"
             type="email"
             icon={<Mail size={18} />}
@@ -389,6 +394,7 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
             onChange={handleChange}
             error={errors.email?.[0]}
             placeholder="email@example.com"
+            required
           />
         </div>
       </div>

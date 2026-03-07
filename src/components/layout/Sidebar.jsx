@@ -34,57 +34,72 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
     residents: 0,
     pending: 0,
     completed: 0,
-    released: 0
+    released: 0,
+    new_devices: 0 
   });
 
   // --- INTEGRATED REALTIME LOGIC ---
   useEffect(() => {
     fetchCounts();
 
-    // Force update when DocumentRequestsPage tells us to
     window.addEventListener('docs_updated', fetchCounts);
 
     const residentChannel = supabase.channel('sidebar-residents-sync')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'residents' 
-      }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'residents' }, () => {
         fetchCounts();
       }).subscribe();
 
     const docsChannel = supabase.channel('sidebar-docs-sync')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'document_requests' 
-      }, () => {
-        setTimeout(() => {
-            fetchCounts(); 
-        }, 500); 
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'document_requests' }, () => {
+        setTimeout(() => fetchCounts(), 500); 
+      }).subscribe();
+
+    const auditChannel = supabase.channel('sidebar-audit-sync')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_logs' }, () => {
+        setTimeout(() => fetchCounts(), 500);
       }).subscribe();
 
     return () => {
       window.removeEventListener('docs_updated', fetchCounts);
       supabase.removeChannel(residentChannel);
       supabase.removeChannel(docsChannel);
+      supabase.removeChannel(auditChannel);
     };
   }, []);
 
   const fetchCounts = async () => {
     try {
-      const [resCount, pendingCount, completedCount, releasedCount] = await Promise.all([
+      const yesterday = new Date();
+      yesterday.setHours(yesterday.getHours() - 24);
+
+      // --- NEW: Calculate the time to check from based on last visit ---
+      const lastViewedStr = localStorage.getItem('last_viewed_security');
+      let sinceTime = yesterday;
+
+      if (lastViewedStr) {
+        const lastViewed = new Date(lastViewedStr);
+        // If they viewed it more recently than 24 hours ago, only count things AFTER that visit
+        if (lastViewed > yesterday) {
+          sinceTime = lastViewed;
+        }
+      }
+
+      const [resCount, pendingCount, completedCount, releasedCount, newDevicesCount] = await Promise.all([
         supabase.from('residents').select('*', { count: 'exact', head: true }),
         supabase.from('document_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
         supabase.from('document_requests').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
-        supabase.from('document_requests').select('*', { count: 'exact', head: true }).eq('status', 'released')
+        supabase.from('document_requests').select('*', { count: 'exact', head: true }).eq('status', 'released'),
+        supabase.from('audit_logs').select('*', { count: 'exact', head: true })
+          .eq('action', 'NEW_DEVICE_VERIFIED')
+          .gte('created_at', sinceTime.toISOString()) // <-- Use dynamic time
       ]);
 
       setCounts({
         residents: resCount.count || 0,
         pending: pendingCount.count || 0,
         completed: completedCount.count || 0,
-        released: releasedCount.count || 0
+        released: releasedCount.count || 0,
+        new_devices: newDevicesCount.count || 0 
       });
     } catch (error) {
       console.error("Error fetching sidebar counts:", error);
@@ -94,6 +109,16 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
   useEffect(() => {
     if (location.pathname.includes('/documents')) {
       setIsDocsOpen(true);
+    }
+  }, [location.pathname]);
+
+  // --- NEW: Clear Notification on Click ---
+  useEffect(() => {
+    if (location.pathname === '/security') {
+      // Record the exact time they visited the tab
+      localStorage.setItem('last_viewed_security', new Date().toISOString());
+      // Instantly clear the badge from the UI
+      setCounts(prev => ({ ...prev, new_devices: 0 }));
     }
   }, [location.pathname]);
 
@@ -133,7 +158,8 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
       icon: <ShieldCheck size={20} />,
       label: 'Security Dashboard',
       path: '/security',
-      roles: ['admin']
+      roles: ['admin'],
+      badge: counts.new_devices > 0 ? { text: counts.new_devices, color: '#fef3c7', textColor: '#b45309' } : null 
     },
     {
       icon: <Settings size={20} />,
@@ -290,7 +316,16 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
             {visibleMenuItems.slice(2).map((item) => (
               <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onClose}>
                 <span className="nav-icon">{item.icon}</span>
-                {!isCollapsed && <span className="nav-label">{item.label}</span>}
+                {!isCollapsed && (
+                  <>
+                    <span className="nav-label">{item.label}</span>
+                    {item.badge && (
+                      <span className="nav-badge" style={{ backgroundColor: item.badge.color, color: item.badge.textColor }}>
+                        {item.badge.text > 99 ? '99+' : item.badge.text}
+                      </span>
+                    )}
+                  </>
+                )}
               </NavLink>
             ))}
           </div>

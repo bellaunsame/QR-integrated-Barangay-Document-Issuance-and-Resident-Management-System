@@ -34,9 +34,10 @@ const ResidentFormModal = ({
     let firstMissingName = null;
 
     // STEP 1 VALIDATION
+    // FIX: Added ?.trim() to ensure spaces don't bypass the check
     if (currentStep === 1) {
-      if (!formData.first_name) { missingFields.push("First Name"); firstMissingName = "first_name"; }
-      if (!formData.last_name) { missingFields.push("Last Name"); firstMissingName = firstMissingName || "last_name"; }
+      if (!formData.first_name?.trim()) { missingFields.push("First Name"); firstMissingName = "first_name"; }
+      if (!formData.last_name?.trim()) { missingFields.push("Last Name"); firstMissingName = firstMissingName || "last_name"; }
       
       if (!formData.date_of_birth) { 
         missingFields.push("Date of Birth"); 
@@ -58,18 +59,34 @@ const ResidentFormModal = ({
         }
       }
 
-      if (!formData.gender) { missingFields.push("Gender"); firstMissingName = firstMissingName || "gender"; }
-      if (!isUnderage && !formData.civil_status) { missingFields.push("Civil Status"); firstMissingName = firstMissingName || "civil_status"; }
+      if (!formData.gender?.trim()) { missingFields.push("Gender"); firstMissingName = firstMissingName || "gender"; }
+      if (!isUnderage && !formData.civil_status?.trim()) { missingFields.push("Civil Status"); firstMissingName = firstMissingName || "civil_status"; }
     } 
-    // STEP 2 VALIDATION (Added Residency Type)
+    // STEP 2 VALIDATION (Added Residency Type & Email)
     else if (currentStep === 2) {
-      if (!formData.full_address) { missingFields.push("Full Address"); firstMissingName = "full_address"; }
-      if (!formData.residency_type) { missingFields.push("Residency Type"); firstMissingName = firstMissingName || "residency_type"; } // <-- Added check
-      if (!formData.mobile_number) { missingFields.push("Mobile Number"); firstMissingName = firstMissingName || "mobile_number"; }
-      else if (formData.mobile_number && formData.mobile_number.length < 11) {
+      if (!formData.full_address?.trim()) { missingFields.push("Full Address"); firstMissingName = "full_address"; }
+      if (!formData.residency_type?.trim()) { missingFields.push("Residency Type"); firstMissingName = firstMissingName || "residency_type"; } 
+      
+      if (!formData.mobile_number?.trim()) { 
+        missingFields.push("Mobile Number"); 
+        firstMissingName = firstMissingName || "mobile_number"; 
+      } else if (formData.mobile_number.trim().length < 11) {
         toast.error("Mobile Number must be exactly 11 digits.");
         document.querySelector('[name="mobile_number"]')?.focus();
         return false;
+      }
+
+      // FIX: Made email important/required and added format validation
+      if (!formData.email?.trim()) {
+        missingFields.push("Email Address");
+        firstMissingName = firstMissingName || "email";
+      } else {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(formData.email.trim())) {
+          toast.error("Please enter a valid email address.");
+          document.querySelector('[name="email"]')?.focus();
+          return false;
+        }
       }
     }
     // STEP 3 VALIDATION (Strict Parent Age Restriction)
@@ -185,7 +202,7 @@ const ResidentFormModal = ({
                   <div className="form-grid">
                     <div className={`form-group ${errors.first_name ? 'has-error' : ''}`}>
                       <label>First Name *</label>
-                      <input type="text" name="first_name" value={formData.first_name || ''} onChange={handleInputChange} maxLength="50" placeholder="e.g. Juan" pattern="[a-zA-ZñÑ\-\.\s]+" title="Letters, spaces, hyphens, and periods only" />
+                      <input type="text" name="first_name" value={formData.first_name || ''} onChange={handleInputChange} maxLength="50" placeholder="e.g. Juan" pattern="[a-zA-ZñÑ\-\.\s]+" title="Letters, spaces, hyphens, and periods only" required />
                       {errors.first_name && <span className="error-text">{errors.first_name}</span>}
                     </div>
                     <div className="form-group">
@@ -194,7 +211,7 @@ const ResidentFormModal = ({
                     </div>
                     <div className={`form-group ${errors.last_name ? 'has-error' : ''}`}>
                       <label>Last Name *</label>
-                      <input type="text" name="last_name" value={formData.last_name || ''} onChange={handleInputChange} maxLength="50" placeholder="e.g. Dela Cruz" pattern="[a-zA-ZñÑ\-\.\s]+" title="Letters, spaces, hyphens, and periods only" />
+                      <input type="text" name="last_name" value={formData.last_name || ''} onChange={handleInputChange} maxLength="50" placeholder="e.g. Dela Cruz" pattern="[a-zA-ZñÑ\-\.\s]+" title="Letters, spaces, hyphens, and periods only" required />
                       {errors.last_name && <span className="error-text">{errors.last_name}</span>}
                     </div>
                     <div className="form-group">
@@ -203,7 +220,7 @@ const ResidentFormModal = ({
                     </div>
                     <div className={`form-group ${errors.date_of_birth ? 'has-error' : ''}`}>
                       <label>Date of Birth *</label>
-                      <input type="date" name="date_of_birth" max={maxDate} min={minDate} value={formData.date_of_birth || ''} onChange={handleInputChange} />
+                      <input type="date" name="date_of_birth" max={maxDate} min={minDate} value={formData.date_of_birth || ''} onChange={handleInputChange} required />
                     </div>
                     <div className="form-group">
                       <label>Place of Birth</label>
@@ -211,7 +228,7 @@ const ResidentFormModal = ({
                     </div>
                     <div className="form-group">
                       <label>Gender *</label>
-                      <select name="gender" value={formData.gender || ''} onChange={handleInputChange}>
+                      <select name="gender" value={formData.gender || ''} onChange={handleInputChange} required>
                         <option value="">Select gender</option>
                         <option value="Male">Male</option>
                         <option value="Female">Female</option>
@@ -219,7 +236,7 @@ const ResidentFormModal = ({
                     </div>
                     <div className="form-group">
                       <label>Civil Status *</label>
-                      <select name="civil_status" value={formData.civil_status || ''} onChange={handleInputChange} disabled={isUnderage}>
+                      <select name="civil_status" value={formData.civil_status || ''} onChange={handleInputChange} disabled={isUnderage} required={!isUnderage}>
                         <option value="">Select status</option>
                         <option value="Single">Single</option>
                         <option value="Married">Married</option>
@@ -245,7 +262,7 @@ const ResidentFormModal = ({
                   <div className="form-grid">
                     <div className={`form-group ${errors.full_address ? 'has-error' : ''}`} style={{ gridColumn: '1 / -1' }}>
                       <label>Full Address (House No., Street, Subdivision/Village) *</label>
-                      <input type="text" name="full_address" value={formData.full_address || ''} onChange={handleInputChange} maxLength="150" placeholder="e.g. Blk 1 Lot 2, San Jose St., Phase 3" />
+                      <input type="text" name="full_address" value={formData.full_address || ''} onChange={handleInputChange} maxLength="150" placeholder="e.g. Blk 1 Lot 2, San Jose St., Phase 3" required />
                       <InputHint text="Exclude Barangay, City, Province." />
                     </div>
                     <div className="form-group">
@@ -257,10 +274,9 @@ const ResidentFormModal = ({
                       <input type="text" name="zip_code" value={formData.zip_code || ''} onChange={handleInputChange} maxLength="4" pattern="[0-9]{4}" placeholder="e.g. 4027" title="Must be a 4-digit number" />
                     </div>
 
-                    {/* NEW: RESIDENCY TYPE */}
                     <div className="form-group">
                       <label>Residency Type *</label>
-                      <select name="residency_type" value={formData.residency_type || 'Permanent'} onChange={handleInputChange}>
+                      <select name="residency_type" value={formData.residency_type || 'Permanent'} onChange={handleInputChange} required>
                         <option value="Permanent">Permanent</option>
                         <option value="Tenant">Tenant</option>
                         <option value="Boarder">Boarder</option>
@@ -292,11 +308,12 @@ const ResidentFormModal = ({
 
                     <div className={`form-group ${errors.mobile_number ? 'has-error' : ''}`}>
                       <label>Mobile Number *</label>
-                      <input type="tel" name="mobile_number" value={formData.mobile_number || ''} onChange={handleInputChange} maxLength="11" pattern="09[0-9]{9}" placeholder="e.g. 09123456789" title="Must be an 11-digit number starting with 09" />
+                      <input type="tel" name="mobile_number" value={formData.mobile_number || ''} onChange={handleInputChange} maxLength="11" pattern="09[0-9]{9}" placeholder="e.g. 09123456789" title="Must be an 11-digit number starting with 09" required />
                     </div>
+                    {/* FIX: Made Email explicitly required visually and functionally */}
                     <div className={`form-group ${errors.email ? 'has-error' : ''}`}>
-                      <label>Email Address</label>
-                      <input type="email" name="email" value={formData.email || ''} onChange={handleInputChange} maxLength="100" placeholder="e.g. juan@example.com" />
+                      <label>Email Address *</label>
+                      <input type="email" name="email" value={formData.email || ''} onChange={handleInputChange} maxLength="100" placeholder="e.g. juan@example.com" required />
                     </div>
                   </div>
                 </div>

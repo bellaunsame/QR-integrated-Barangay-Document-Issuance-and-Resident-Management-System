@@ -1,42 +1,23 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 
 /**
  * usePagination Hook
- * 
- * Handles pagination logic for lists and tables.
- * 
- * @param {Array} data - Array of data to paginate
- * @param {number} itemsPerPage - Number of items per page (default: 10)
+ * * Handles pagination logic for lists and tables.
+ * * @param {Array} initialData - Array of data to paginate
+ * @param {number} initialItemsPerPage - Number of items per page (default: 10)
  * @returns {Object} - Pagination state and controls
- * 
- * @example
- * const { 
- *   currentPage, 
- *   totalPages, 
- *   currentData, 
- *   nextPage, 
- *   prevPage, 
- *   goToPage 
- * } = usePagination(residents, 10);
- * 
- * return (
- *   <>
- *     <Table data={currentData} />
- *     <Pagination 
- *       currentPage={currentPage}
- *       totalPages={totalPages}
- *       onNext={nextPage}
- *       onPrev={prevPage}
- *     />
- *   </>
- * );
  */
-export const usePagination = (data, itemsPerPage = 10) => {
+export const usePagination = (initialData, initialItemsPerPage = 10) => {
+  // FIX 1: Prevent crashes if data is undefined/null while loading
+  const data = initialData || [];
+  
   const [currentPage, setCurrentPage] = useState(1);
+  // FIX 2: Make itemsPerPage an actual state variable so it can be changed dynamically
+  const [itemsPerPage, setItemsPerPage] = useState(initialItemsPerPage);
 
   // Calculate total pages
   const totalPages = useMemo(() => {
-    return Math.ceil(data.length / itemsPerPage);
+    return Math.max(1, Math.ceil(data.length / itemsPerPage));
   }, [data.length, itemsPerPage]);
 
   // Get current page data
@@ -90,8 +71,9 @@ export const usePagination = (data, itemsPerPage = 10) => {
     return pages;
   };
 
-  // Reset to first page when data changes
-  useMemo(() => {
+  // FIX 3: Use useEffect (not useMemo) for side effects like resetting the page
+  useEffect(() => {
+    // If data filters change and leave us on a page that no longer exists, jump back to page 1
     if (currentPage > totalPages && totalPages > 0) {
       setCurrentPage(1);
     }
@@ -111,7 +93,7 @@ export const usePagination = (data, itemsPerPage = 10) => {
     canGoNext,
     canGoPrev,
     getPageRange,
-    setItemsPerPage: itemsPerPage // For changing items per page
+    setItemsPerPage // Now this is a proper function to change rows per page dynamically!
   };
 };
 
