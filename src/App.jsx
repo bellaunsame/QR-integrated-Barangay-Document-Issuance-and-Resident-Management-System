@@ -139,7 +139,6 @@ function App() {
                       <Route path="/dashboard" element={<DashboardPage />} />
                       <Route path="/profile" element={<ProfilePage />} />
                       
-                      {/* --- STEP 3 FIX: Added 'clerk' to requiredRoles --- */}
                       <Route path="/residents" element={
                         <ProtectedRoute requiredRoles={['admin', 'record_keeper', 'view_only', 'clerk']}>
                           <ResidentsPage />
@@ -152,8 +151,9 @@ function App() {
                         </ProtectedRoute>
                       } />
                       
+                      {/* --- FIX: Added 'record_keeper' to requiredRoles --- */}
                       <Route path="/templates" element={
-                        <ProtectedRoute requiredRoles={['admin']}>
+                        <ProtectedRoute requiredRoles={['admin', 'record_keeper']}>
                           <DocumentTemplatesPage />
                         </ProtectedRoute>
                       } />

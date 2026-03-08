@@ -140,7 +140,7 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
       icon: <FileCheck size={20} />,
       label: 'Templates',
       path: '/templates',
-      roles: ['admin']
+      roles: ['admin', 'record_keeper'] // <--- CHANGED: Added 'record_keeper' here!
     },
     {
       icon: <User size={20} />,
@@ -313,6 +313,7 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
               </div>
             )}
 
+            {/* This slice renders Templates, Users, Scanner, etc. */}
             {visibleMenuItems.slice(2).map((item) => (
               <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onClose}>
                 <span className="nav-icon">{item.icon}</span>
