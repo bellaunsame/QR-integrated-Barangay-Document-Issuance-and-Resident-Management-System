@@ -88,7 +88,7 @@
 }
 
 /* Reset & Base Styles */
-* {
+*, *::before, *::after {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
@@ -97,6 +97,13 @@
 html {
   font-size: 16px;
   scroll-behavior: smooth;
+}
+
+/* Accessibility: Respect user's motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }
 
 body {
@@ -109,10 +116,19 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Universal Image Reset */
+img, picture, svg, video {
+  display: block;
+  max-width: 100%;
+}
+
 /* --- FIXED ROOT CONTAINER FOR FULL SCREEN --- */
 #root {
   width: 100%;
   min-height: 100vh;
+  min-height: 100dvh; /* FIX: Prevents mobile Safari bottom bar issues */
+  display: flex;      /* FIX: Allows child layout wrappers to stretch properly */
+  flex-direction: column;
   margin: 0;
   padding: 0;
   text-align: left;
@@ -307,6 +323,12 @@ button {
 }
 
 /* Tables */
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+}
+
 table {
   width: 100%;
   border-collapse: separate;
@@ -359,30 +381,11 @@ tr:last-child td {
   line-height: 1;
 }
 
-.badge-primary {
-  background: var(--primary-100);
-  color: var(--primary-700);
-}
-
-.badge-success {
-  background: #d1fae5;
-  color: #065f46;
-}
-
-.badge-warning {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.badge-danger {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.badge-info {
-  background: var(--primary-100);
-  color: var(--primary-700);
-}
+.badge-primary { background: var(--primary-100); color: var(--primary-700); }
+.badge-success { background: #d1fae5; color: #065f46; }
+.badge-warning { background: #fef3c7; color: #92400e; }
+.badge-danger { background: #fee2e2; color: #991b1b; }
+.badge-info { background: var(--primary-100); color: var(--primary-700); }
 
 /* Modal */
 .modal-overlay {
@@ -435,25 +438,13 @@ tr:last-child td {
 }
 
 @keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(-20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes spin {
@@ -520,12 +511,10 @@ tr:last-child td {
    GLOBAL MOBILE RESPONSIVE FIXES
    ========================================= */
 
-/* Hide mobile header on desktop */
 .mobile-topbar {
   display: none;
 }
 
-/* SIDEBAR OVERLAY BACKGROUND */
 .sidebar-overlay {
   position: fixed;
   top: 0;
@@ -552,36 +541,35 @@ tr:last-child td {
   }
 
   .card {
-    padding: var(--space-md); /* Less padding on small screens */
+    padding: var(--space-md); 
   }
 
   /* 1. SIDEBAR SLIDE-IN FIX */
   .sidebar {
-    position: fixed !important; /* Force fixed positioning */
+    position: fixed !important; 
     top: 0;
     left: 0;
     height: 100vh;
+    height: 100dvh; /* FIX: mobile safari support */
     z-index: 9999;
     transform: translateX(-100%);
     transition: transform 0.3s ease-in-out;
     box-shadow: 4px 0 15px rgba(0,0,0,0.1);
   }
   
-  /* When isOpen is true, slide it in */
   .sidebar.open {
     transform: translateX(0);
   }
 
   /* 2. MAIN CONTENT AREA */
-  /* Remove the left margin that desktop uses for the sidebar */
   .main-content, .layout-content {
     margin-left: 0 !important;
     padding: 1rem !important;
     width: 100%;
-    padding-top: 80px !important; /* Make room for mobile topbar */
+    padding-top: 80px !important; 
   }
 
-  /* 3. MOBILE TOPBAR (Hamburger Menu Area) */
+  /* 3. MOBILE TOPBAR */
   .mobile-topbar {
     display: flex;
     position: fixed;
@@ -603,41 +591,35 @@ tr:last-child td {
     color: var(--primary-700);
   }
 
-  /* 4. MODALS & POPUPS */
+  /* 4. MODALS & POPUPS (Bottom Sheet Style) */
   .modal-overlay {
     padding: 10px;
-    align-items: flex-end; /* Drop modals to the bottom on mobile for easy thumb reach */
+    align-items: flex-end; 
   }
   
   .modal {
     width: 100% !important;
     max-width: 100% !important;
     max-height: 85vh;
-    border-radius: 16px 16px 0 0 !important; /* Rounded top, flat bottom */
+    border-radius: 16px 16px 0 0 !important; 
     margin: 0;
   }
 
   /* 5. FORMS & INPUTS */
-  /* iOS auto-zooms if font-size is less than 16px. This prevents annoying zooming. */
+  /* iOS auto-zooms if font-size is less than 16px. */
   input, select, textarea {
     font-size: 16px !important; 
   }
   
-  /* Stack grid forms vertically so they don't squish side-by-side */
   .form-grid, .grid-2-cols, .grid-3-cols {
     grid-template-columns: 1fr !important;
     gap: 1rem !important;
   }
 
-  /* Prevent tables from breaking layout on non-card pages */
-  table {
-    display: block;
-    overflow-x: auto;
-    white-space: nowrap;
-  }
-  
+  /* Safe table shrinking for mobile */
   th, td {
     padding: 0.75rem;
+    white-space: nowrap;
   }
 }
 
@@ -648,11 +630,6 @@ tr:last-child td {
 
 /* Print Styles */
 @media print {
-  body {
-    background: white;
-  }
-
-  .no-print {
-    display: none !important;
-  }
+  body { background: white; }
+  .no-print { display: none !important; }
 }

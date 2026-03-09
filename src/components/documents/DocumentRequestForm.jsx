@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { validateField } from '../../services/security/inputSanitizer';
-import { Save, X, FileText, User, AlignLeft, AlertTriangle, Upload, Camera, Search, ChevronDown } from 'lucide-react';
+import { Save, X, FileText, User, AlignLeft, AlertTriangle, Upload, Camera, Search, ChevronDown, CheckCircle } from 'lucide-react';
 import Webcam from 'react-webcam';
 
 // 1. Import your official logos
@@ -110,18 +110,19 @@ const SearchableDropdown = ({ options, value, onChange, name, placeholder, error
 // MAIN FORM COMPONENT
 // ==============================================================
 const DocumentRequestForm = ({ 
-  resident = null,
+  residentData = null, // <--- NEW: Accepts logged-in Resident Data!
+  resident = null,     // Existing Admin pre-selected resident
   residents = [],
   templates = [],
   onSubmit, 
   onCancel 
 }) => {
   const [formData, setFormData] = useState({
-    resident_id: resident?.id || '',
+    resident_id: residentData?.id || resident?.id || '', // Auto-set ID if Resident
     template_id: '',
     request_type: '',
     purpose: '',
-    custom_purpose: '', // <-- Added for "Other" option
+    custom_purpose: '', 
     request_reason: '',
     notarizedDocFile: null
   });
@@ -137,6 +138,13 @@ const DocumentRequestForm = ({
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const webcamRef = useRef(null);
 
+  // Automatically lock resident_id if ResidentData is provided (Resident Mode)
+  useEffect(() => {
+    if (residentData?.id) {
+      setFormData(prev => ({ ...prev, resident_id: residentData.id }));
+    }
+  }, [residentData]);
+
   useEffect(() => {
     if (formData.resident_id && formData.template_id) {
       checkRequestStatus(formData.resident_id, formData.template_id);
@@ -148,6 +156,8 @@ const DocumentRequestForm = ({
   }, [formData.resident_id, formData.template_id, residents]);
 
   const checkRequestStatus = (resId, tempId) => {
+    // If residentData is used (Resident Portal), we don't have the full Admin residents array.
+    // The backend will handle exact duplicate validations, but we do a quick check if data is available.
     const selectedResident = residents.find(r => r.id === resId);
     
     if (selectedResident && selectedResident.document_requests) {
@@ -357,7 +367,24 @@ const DocumentRequestForm = ({
           {/* ========================================= */}
           <div style={{ flex: '1 1 400px', display: 'flex', flexDirection: 'column', gap: '1.5rem', minWidth: '350px' }}>
             
-            {resident ? (
+            {/* --- NEW: SMART RESIDENT DISPLAY --- */}
+            {residentData ? (
+              // RESIDENT MODE: Show Verified Banner, hide Search
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '15px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '15px' }}>
+                <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: 'var(--success)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', fontWeight: 'bold', flexShrink: 0 }}>
+                  {residentData.first_name?.charAt(0) || 'R'}
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, color: '#166534', fontSize: '1.1rem' }}>
+                    {residentData.first_name} {residentData.middle_name ? residentData.middle_name.charAt(0) + '.' : ''} {residentData.last_name} {residentData.suffix}
+                  </h3>
+                  <p style={{ margin: 0, color: '#15803d', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                    <CheckCircle size={14} /> Verified Resident Profile
+                  </p>
+                </div>
+              </div>
+            ) : resident ? (
+              // ADMIN MODE (Pre-Selected Resident): Show Resident details block
               <div style={{ padding: '1rem', border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--surface)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
                   <User size={20} color="var(--primary-600)" />
@@ -375,6 +402,7 @@ const DocumentRequestForm = ({
                 </div>
               </div>
             ) : (
+              // ADMIN MODE (New Request): Show Search Dropdown
               <div style={{ padding: '1rem', border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--surface)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1rem' }}>
                   <User size={20} color="var(--primary-600)" />
@@ -427,7 +455,7 @@ const DocumentRequestForm = ({
                   />
                 </div>
 
-                {/* --- NEW: CUSTOM PURPOSE TEXTBOX (Only appears if "Other" is selected) --- */}
+                {/* --- CUSTOM PURPOSE TEXTBOX (Only appears if "Other" is selected) --- */}
                 {formData.purpose === 'Other' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '-4px', animation: 'fadeIn 0.3s ease-in-out' }}>
                     <label style={{ fontSize: '0.85rem', fontWeight: '500', color: 'var(--primary-600)' }}>Please specify your custom purpose: <span style={{ color: '#ef4444' }}>*</span></label>
@@ -451,7 +479,7 @@ const DocumentRequestForm = ({
                   <AlertTriangle size={18} /> Request Already Pending
                 </h4>
                 <p style={{ fontSize: '0.9rem', color: '#ef4444', margin: 0, lineHeight: '1.5' }}>
-                  This resident already has an active, unprocessed request for this exact document. Please process or reject the existing request on the dashboard before creating a new one.
+                  There is already an active, unprocessed request for this exact document. Please wait for it to be processed before requesting another copy.
                 </p>
               </div>
             )}
@@ -462,7 +490,7 @@ const DocumentRequestForm = ({
                   <AlertTriangle size={18} /> Early Renewal / Prior Request
                 </h4>
                 <p style={{ fontSize: '0.9rem', color: '#f59e0b', marginBottom: '1rem', lineHeight: '1.5' }}>
-                  This resident already holds an active copy valid until <strong>{previousDocInfo?.calculated_expiry?.toLocaleDateString()}</strong>. 
+                  There is already an active copy of this document valid until <strong>{previousDocInfo?.calculated_expiry?.toLocaleDateString()}</strong>. 
                   To process an early replacement, a supporting document is required.
                 </p>
 

@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { db } from '../services/supabaseClient';
+import { supabase, db } from '../services/supabaseClient'; // Ensure supabase is imported for auth signup
 import toast from 'react-hot-toast';
 import emailjs from '@emailjs/browser'; 
 import { 
   Users, Plus, Edit2, Shield, X, Save, 
-  UserCheck, UserX, Lock, CheckCircle, XCircle 
+  UserCheck, UserX, Lock, CheckCircle, XCircle, Copy, RefreshCw
 } from 'lucide-react';
 
 // Security Services
@@ -25,7 +25,6 @@ const UsersPage = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [formData, setFormData] = useState(getEmptyFormData());
   
   // UI Filter State
   const [filterStatus, setFilterStatus] = useState('all');
@@ -33,6 +32,9 @@ const UsersPage = () => {
   // Security State
   const [passwordStrength, setPasswordStrength] = useState(null);
   const [errors, setErrors] = useState({});
+  const [generatedPassword, setGeneratedPassword] = useState('');
+
+  const [formData, setFormData] = useState(getEmptyFormData());
 
   useEffect(() => {
     loadUsers();
@@ -72,13 +74,37 @@ const UsersPage = () => {
     setFilteredUsers(result);
   };
 
+  // --- AUTO-PASSWORD GENERATOR ---
+  const generateSecurePassword = () => {
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+    let newPassword = '';
+    for (let i = 0; i < 10; i++) {
+      newPassword += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setGeneratedPassword(newPassword);
+  };
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(generatedPassword);
+    toast.success('Temporary password copied to clipboard!');
+  };
+
+  const handleOpenAddModal = () => {
+    setEditingUser(null);
+    setFormData(getEmptyFormData());
+    setErrors({});
+    setPasswordStrength(null);
+    generateSecurePassword(); // Auto-generate on open
+    setShowModal(true);
+  };
+
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     const newValue = type === 'checkbox' ? checked : value;
     
     setFormData(prev => ({ ...prev, [name]: newValue }));
 
-    if (name === 'password' && value) {
+    if (name === 'password' && value && editingUser) {
       const validation = validatePasswordStrength(value);
       setPasswordStrength(validation.strength);
       if (!validation.isValid) {
@@ -139,7 +165,8 @@ const UsersPage = () => {
       email: { required: true, type: 'email' },
       full_name: { required: true, type: 'name', minLength: 2 },
       role: { required: true },
-      password: { required: !editingUser, minLength: 8 }
+      // Only require manual password input if we are editing and they typed something
+      password: { required: false } 
     };
 
     const validation = validateForm(formData, validationRules);
@@ -151,49 +178,62 @@ const UsersPage = () => {
 
     const emailVal = formData.email.toLowerCase();
     if (!emailVal.endsWith('@gmail.com')) {
-      setErrors({ ...validation.errors, email: ['Only @gmail.com addresses are allowed.'] });
+      setErrors({ ...validation.errors, email: ['Only @gmail.com addresses are allowed for staff.'] });
       setLoading(false);
       return;
     }
 
     try {
       let finalUserData = { ...validation.sanitizedData };
-      let generatedOtp = null;
-
-      if (!editingUser) {
-        generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
-        finalUserData.otp_code = generatedOtp;
-        finalUserData.is_verified = false;
-      }
-
-      if (formData.password) {
-        finalUserData.password_hash = await hashPassword(formData.password);
-      }
-      delete finalUserData.password;
 
       if (editingUser) {
+        // --- EDITING EXISTING USER ---
+        if (formData.password) {
+          finalUserData.password_hash = await hashPassword(formData.password);
+        }
+        delete finalUserData.password;
+
         await db.users.update(editingUser.id, finalUserData);
         await logDataModification(currentUser.id, 'users', editingUser.id, ACTIONS.USER_UPDATED, editingUser, finalUserData);
         toast.success('User updated successfully');
       } else {
-        const savedUser = await db.users.create(finalUserData);
+        // --- CREATING NEW STAFF USER ---
+        const activePassword = generatedPassword;
         
-        // --- UPDATED: Passing email_subject_message for the dynamic HTML template ---
+        // 1. Create Identity in Supabase Auth
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: emailVal,
+          password: activePassword,
+        });
+
+        if (authError) throw authError;
+
+        // 2. Hash password for local DB storage checks
+        finalUserData.password_hash = await hashPassword(activePassword);
+        finalUserData.id = authData.user.id; // Link public table to Auth ID
+        finalUserData.is_verified = true; // Admin created, so it's verified
+        finalUserData.needs_password_change = true; // The Trap!
+        delete finalUserData.password;
+
+        // 3. Save to Public Users Table
+        await db.users.create(finalUserData);
+        
+        // 4. Send EmailJS containing the Temp Password
         await emailjs.send(
           'service_178ko1n', 
           'template_qzkqkvf', 
           { 
             to_email: formData.email, 
             to_name: formData.full_name, 
-            otp_code: generatedOtp, 
-            email_subject_message: "An official account has been created for you. To activate your secure access, please enter the following verification code on the login screen:",
+            otp_code: activePassword, // Passing password as the code
+            email_subject_message: "An official barangay account has been provisioned for you. Please use this temporary password to log in. You will be forced to change it immediately.",
             barangay_name: "Dos Tibag" 
           }, 
           'pfTdQReY0nVV3CjnY'
         );
         
-        await logDataModification(currentUser.id, 'users', savedUser.id, ACTIONS.USER_CREATED, null, finalUserData);
-        toast.success('User created! Activation code sent to Gmail.');
+        await logDataModification(currentUser.id, 'users', finalUserData.id, ACTIONS.USER_CREATED, null, finalUserData);
+        toast.success('Staff provisioned! Temporary password sent to their email.');
       }
 
       await loadUsers();
@@ -221,6 +261,7 @@ const UsersPage = () => {
     setShowModal(false);
     setEditingUser(null);
     setFormData(getEmptyFormData());
+    setGeneratedPassword('');
     setErrors({});
     setPasswordStrength(null);
   };
@@ -228,6 +269,7 @@ const UsersPage = () => {
   const getRoleBadgeClass = (role) => {
     switch(role) {
       case 'admin': return 'badge-admin';
+      case 'barangay_captain': return 'badge-captain'; // Consider adding this class to your CSS
       case 'clerk': return 'badge-clerk';
       case 'record_keeper': return 'badge-keeper';
       case 'view_only': return 'badge-view-only'; 
@@ -236,7 +278,7 @@ const UsersPage = () => {
   };
 
   const formatRole = (role) => {
-    const roleMap = { 'admin': 'Administrator', 'clerk': 'Barangay Clerk', 'record_keeper': 'Record Keeper', 'view_only': 'View Only' };
+    const roleMap = { 'admin': 'Administrator', 'barangay_captain': 'Barangay Captain', 'clerk': 'Barangay Clerk', 'record_keeper': 'Record Keeper', 'view_only': 'View Only' };
     return roleMap[role] || role;
   };
 
@@ -246,8 +288,8 @@ const UsersPage = () => {
         <div className="header-left">
           <Users size={32} />
           <div>
-            <h1>User Management</h1>
-            <p>Manage system users and their permissions</p>
+            <h1>Staff Management</h1>
+            <p>Provision and manage barangay official accounts</p>
           </div>
         </div>
         
@@ -264,8 +306,8 @@ const UsersPage = () => {
           </select>
 
           {currentUser?.role === 'admin' && (
-            <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-              <Plus size={20} /> Add User
+            <button className="btn btn-primary" onClick={handleOpenAddModal}>
+              <Plus size={20} /> Add Staff
             </button>
           )}
         </div>
@@ -277,8 +319,8 @@ const UsersPage = () => {
         ) : filteredUsers.length === 0 ? (
           <div className="empty-state">
             <Users size={48} />
-            <h3>No Users Found</h3>
-            <p>Try changing your filter or add a new user</p>
+            <h3>No Staff Found</h3>
+            <p>Try changing your filter or add a new staff member</p>
           </div>
         ) : (
           <div className="table-responsive">
@@ -343,11 +385,12 @@ const UsersPage = () => {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>{editingUser ? 'Edit User' : 'Add New User'}</h2>
+              <h2>{editingUser ? 'Edit Staff User' : 'Provision Staff Account'}</h2>
               <button className="btn-icon" onClick={closeModal}><X size={20} /></button>
             </div>
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
+                
                 <div className="form-group">
                   <label>Full Name *</label>
                   <input type="text" name="full_name" value={formData.full_name} onChange={handleInputChange} required />
@@ -355,24 +398,9 @@ const UsersPage = () => {
                 </div>
 
                 <div className="form-group">
-                  <label>Email Address *</label>
-                  <input type="email" name="email" value={formData.email} onChange={handleInputChange} required />
+                  <label>Email Address (@gmail.com) *</label>
+                  <input type="email" name="email" value={formData.email} onChange={handleInputChange} disabled={editingUser} required />
                   {errors.email && <span className="error-text">{errors.email[0]}</span>}
-                </div>
-
-                <div className="form-group">
-                  <label>Password {editingUser && '(Leave blank to keep current)'}</label>
-                  <div className="password-input-wrapper">
-                    <input type="password" name="password" value={formData.password} onChange={handleInputChange} />
-                    <Lock size={16} className="input-icon" />
-                  </div>
-                  {passwordStrength && (
-                    <div className="password-strength-container">
-                      <div className="strength-bar" style={{ width: `${(passwordStrength.score / 9) * 100}%`, backgroundColor: passwordStrength.color }} />
-                      <small style={{ color: passwordStrength.color }}>{passwordStrength.label}</small>
-                    </div>
-                  )}
-                  {errors.password && <span className="error-text">{errors.password[0]}</span>}
                 </div>
 
                 <div className="form-group">
@@ -380,16 +408,54 @@ const UsersPage = () => {
                   <select name="role" value={formData.role} onChange={handleInputChange} required>
                     <option value="">Select role</option>
                     <option value="admin">Administrator</option>
+                    <option value="barangay_captain">Barangay Captain (View Only + Approvals)</option>
                     <option value="clerk">Barangay Clerk</option>
                     <option value="record_keeper">Record Keeper</option>
-                    <option value="view_only">View Only</option>
                   </select>
                 </div>
+
+                {/* DYNAMIC PASSWORD UI BASED ON ADD VS EDIT */}
+                {!editingUser ? (
+                  <div className="form-group">
+                    <label>Temporary Password *</label>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <input 
+                        type="text" 
+                        value={generatedPassword} 
+                        readOnly 
+                        style={{ flex: 1, backgroundColor: '#ecfdf5', color: '#047857', fontWeight: 'bold', letterSpacing: '1px' }} 
+                      />
+                      <button type="button" onClick={generateSecurePassword} title="Generate new" style={{ padding: '0 10px', cursor: 'pointer', background: '#e2e8f0', border: '1px solid #cbd5e1', borderRadius: '4px' }}>
+                        <RefreshCw size={16} />
+                      </button>
+                      <button type="button" onClick={copyToClipboard} title="Copy to clipboard" style={{ padding: '0 10px', cursor: 'pointer', background: 'var(--primary-600)', color: 'white', border: 'none', borderRadius: '4px' }}>
+                        <Copy size={16} />
+                      </button>
+                    </div>
+                    <small style={{ color: '#b91c1c', marginTop: '4px', display: 'block' }}>User will be forced to change this upon their first login.</small>
+                  </div>
+                ) : (
+                  <div className="form-group">
+                    <label>Reset Password (Leave blank to keep current)</label>
+                    <div className="password-input-wrapper">
+                      <input type="password" name="password" value={formData.password} onChange={handleInputChange} />
+                      <Lock size={16} className="input-icon" />
+                    </div>
+                    {passwordStrength && (
+                      <div className="password-strength-container">
+                        <div className="strength-bar" style={{ width: `${(passwordStrength.score / 9) * 100}%`, backgroundColor: passwordStrength.color }} />
+                        <small style={{ color: passwordStrength.color }}>{passwordStrength.label}</small>
+                      </div>
+                    )}
+                    {errors.password && <span className="error-text">{errors.password[0]}</span>}
+                  </div>
+                )}
+
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={closeModal}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={loading}>
-                  {loading ? 'Processing...' : <><Save size={18} /> Save User</>}
+                  {loading ? 'Processing...' : <><Save size={18} /> {editingUser ? 'Update User' : 'Create Account'}</>}
                 </button>
               </div>
             </form>

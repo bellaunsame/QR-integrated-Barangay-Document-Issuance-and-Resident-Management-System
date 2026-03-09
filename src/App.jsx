@@ -18,9 +18,14 @@ import {
 } from './context';
 
 // Pages
+import LandingPage from './pages/LandingPage'; 
 import LoginPage from './pages/LoginPage';
+import ResidentLogin from './pages/ResidentLogin'; 
+import ResidentRegister from './pages/ResidentRegister'; 
+import ResidentHome from './pages/ResidentHome'; 
 import VerifyOTP from './pages/VerifyOTP'; 
 import ForcePasswordChange from './pages/ForcePasswordChange';
+import ResidentSetupPassword from './pages/ResidentSetupPassword'; // <--- NEW: Imported Resident Setup
 import DashboardPage from './pages/DashboardPage';
 import ResidentsPage from './pages/ResidentsPage';
 import DocumentRequestsPage from './pages/DocumentRequestsPage';
@@ -31,6 +36,9 @@ import QRScanPage from './pages/QRScannerPage';
 import ProfilePage from './pages/ProfilePage';
 import ActivityLogPage from './pages/ActivityLogPage';
 import SecurityDashboard from './pages/SecurityDashboard';
+import BlotterPage from './pages/BlotterPage'; 
+import EquipmentPage from './pages/EquipmentPage'; 
+import AnnouncementsPage from './pages/AnnouncementsPage'; 
 
 function App() {
   // --- Session Management Handlers ---
@@ -112,12 +120,19 @@ function App() {
                   
                   <Routes>
                     {/* --- 1. PUBLIC ROUTES --- */}
+                    <Route path="/" element={<LandingPage />} /> 
                     <Route path="/login" element={<LoginPage />} />
+                    <Route path="/resident-login" element={<ResidentLogin />} /> 
+                    <Route path="/register" element={<ResidentRegister />} /> 
+                    
+                    {/* Resident Portal Routes (Self-Protected via localStorage) */}
+                    <Route path="/resident-home" element={<ResidentHome />} /> 
+                    <Route path="/resident-setup-password" element={<ResidentSetupPassword />} /> {/* <--- NEW: Added Route */}
+                    
                     <Route path="/verify-otp" element={<VerifyOTP />} /> 
                     <Route path="/scan" element={<QRScanPage />} />
                     
-                    {/* --- 2. FORCED PASSWORD RESET ROUTE --- */}
-                    {/* Traps the user outside the MainLayout so they can't access the sidebar */}
+                    {/* --- 2. FORCED PASSWORD RESET ROUTE (ADMIN) --- */}
                     <Route 
                       path="/force-password-change" 
                       element={
@@ -127,7 +142,7 @@ function App() {
                       } 
                     />
 
-                    {/* --- 3. PROTECTED ROUTES (Main System) --- */}
+                    {/* --- 3. PROTECTED ROUTES (Main Admin System) --- */}
                     <Route 
                       element={
                         <ProtectedRoute>
@@ -135,7 +150,6 @@ function App() {
                         </ProtectedRoute>
                       }
                     >
-                      <Route path="/" element={<Navigate to="/dashboard" replace />} />
                       <Route path="/dashboard" element={<DashboardPage />} />
                       <Route path="/profile" element={<ProfilePage />} />
                       
@@ -150,8 +164,25 @@ function App() {
                           <DocumentRequestsPage />
                         </ProtectedRoute>
                       } />
+
+                      <Route path="/blotter" element={
+                        <ProtectedRoute requiredRoles={['admin', 'record_keeper', 'clerk']}>
+                          <BlotterPage />
+                        </ProtectedRoute>
+                      } />
+
+                      <Route path="/equipment" element={
+                        <ProtectedRoute requiredRoles={['admin', 'record_keeper', 'clerk']}>
+                          <EquipmentPage />
+                        </ProtectedRoute>
+                      } />
+
+                      <Route path="/announcements" element={
+                        <ProtectedRoute requiredRoles={['admin', 'record_keeper', 'clerk']}>
+                          <AnnouncementsPage />
+                        </ProtectedRoute>
+                      } />
                       
-                      {/* --- FIX: Added 'record_keeper' to requiredRoles --- */}
                       <Route path="/templates" element={
                         <ProtectedRoute requiredRoles={['admin', 'record_keeper']}>
                           <DocumentTemplatesPage />
@@ -183,7 +214,8 @@ function App() {
                       } />
                     </Route>
 
-                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                    {/* Catch-all route now redirects to the Landing Page */}
+                    <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </div>
               </DataProvider>

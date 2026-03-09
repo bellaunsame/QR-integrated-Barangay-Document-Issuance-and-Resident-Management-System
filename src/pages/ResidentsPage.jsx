@@ -6,6 +6,7 @@ import { generateQRData, generateQRCodeImage } from '../services/qrCodeService';
 import { generateResidentIDImage, downloadResidentID } from '../services/idGenerator'; 
 import { sendQRCodeEmail } from '../services/emailService';
 import toast from 'react-hot-toast';
+import emailjs from '@emailjs/browser'; 
 
 // Security & Utils
 import { validateForm } from '../services/security/inputSanitizer';
@@ -13,14 +14,25 @@ import { logDataModification, ACTIONS } from '../services/security/auditLogger';
 import { calculateAge, getEmptyFormData } from '../utils/residentUtils';
 
 // UI Components & Hooks
-import { Pagination } from '../components/common'; // <-- Imported Pagination component
-import { usePagination } from '../hooks'; // <-- Imported custom hook
+import { Pagination } from '../components/common';
+import { usePagination } from '../hooks'; 
 import ResidentViewModal from '../components/residents/ResidentViewModal';
 import ResidentFormModal from '../components/residents/ResidentFormModal';
 import CameraCaptureModal from '../components/residents/CameraCaptureModal';
 
-import { Users, Plus, Search, Edit2, Archive, QrCode, Mail, Download, Eye, User, RefreshCw, Home } from 'lucide-react';
+// Icons 
+import { Users, Plus, Search, Edit2, Archive, QrCode, Mail, Download, Eye, User, RefreshCw, Home, Clock, Check, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import './ResidentsPage.css';
+
+// --- HELPER: GENERATE RANDOM TEMPORARY PASSWORD ---
+const generateTempPassword = () => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$';
+  let password = '';
+  for (let i = 0; i < 8; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+};
 
 const ResidentsPage = () => {
   const { user } = useAuth();
@@ -32,16 +44,19 @@ const ResidentsPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   
-  // VIEW MODE STATE (Active vs Archived)
+  // VIEW MODE STATE: active, pending, or archived
   const [viewMode, setViewMode] = useState('active'); 
 
-  // --- PAGINATION HOOK ---
+  // ==========================================
+  // PAGINATION HOOK
+  // ==========================================
+  const ITEMS_PER_PAGE = 10;
   const { 
     currentPage, 
     totalPages, 
     currentData: currentResidents, 
     goToPage 
-  } = usePagination(filteredResidents, 5); // Fetches exactly 5 residents per page
+  } = usePagination(filteredResidents, ITEMS_PER_PAGE); 
 
   // Modal states
   const [showModal, setShowModal] = useState(false);
@@ -73,7 +88,6 @@ const ResidentsPage = () => {
   const isUnderage = currentResidentAge !== 'N/A' && currentResidentAge !== 'Invalid' && currentResidentAge < 16;
 
   useEffect(() => { loadResidents(); }, []);
-  
   useEffect(() => { filterResidents(); }, [searchTerm, allResidents, viewMode]);
 
   const loadResidents = async () => {
@@ -89,9 +103,11 @@ const ResidentsPage = () => {
   };
 
   const filterResidents = () => {
-    let filtered = allResidents.filter(res => 
-      viewMode === 'archived' ? res.status === 'archived' : res.status !== 'archived'
-    );
+    let filtered = allResidents.filter(res => {
+      if (viewMode === 'archived') return res.status === 'archived';
+      if (viewMode === 'pending') return res.account_status === 'Pending' && res.status !== 'archived';
+      return res.account_status !== 'Pending' && res.status !== 'archived';
+    });
 
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
@@ -106,7 +122,8 @@ const ResidentsPage = () => {
     setFilteredResidents(filtered);
   };
 
-  // TRANSIENT CHECKER (Less than 6 Months)
+  const pendingCount = allResidents.filter(res => res.account_status === 'Pending' && res.status !== 'archived').length;
+
   const checkIfTransient = (dateString) => {
     if (!dateString) return false;
     const start = new Date(dateString);
@@ -177,7 +194,7 @@ const ResidentsPage = () => {
     } else if (activeCamera === 'proof') {
       setFormData(prev => ({ ...prev, proof_of_residency_url: imageSrc })); toast.success("Proof captured!");
     } else if (activeCamera === 'valid_id') {
-      setFormData(prev => ({ ...prev, valid_id_url: imageSrc })); toast.success("ID captured!");
+      setFormData(prev => ({ ...prev, id_image_url: imageSrc })); toast.success("ID captured!");
     }
     setActiveCamera(null); 
   }, [webcamRef, activeCamera]);
@@ -224,10 +241,7 @@ const ResidentsPage = () => {
       const payload = {};
       
       safeKeys.forEach(key => { if (sanitizedData[key] !== undefined) payload[key] = sanitizedData[key]; });
-
-      // FORCE INCLUSION of new residency_type column
       payload.residency_type = sanitizedData.residency_type || 'Permanent';
-
       Object.keys(payload).forEach(key => { if (payload[key] === "") payload[key] = null; });
 
       const safeParseInt = (val) => (val === null || val === "" || isNaN(parseInt(val, 10))) ? null : parseInt(val, 10);
@@ -248,10 +262,39 @@ const ResidentsPage = () => {
       } else {
         payload.created_by = user.id;
         payload.status = 'active'; 
+        payload.account_status = 'Approved'; // ADMIN BYPASSES PENDING
+        
+        // Generate temporary password for Admin-created residents too!
+        const tempPassword = generateTempPassword();
+        payload.password = tempPassword;
+        payload.needs_password_change = true;
+
         res = await db.residents.create(payload);
         await logDataModification(user.id, 'residents', res.id, ACTIONS.RESIDENT_CREATED, null, payload);
         await generateQRForResident(res);
-        toast.success('Resident added');
+
+        // --- EMAILJS WORKAROUND APPLIED HERE ---
+        if (payload.email) {
+          try {
+            await emailjs.send(
+              'service_178ko1n',     
+              'template_qzkqkvf',    
+              {
+                to_email: payload.email,
+                to_name: payload.first_name,
+                barangay_name: "Dos, Calamba",
+                email_subject_message: `Your account has been created by the Barangay Admin. You can now log into the Resident Portal using your email and the temporary password below. Login here: ${window.location.origin}/resident-login`,
+                otp_code: tempPassword 
+              },
+              'pfTdQReY0nVV3CjnY'    
+            );
+            toast.success('Resident added & email sent!');
+          } catch (e) {
+            toast.success('Resident added, but email failed to send.');
+          }
+        } else {
+          toast.success('Resident added (No email provided)');
+        }
       }
       
       await loadResidents();
@@ -310,13 +353,79 @@ const ResidentsPage = () => {
     setFormData(safeData); setErrors({}); setShowModal(true);
   };
 
+  // ==========================================
+  // --- NEW MAGIC APPROVAL LOGIC WITH WORKAROUND ---
+  // ==========================================
+  const handleApprove = async (resident) => {
+    try {
+      setLoading(true);
+      
+      // 1. Generate the random temporary password
+      const tempPassword = generateTempPassword();
+
+      // 2. Update Supabase Resident Record
+      const { error } = await supabase
+        .from('residents')
+        .update({ 
+          account_status: 'Approved',
+          password: tempPassword,
+          needs_password_change: true 
+        })
+        .eq('id', resident.id);
+        
+      if (error) throw error;
+
+      // 3. Send Email with Credentials (using the existing OTP template!)
+      if (resident.email) {
+        await emailjs.send(
+          'service_178ko1n',     
+          'template_qzkqkvf',    
+          {
+            to_email: resident.email,
+            to_name: resident.first_name,
+            barangay_name: "Dos, Calamba",
+            email_subject_message: `Your account registration has been APPROVED! You can now log into the Resident Portal using your email and the temporary password below. Login here: ${window.location.origin}/resident-login`,
+            otp_code: tempPassword 
+          },
+          'pfTdQReY0nVV3CjnY'    
+        );
+        toast.success(`${resident.first_name} approved! Credentials sent to email.`);
+      } else {
+        toast.success(`${resident.first_name} approved! (No email on file)`);
+      }
+
+      await loadResidents();
+    } catch (e) { 
+      console.error(e);
+      toast.error('Failed to approve resident or send email.'); 
+    }
+    finally { setLoading(false); }
+  };
+
+  // UPDATED REJECT HANDLER
+  const handleReject = async (resident, reason = "Registration declined by Barangay Staff.") => {
+    try {
+      setLoading(true);
+      
+      const { error } = await supabase.from('residents').delete().eq('id', resident.id);
+      if (error) throw error;
+      
+      toast.success(`Rejected. Reason recorded: ${reason}`);
+      await loadResidents();
+      setViewingResident(null); 
+    } catch (e) { 
+      toast.error('Failed to reject resident'); 
+    } finally { 
+      setLoading(false); 
+    }
+  };
+
   const handleArchiveResident = async (resident) => {
     if (!window.confirm(`Are you sure you want to archive ${resident.first_name} ${resident.last_name}?`)) return;
     try {
       setLoading(true);
       const { error } = await supabase.from('residents').update({ status: 'archived' }).eq('id', resident.id);
       if (error) throw error;
-      
       await logDataModification(user.id, 'residents', resident.id, 'RESIDENT_ARCHIVED', resident, { status: 'archived' });
       toast.success('Resident archived successfully'); 
       await loadResidents();
@@ -330,7 +439,6 @@ const ResidentsPage = () => {
       setLoading(true);
       const { error } = await supabase.from('residents').update({ status: 'active' }).eq('id', resident.id);
       if (error) throw error;
-      
       await logDataModification(user.id, 'residents', resident.id, 'RESIDENT_RESTORED', resident, { status: 'active' });
       toast.success('Resident restored successfully'); 
       await loadResidents();
@@ -359,7 +467,6 @@ const ResidentsPage = () => {
         .view-toggle button { flex: 1; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); transition: all 0.2s; }
         .view-toggle button.active-tab { background: var(--primary-50); color: var(--primary-700); border-color: var(--primary-300); }
         
-        /* New styling for residency status badges */
         .status-cell { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
         .badge-permanent { background: #dcfce7; color: #3730a3; border: 1px solid #bbf7d0; padding: 4px 8px; font-weight: 600; }
         .badge-tenant { background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; padding: 4px 8px; font-weight: 600; }
@@ -369,10 +476,8 @@ const ResidentsPage = () => {
         @media (max-width: 768px) {
           .desktop-table-container { display: none; }
           .mobile-cards-container { display: flex; flex-direction: column; gap: 1rem; }
-          
           .residents-page .page-header { flex-direction: column !important; align-items: flex-start !important; gap: 1rem; }
           .residents-page .page-header button { width: 100%; justify-content: center; }
-          
           .residents-controls { flex-direction: column !important; align-items: stretch !important; gap: 1rem; }
           .search-box { width: 100%; }
         }
@@ -389,18 +494,23 @@ const ResidentsPage = () => {
         <div className="residents-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '15px' }}>
           <div className="search-box" style={{ flex: '1', minWidth: '250px' }}>
             <Search size={20} />
-            <input type="text" placeholder="Search residents..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+            <input type="text" placeholder="Search residents..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); goToPage(1); }} />
           </div>
           
-          {/* ARCHIVE TOGGLE BUTTONS */}
           <div className="view-toggle">
-            <button className={viewMode === 'active' ? 'active-tab' : ''} onClick={() => setViewMode('active')}>
-              <Users size={16} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'text-bottom' }} />
-              Active
+            <button className={viewMode === 'active' ? 'active-tab' : ''} onClick={() => { setViewMode('active'); goToPage(1); }}>
+              <Users size={16} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'text-bottom' }} /> Active
             </button>
-            <button className={viewMode === 'archived' ? 'active-tab' : ''} onClick={() => setViewMode('archived')}>
-              <Archive size={16} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'text-bottom' }} />
-              Archived
+            <button className={viewMode === 'pending' ? 'active-tab' : ''} onClick={() => { setViewMode('pending'); goToPage(1); }} style={{ position: 'relative' }}>
+              <Clock size={16} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'text-bottom' }} /> Pending
+              {pendingCount > 0 && (
+                <span style={{ position: 'absolute', top: '-5px', right: '-5px', background: '#ef4444', color: 'white', borderRadius: '50%', padding: '2px 6px', fontSize: '10px', fontWeight: 'bold' }}>
+                  {pendingCount}
+                </span>
+              )}
+            </button>
+            <button className={viewMode === 'archived' ? 'active-tab' : ''} onClick={() => { setViewMode('archived'); goToPage(1); }}>
+              <Archive size={16} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'text-bottom' }} /> Archived
             </button>
           </div>
         </div>
@@ -429,8 +539,10 @@ const ResidentsPage = () => {
                     {currentResidents.length === 0 ? (
                       <tr>
                         <td colSpan="8" className="empty-row" style={{ textAlign: 'center', padding: '3rem' }}>
-                          {viewMode === 'archived' ? <Archive size={40} style={{ color: 'var(--neutral-400)', marginBottom: '1rem' }} /> : <Users size={40} style={{ color: 'var(--neutral-400)', marginBottom: '1rem' }} />}
-                          <p>{viewMode === 'archived' ? 'No archived residents found.' : 'No active residents found.'}</p>
+                          {viewMode === 'archived' ? <Archive size={40} style={{ color: 'var(--neutral-400)', marginBottom: '1rem' }} /> : 
+                           viewMode === 'pending' ? <Clock size={40} style={{ color: 'var(--neutral-400)', marginBottom: '1rem' }} /> : 
+                           <Users size={40} style={{ color: 'var(--neutral-400)', marginBottom: '1rem' }} />}
+                          <p>{viewMode === 'archived' ? 'No archived residents found.' : viewMode === 'pending' ? 'No pending registrations.' : 'No active residents found.'}</p>
                         </td>
                       </tr>
                     ) : (
@@ -442,28 +554,16 @@ const ResidentsPage = () => {
                               <div style={{ display: 'flex', flexDirection: 'column' }}><strong>{r.first_name} {r.last_name} {r.suffix}</strong><small>{r.civil_status}</small></div>
                             </div>
                           </td>
-                          <td>
-                            {r.full_address}, {r.barangay}
-                          </td>
+                          <td>{r.full_address}, {r.barangay}</td>
                           <td>
                             <div className="status-cell">
-                               <span className={`badge ${
-                                 r.residency_type === 'Tenant' ? 'badge-tenant' : 
-                                 r.residency_type === 'Boarder' ? 'badge-boarder' : 
-                                 'badge-permanent'
-                               }`}>
-                                 <Home size={12} style={{marginRight: '4px', display:'inline'}} />
-                                 {r.residency_type || 'Permanent'}
+                               <span className={`badge ${r.residency_type === 'Tenant' ? 'badge-tenant' : r.residency_type === 'Boarder' ? 'badge-boarder' : 'badge-permanent'}`}>
+                                 <Home size={12} style={{marginRight: '4px', display:'inline'}} /> {r.residency_type || 'Permanent'}
                                </span>
-                               
-                               {checkIfTransient(r.residency_start_date) && (
-                                 <span className="badge badge-transient">
-                                    Transient (&lt;6 Mos)
-                                 </span>
-                               )}
+                               {checkIfTransient(r.residency_start_date) && (<span className="badge badge-transient">Transient (&lt;6 Mos)</span>)}
                             </div>
                           </td>
-                          <td><div className="contact-cell"><span>{r.mobile_number || 'N/A'}</span><small>{r.email || 'No email'}</small></div></td>
+                          <td><div className="contact-cell"><span>{r.mobile_number || r.contact_number || 'N/A'}</span><small>{r.email || 'No email'}</small></div></td>
                           <td style={{ textAlign: 'center' }}><span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--primary-600)' }}>{r.document_requests?.length || 0}</span></td>
                           <td>{calculateAge(r.date_of_birth)} yrs / {r.gender}</td>
                           <td>{r.qr_code_url ? <span className="badge badge-success"><QrCode size={14} /> Yes</span> : <span className="badge badge-warning">Pending</span>}</td>
@@ -472,7 +572,12 @@ const ResidentsPage = () => {
                               <button className="btn-icon" onClick={() => setViewingResident(r)} title="View Details"><Eye size={18} /></button>
                               {user?.role !== 'view_only' && (
                                 <>
-                                  {viewMode === 'active' ? (
+                                  {viewMode === 'pending' ? (
+                                    <>
+                                      <button className="btn-icon" style={{color: '#10b981', background: '#d1fae5'}} onClick={() => handleApprove(r)} title="Approve Resident"><Check size={18} /></button>
+                                      <button className="btn-icon" style={{color: '#ef4444', background: '#fee2e2'}} onClick={() => handleReject(r)} title="Reject & Delete"><X size={18} /></button>
+                                    </>
+                                  ) : viewMode === 'active' ? (
                                     <>
                                       <button className="btn-icon" onClick={() => handleDownloadQR(r)} title="Download QR"><Download size={18} /></button>
                                       <button className="btn-icon" onClick={() => handleResendQR(r)} disabled={!r.email} title="Email QR"><Mail size={18} /></button>
@@ -499,7 +604,7 @@ const ResidentsPage = () => {
             {/* MOBILE VIEW */}
             <div className="mobile-cards-container">
               {currentResidents.length === 0 ? (
-                <div className="empty-row" style={{ textAlign: 'center', padding: '20px', background: '#fff', borderRadius: '8px', border: '1px solid var(--border)' }}>{viewMode === 'archived' ? 'No archived residents.' : 'No active residents.'}</div>
+                <div className="empty-row" style={{ textAlign: 'center', padding: '20px', background: '#fff', borderRadius: '8px', border: '1px solid var(--border)' }}>{viewMode === 'archived' ? 'No archived residents.' : viewMode === 'pending' ? 'No pending registrations.' : 'No active residents.'}</div>
               ) : (
                 currentResidents.map((r) => (
                   <div key={r.id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '8px', padding: '15px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', opacity: viewMode === 'archived' ? 0.8 : 1 }}>
@@ -512,26 +617,17 @@ const ResidentsPage = () => {
                     </div>
 
                     <div style={{ marginBottom: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                       <span className={`badge ${
-                         r.residency_type === 'Tenant' ? 'badge-tenant' : 
-                         r.residency_type === 'Boarder' ? 'badge-boarder' : 
-                         'badge-permanent'
-                       }`}>
-                         <Home size={12} style={{marginRight: '4px', display:'inline'}} />
-                         {r.residency_type || 'Permanent'}
+                       <span className={`badge ${r.residency_type === 'Tenant' ? 'badge-tenant' : r.residency_type === 'Boarder' ? 'badge-boarder' : 'badge-permanent'}`}>
+                         <Home size={12} style={{marginRight: '4px', display:'inline'}} /> {r.residency_type || 'Permanent'}
                        </span>
-                       {checkIfTransient(r.residency_start_date) && (
-                         <span className="badge badge-transient">
-                            Transient (&lt;6 Mos)
-                         </span>
-                       )}
+                       {checkIfTransient(r.residency_start_date) && (<span className="badge badge-transient">Transient (&lt;6 Mos)</span>)}
                     </div>
 
                     <div style={{ marginBottom: '8px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
                       <strong>Address:</strong> {r.full_address}, {r.barangay}
                     </div>
                     <div style={{ marginBottom: '8px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                      <strong>Contact:</strong> {r.mobile_number || 'N/A'} <br/>
+                      <strong>Contact:</strong> {r.mobile_number || r.contact_number || 'N/A'} <br/>
                       <strong>Email:</strong> {r.email || 'N/A'}
                     </div>
                     <div style={{ marginBottom: '12px', fontSize: '0.9rem', display: 'flex', justifyContent: 'space-between' }}>
@@ -543,7 +639,12 @@ const ResidentsPage = () => {
                       <button className="btn-icon" onClick={() => setViewingResident(r)}><Eye size={18} /></button>
                       {user?.role !== 'view_only' && (
                         <>
-                          {viewMode === 'active' ? (
+                          {viewMode === 'pending' ? (
+                            <>
+                              <button className="btn-icon" style={{color: '#10b981', background: '#d1fae5'}} onClick={() => handleApprove(r)}><Check size={18} /></button>
+                              <button className="btn-icon" style={{color: '#ef4444', background: '#fee2e2'}} onClick={() => handleReject(r)}><X size={18} /></button>
+                            </>
+                          ) : viewMode === 'active' ? (
                             <>
                               <button className="btn-icon" onClick={() => handleDownloadQR(r)}><Download size={18} /></button>
                               <button className="btn-icon" onClick={() => handleResendQR(r)} disabled={!r.email}><Mail size={18} /></button>
@@ -563,23 +664,95 @@ const ResidentsPage = () => {
               )}
             </div>
 
-            {/* --- NEW PAGINATION SECTION --- */}
-            {filteredResidents.length > 5 && (
+            {/* --- INLINE PAGINATION SECTION --- */}
+            {filteredResidents.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '1rem', padding: '1rem', background: 'var(--neutral-50)', borderRadius: '8px', border: '1px solid var(--border)' }}>
                 <div style={{ textAlign: 'center', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-                  Showing <strong>{((currentPage - 1) * 5) + 1}</strong> to <strong>{Math.min(currentPage * 5, filteredResidents.length)}</strong> of <strong>{filteredResidents.length}</strong> residents
+                  Showing <strong>{((currentPage - 1) * ITEMS_PER_PAGE) + 1}</strong> to <strong>{Math.min(currentPage * ITEMS_PER_PAGE, filteredResidents.length)}</strong> of <strong>{filteredResidents.length}</strong> residents
                 </div>
-                <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={goToPage} />
+                
+                {totalPages > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginTop: '5px', flexWrap: 'wrap' }}>
+                    <button 
+                      type="button"
+                      onClick={() => goToPage(currentPage - 1)} 
+                      disabled={currentPage === 1}
+                      style={{ display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', background: currentPage === 1 ? '#e2e8f0' : '#fff', color: currentPage === 1 ? '#94a3b8' : 'var(--text-primary)', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
+                    >
+                      <ChevronLeft size={16} /> Prev
+                    </button>
+                    
+                    {[...Array(totalPages)].map((_, index) => {
+                      const pageNumber = index + 1;
+                      return (
+                        <button 
+                          key={pageNumber}
+                          type="button"
+                          onClick={() => goToPage(pageNumber)}
+                          style={{ 
+                            padding: '6px 12px', 
+                            borderRadius: '6px', 
+                            border: '1px solid',
+                            borderColor: currentPage === pageNumber ? 'var(--primary-600)' : 'var(--border)',
+                            background: currentPage === pageNumber ? 'var(--primary-600)' : '#fff',
+                            color: currentPage === pageNumber ? '#fff' : 'var(--text-primary)',
+                            cursor: 'pointer',
+                            fontWeight: currentPage === pageNumber ? 'bold' : 'normal'
+                          }}
+                        >
+                          {pageNumber}
+                        </button>
+                      );
+                    })}
+
+                    <button 
+                      type="button"
+                      onClick={() => goToPage(currentPage + 1)} 
+                      disabled={currentPage === totalPages}
+                      style={{ display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', background: currentPage === totalPages ? '#e2e8f0' : '#fff', color: currentPage === totalPages ? '#94a3b8' : 'var(--text-primary)', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
+                    >
+                      Next <ChevronRight size={16} />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </>
         )}
 
-        {/* --- RENDER ABSTRACTIONS --- */}
-        <ResidentViewModal resident={viewingResident} onClose={() => setViewingResident(null)} onEdit={() => { setViewingResident(null); handleEdit(viewingResident); }} userRole={user?.role} />
+        <ResidentViewModal 
+          resident={viewingResident} 
+          onClose={() => setViewingResident(null)} 
+          onEdit={() => { 
+            setViewingResident(null); 
+            handleEdit(viewingResident); 
+          }} 
+          onApprove={(res) => {
+            setViewingResident(null);
+            handleApprove(res);
+          }}
+          onReject={handleReject}
+          userRole={user?.role} 
+        />
         
         {showModal && (
-          <ResidentFormModal editingResident={editingResident} formData={formData} errors={errors} loading={loading} maxDate={maxDate} minDate={minDate} maxDate16={maxDate16} isUnderage={isUnderage} handleInputChange={handleInputChange} handleImageUpload={(e) => handleFileUpload(e, 'photo_url')} handleProofUpload={(e) => handleFileUpload(e, 'proof_of_residency_url')} handleValidIdUpload={(e) => handleFileUpload(e, 'valid_id_url')} setActiveCamera={setActiveCamera} handleSubmit={handleSubmit} closeModal={closeModal} />
+          <ResidentFormModal 
+            editingResident={editingResident} 
+            formData={formData} 
+            errors={errors} 
+            loading={loading} 
+            maxDate={maxDate} 
+            minDate={minDate} 
+            maxDate16={maxDate16} 
+            isUnderage={isUnderage} 
+            handleInputChange={handleInputChange} 
+            handleImageUpload={(e) => handleFileUpload(e, 'photo_url')} 
+            handleProofUpload={(e) => handleFileUpload(e, 'proof_of_residency_url')} 
+            handleValidIdUpload={(e) => handleFileUpload(e, 'id_image_url')} 
+            setActiveCamera={setActiveCamera} 
+            handleSubmit={handleSubmit} 
+            closeModal={closeModal} 
+          />
         )}
         
         <CameraCaptureModal activeCamera={activeCamera} webcamRef={webcamRef} onClose={() => setActiveCamera(null)} onCapture={capturePhoto} />

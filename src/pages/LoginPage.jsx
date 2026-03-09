@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/supabaseClient'; 
-import { Lock, Mail, LogIn, AlertTriangle } from 'lucide-react';
+import { Lock, Mail, LogIn, AlertTriangle, UserPlus } from 'lucide-react'; // <-- Added UserPlus
 import toast from 'react-hot-toast'; 
 import emailjs from '@emailjs/browser';
 
@@ -19,7 +19,6 @@ const backgroundImages = [bg1, bg2, bg3, bg4, bg5];
 
 const LoginPage = () => {
   const navigate = useNavigate();
-  // --- ADDED startUserSession HERE ---
   const { login, startUserSession } = useAuth(); 
   const [formData, setFormData] = useState({
     email: '',
@@ -134,7 +133,7 @@ const LoginPage = () => {
     }
   };
 
-  // --- STEP 2: LOGIN LOGIC ---
+  // --- STEP 2: LOGIN LOGIC (NO OTP FOR STAFF) ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (lockoutTimer > 0) return; 
@@ -144,7 +143,7 @@ const LoginPage = () => {
 
     const emailVal = formData.email.toLowerCase();
     if (!emailVal.endsWith('@gmail.com')) {
-      setError('Access Denied: Only @gmail.com accounts are permitted.');
+      setError('Access Denied: Only @gmail.com accounts are permitted for staff.');
       setLoading(false);
       return; 
     }
@@ -158,90 +157,19 @@ const LoginPage = () => {
         return;
       }
 
-      // --- CRITICAL FIX: 'true' flag skips session creation so they aren't logged in yet! ---
+      // 1. DIRECT LOGIN WITH PASSWORD
       const authenticatedUser = await login(emailVal, formData.password, true);
 
-      // FLOW A: USER USED TEMP PASSWORD & NEEDS TO VERIFY RECOVERY
-      if (userData && userData.is_verified === false) {
-        const otpToastId = toast.loading("Sending verification code to email...");
-        
-        const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
-        const expiryTime = new Date();
-        expiryTime.setMinutes(expiryTime.getMinutes() + 10); 
-        
-        await db.users.update(userData.id, { 
-          current_otp: newOtp,
-          otp_expiry: expiryTime.toISOString()
-        });
+      // 2. START SESSION IMMEDIATELY
+      await startUserSession(authenticatedUser);
 
-        // Email 2: Super Payload
-        await emailjs.send(
-          'service_178ko1n', 
-          EMAILJS_TEMPLATE_ID, 
-          {
-            to_email: emailVal,
-            to_name: userData.full_name,
-            name: userData.full_name,
-            user_name: userData.full_name,
-            otp_code: newOtp, 
-            code: newOtp,
-            message: newOtp,
-            header_text: "System Security: Account Verification",
-            time: new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' }),
-            qr_code_html: "" 
-          },
-          'pfTdQReY0nVV3CjnY'
-        );
-
-        toast.success("OTP sent! Please check your Gmail.", { id: otpToastId });
-        navigate('/verify-otp', { state: { email: emailVal } });
-        return; 
-      }
-
-      // FLOW B: NEW DEVICE VERIFICATION CHECK
-      const currentDeviceId = localStorage.getItem('trusted_device_id');
-      const isTrustedDevice = userData.known_devices?.includes(currentDeviceId);
-
-      if (isTrustedDevice) {
-        // --- CRITICAL FIX: Device is trusted, so we officially start the session now! ---
-        await startUserSession(authenticatedUser);
-        
+      // 3. CHECK IF FORCED PASSWORD CHANGE IS NEEDED
+      if (userData && userData.needs_password_change) {
+        toast.success("Login successful. Please change your temporary password.");
+        navigate('/force-password-change');
+      } else {
         toast.success(`Welcome back, ${userData.full_name}!`);
         navigate('/dashboard');
-      } else {
-        // DEVICE UNKNOWN: Freeze redirect, send OTP
-        const deviceToastId = toast.loading("Unrecognized device detected. Sending verification code...");
-        
-        const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
-        const expiryTime = new Date();
-        expiryTime.setMinutes(expiryTime.getMinutes() + 10); 
-
-        await db.users.update(userData.id, { 
-          current_otp: newOtp,
-          otp_expiry: expiryTime.toISOString()
-        });
-
-        // Email 3: Super Payload
-        await emailjs.send(
-          'service_178ko1n',     
-          EMAILJS_TEMPLATE_ID, 
-          {
-            to_email: emailVal,
-            to_name: userData.full_name,
-            name: userData.full_name,
-            user_name: userData.full_name,
-            otp_code: newOtp, 
-            code: newOtp,
-            message: newOtp,
-            header_text: "System Security: New Device Detected",
-            time: new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' }),
-            qr_code_html: "" 
-          },
-          'pfTdQReY0nVV3CjnY'
-        );
-
-        toast.success("New device! OTP sent to your Gmail.", { id: deviceToastId });
-        navigate('/verify-otp', { state: { email: emailVal } });
       }
 
     } catch (err) {
@@ -393,6 +321,17 @@ const LoginPage = () => {
         </form>
 
         <div className="login-footer">
+          {/* Phase 2 Link for Residents */}
+          <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid #e2e8f0', width: '100%', textAlign: 'center' }}>
+            <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '0.75rem' }}>Are you a barangay resident?</p>
+            <button 
+              type="button"
+              onClick={() => navigate('/resident-login')}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', width: '100%', padding: '0.75rem', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', color: 'var(--primary-600)', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.9rem' }}
+            >
+              <UserPlus size={18} /> Resident Portal Login
+            </button>
+          </div>
         </div>
       </div>
     </div>

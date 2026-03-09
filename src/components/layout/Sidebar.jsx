@@ -19,7 +19,10 @@ import {
   Clock,
   CheckCircle,
   Send,
-  Archive
+  Archive,
+  Scale,
+  Package,
+  Megaphone
 } from 'lucide-react';
 import logo from "../../assets/brgy.2-icon.png";
 import './Sidebar.css';
@@ -91,7 +94,7 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
         supabase.from('document_requests').select('*', { count: 'exact', head: true }).eq('status', 'released'),
         supabase.from('audit_logs').select('*', { count: 'exact', head: true })
           .eq('action', 'NEW_DEVICE_VERIFIED')
-          .gte('created_at', sinceTime.toISOString()) // <-- Use dynamic time
+          .gte('created_at', sinceTime.toISOString()) 
       ]);
 
       setCounts({
@@ -115,9 +118,7 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
   // --- NEW: Clear Notification on Click ---
   useEffect(() => {
     if (location.pathname === '/security') {
-      // Record the exact time they visited the tab
       localStorage.setItem('last_viewed_security', new Date().toISOString());
-      // Instantly clear the badge from the UI
       setCounts(prev => ({ ...prev, new_devices: 0 }));
     }
   }, [location.pathname]);
@@ -137,10 +138,28 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
       badge: counts.residents > 0 ? { text: counts.residents, color: '#dbeafe', textColor: '#1d4ed8' } : null
     },
     {
+      icon: <Scale size={20} />,
+      label: 'Blotter',
+      path: '/blotter',
+      roles: ['admin', 'record_keeper', 'clerk'] 
+    },
+    {
+      icon: <Package size={20} />,
+      label: 'Equipment',
+      path: '/equipment',
+      roles: ['admin', 'record_keeper', 'clerk'] 
+    },
+    {
+      icon: <Megaphone size={20} />,
+      label: 'Announcements',
+      path: '/announcements',
+      roles: ['admin', 'record_keeper', 'clerk']
+    },
+    {
       icon: <FileCheck size={20} />,
       label: 'Templates',
       path: '/templates',
-      roles: ['admin', 'record_keeper'] // <--- CHANGED: Added 'record_keeper' here!
+      roles: ['admin', 'record_keeper'] 
     },
     {
       icon: <User size={20} />,
@@ -207,12 +226,15 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
 
       <aside className={`sidebar ${isOpen ? 'open' : ''} ${isCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
+          {/* --- FIXED OFFICIAL TITLE HERE --- */}
           <div className="sidebar-logo">
             <div className="logo-icon"><img src={logo} alt="Barangay Logo" /></div>
             {!isCollapsed && (
               <div className="logo-text">
-                <h1>Barangay Dos</h1>
-                <p>Document Issuance System</p>
+                <h1 style={{ fontSize: '1.1rem', marginBottom: '2px' }}>Barangay Dos</h1>
+                <p style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'normal', paddingRight: '10px' }}>
+                  Online Document Record & Services Management System with Data Visualization
+                </p>
               </div>
             )}
           </div>
@@ -313,7 +335,6 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
               </div>
             )}
 
-            {/* This slice renders Templates, Users, Scanner, etc. */}
             {visibleMenuItems.slice(2).map((item) => (
               <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onClose}>
                 <span className="nav-icon">{item.icon}</span>
