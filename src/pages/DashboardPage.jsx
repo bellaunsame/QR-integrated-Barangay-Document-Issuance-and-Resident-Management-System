@@ -19,7 +19,10 @@ import {
   Scale,
   Package,
   FileCheck,
-  AlertTriangle
+  AlertTriangle,
+  Megaphone, // <--- Added for Announcements
+  Pin,       // <--- Added for Announcements
+  Bell       // <--- Added for Announcements
 } from 'lucide-react';
 
 import './DashboardPage.css';
@@ -40,6 +43,7 @@ const DashboardPage = () => {
   const [allRawRequests, setAllRawRequests] = useState([]); 
   const [allRawBlotters, setAllRawBlotters] = useState([]);
   const [allRawBorrows, setAllRawBorrows] = useState([]); 
+  const [announcements, setAnnouncements] = useState([]); // <--- NEW STATE
   
   // --- CHART & CARD DATA STATES ---
   const [docChartData, setDocChartData] = useState([]);
@@ -63,16 +67,19 @@ const DashboardPage = () => {
     try {
       setLoading(true);
 
-      const [residents, allRequests, blotterRes, borrowRes] = await Promise.all([
+      // --- ADDED ANNOUNCEMENTS FETCH TO PROMISE.ALL ---
+      const [residents, allRequests, blotterRes, borrowRes, newsRes] = await Promise.all([
         db.residents.getAll(),
         db.requests.getAll(),
         supabase.from('blotter_records').select('*'),
-        supabase.from('borrowing_records').select('*, equipment_inventory(item_name)').order('borrow_date', { ascending: false })
+        supabase.from('borrowing_records').select('*, equipment_inventory(item_name)').order('borrow_date', { ascending: false }),
+        supabase.from('announcements').select('*').order('is_pinned', { ascending: false }).order('created_at', { ascending: false }).limit(4) // Get top 4
       ]);
 
       setAllRawRequests(allRequests);
       setAllRawBlotters(blotterRes.data || []);
       setAllRawBorrows(borrowRes.data || []);
+      setAnnouncements(newsRes.data || []); // Save to state
 
       const todayManilaStr = new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Manila' });
 
@@ -262,13 +269,11 @@ const DashboardPage = () => {
           </div>
         ) : (
           <div style={{ width: '100%', height: 350 }}>
-            {/* Increased left margin to 20 to make room for the new Y-axis label */}
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={docChartData} margin={{ top: 35, right: 30, left: 20, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                 <XAxis dataKey="name" tick={{ fill: '#334155', fontSize: 14, fontWeight: 600 }} tickLine={false} axisLine={{ stroke: 'var(--border)' }} />
                 
-                {/* Y-AXIS WITH NEW "Total Requests" LABEL */}
                 <YAxis 
                   allowDecimals={false} 
                   tick={{ fill: '#334155', fontSize: 14, fontWeight: 600 }} 
@@ -305,13 +310,11 @@ const DashboardPage = () => {
             </div>
           ) : (
             <div style={{ width: '100%', height: 300 }}>
-              {/* Increased left margin to 20 to make room for the new Y-axis label */}
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={blotterChartData} margin={{ top: 35, right: 30, left: 20, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                   <XAxis dataKey="name" tick={{ fill: '#334155', fontSize: 14, fontWeight: 600 }} tickLine={false} axisLine={{ stroke: 'var(--border)' }} />
                   
-                  {/* Y-AXIS WITH NEW "Total Cases" LABEL */}
                   <YAxis 
                     allowDecimals={false} 
                     tick={{ fill: '#334155', fontSize: 14, fontWeight: 600 }} 
@@ -379,6 +382,57 @@ const DashboardPage = () => {
           )}
         </div>
 
+      </div>
+
+      {/* --- NEW: RECENT ANNOUNCEMENTS CARD --- */}
+      <div className="card" style={{ padding: '20px', marginBottom: '24px', backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Megaphone size={22} color="var(--primary-600)" />
+            <h2 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-primary)' }}>Recent Announcements</h2>
+          </div>
+          <Link to="/announcements" style={{ fontSize: '0.85rem', color: 'var(--primary-600)', textDecoration: 'none', fontWeight: 'bold' }}>Manage News</Link>
+        </div>
+
+        {announcements.length === 0 ? (
+          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-tertiary)' }}>
+            <Megaphone size={48} opacity={0.2} style={{ margin: '0 auto 10px auto' }} />
+            <p>No active announcements from the Barangay.</p>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+            {announcements.map(news => (
+              <div key={news.id} style={{ 
+                display: 'flex', flexDirection: 'column', padding: '16px', 
+                background: news.is_pinned ? '#fefce8' : 'var(--background)', 
+                border: news.is_pinned ? '1px solid #fde047' : '1px solid var(--border)', 
+                borderRadius: '8px' 
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {news.is_pinned ? <Pin size={16} color="#f59e0b" fill="#f59e0b" /> : <Bell size={16} color="#64748b" />}
+                    <h3 style={{ margin: 0, fontWeight: 'bold', fontSize: '1.05rem', color: 'var(--text-primary)', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      {news.title}
+                    </h3>
+                  </div>
+                  <span style={{ 
+                    padding: '4px 8px', borderRadius: '999px', fontSize: '0.7rem', fontWeight: 'bold', whiteSpace: 'nowrap',
+                    background: news.type === 'Warning' ? '#fef2f2' : news.type === 'Event' ? '#ecfdf5' : '#eff6ff', 
+                    color: news.type === 'Warning' ? '#dc2626' : news.type === 'Event' ? '#059669' : '#2563eb' 
+                  }}>
+                    {news.type || 'General'}
+                  </span>
+                </div>
+                <p style={{ margin: '0 0 12px 0', fontSize: '0.9rem', color: 'var(--text-secondary)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: '1.4' }}>
+                  {news.content}
+                </p>
+                <div style={{ marginTop: 'auto', fontSize: '0.8rem', color: 'var(--text-tertiary)', fontWeight: '600' }}>
+                  {new Date(news.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} • Target: {news.target_purok}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* QUICK ACTIONS ROW */}
