@@ -1,14 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { toast } from 'react-hot-toast';
-import { Plus, Search, Edit, Scale, Paperclip, Loader2 } from 'lucide-react';
+import { Plus, Search, Edit, Scale, Paperclip, Loader2, Filter } from 'lucide-react';
+
+// --- IMPORT YOUR EXISTING PAGINATION SYSTEM ---
+import { Pagination } from '../components/common'; 
+import { usePagination } from '../hooks';
 
 const BlotterPage = () => {
   const [records, setRecords] = useState([]);
-  const [residentNames, setResidentNames] = useState([]); // For the auto-complete dropdown
+  const [residentNames, setResidentNames] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  
+  // --- FILTER STATES ---
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All'); // New Status Filter
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   
@@ -39,7 +47,6 @@ const BlotterPage = () => {
     setLoading(false);
   };
 
-  // Fetch residents to use in the Auto-complete dropdowns
   const fetchResidents = async () => {
     const { data, error } = await supabase.from('residents').select('first_name, last_name');
     if (!error && data) {
@@ -52,7 +59,6 @@ const BlotterPage = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  // File Upload Handler for Evidence
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -123,15 +129,33 @@ const BlotterPage = () => {
     }
   };
 
-  const filteredRecords = records.filter(record => 
-    record.complainant_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    record.respondent_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    record.case_number.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // --- 1. ADVANCED FILTERING LOGIC ---
+  const filteredRecords = records.filter(record => {
+    const matchesSearch = 
+      record.complainant_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      record.respondent_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      record.case_number.toLowerCase().includes(searchTerm.toLowerCase());
+      
+    const matchesStatus = statusFilter === 'All' || record.status === statusFilter;
+
+    return matchesSearch && matchesStatus;
+  });
+
+  // --- 2. PAGINATION INTEGRATION ---
+  const { 
+    currentPage, 
+    totalPages, 
+    currentData: paginatedRecords, 
+    goToPage 
+  } = usePagination(filteredRecords, 10); // Show 10 records per page
+
+  // Reset to page 1 whenever filters change so you don't get stuck on an empty page
+  useEffect(() => {
+    goToPage(1);
+  }, [searchTerm, statusFilter, goToPage]);
 
   return (
     <div className="page-container" style={{ padding: '2rem' }}>
-      {/* Hidden Datalist for Resident Name Suggestions */}
       <datalist id="resident-list">
         {residentNames.map((name, index) => (
           <option key={index} value={name} />
@@ -154,8 +178,12 @@ const BlotterPage = () => {
       </div>
 
       <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
-        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', background: 'var(--neutral-100)', padding: '0.5rem 1rem', borderRadius: '8px', flex: 1 }}>
+        
+        {/* --- 3. UPDATED CONTROLS: SEARCH + STATUS FILTER --- */}
+        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+          
+          {/* Search Bar */}
+          <div style={{ display: 'flex', alignItems: 'center', background: 'var(--neutral-100)', padding: '0.5rem 1rem', borderRadius: '8px', flex: 2, minWidth: '250px' }}>
             <Search size={20} color="var(--text-tertiary)" style={{ marginRight: '0.5rem' }} />
             <input 
               type="text" 
@@ -165,47 +193,86 @@ const BlotterPage = () => {
               style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%' }}
             />
           </div>
+
+          {/* Status Filter Dropdown */}
+          <div style={{ display: 'flex', alignItems: 'center', background: 'var(--neutral-100)', padding: '0.5rem 1rem', borderRadius: '8px', flex: 1, minWidth: '200px' }}>
+            <Filter size={20} color="var(--text-tertiary)" style={{ marginRight: '0.5rem' }} />
+            <select 
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', cursor: 'pointer', color: 'var(--text-primary)', fontWeight: '500' }}
+            >
+              <option value="All">All Statuses</option>
+              <option value="Active">Active / Ongoing</option>
+              <option value="Settled">Settled at Barangay</option>
+              <option value="Escalated">Escalated to Police</option>
+              <option value="Dismissed">Dismissed</option>
+            </select>
+          </div>
+
         </div>
 
         {loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}><Loader2 className="animate-spin" color="var(--primary-600)" /></div>
+        ) : paginatedRecords.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-tertiary)' }}>
+            <Scale size={48} opacity={0.2} style={{ marginBottom: '10px' }} />
+            <p>No blotter records found matching your filters.</p>
+          </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid var(--border)', textAlign: 'left', color: 'var(--text-secondary)' }}>
-                <th style={{ padding: '1rem' }}>Case No.</th>
-                <th style={{ padding: '1rem' }}>Date</th>
-                <th style={{ padding: '1rem' }}>Complainant</th>
-                <th style={{ padding: '1rem' }}>Respondent</th>
-                <th style={{ padding: '1rem' }}>Status</th>
-                <th style={{ padding: '1rem' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRecords.map((record) => (
-                <tr key={record.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td style={{ padding: '1rem', fontWeight: 'bold' }}>{record.case_number}</td>
-                  <td style={{ padding: '1rem' }}>{new Date(record.incident_date).toLocaleDateString()}</td>
-                  <td style={{ padding: '1rem' }}>{record.complainant_name}</td>
-                  <td style={{ padding: '1rem' }}>{record.respondent_name}</td>
-                  <td style={{ padding: '1rem' }}>
-                    <span style={{ 
-                      padding: '4px 8px', borderRadius: '999px', fontSize: '0.85rem', fontWeight: 'bold',
-                      background: record.status === 'Active' ? '#fef3c7' : record.status === 'Settled' ? '#d1fae5' : '#fee2e2',
-                      color: record.status === 'Active' ? '#b45309' : record.status === 'Settled' ? '#047857' : '#b91c1c'
-                    }}>
-                      {record.status}
-                    </span>
-                  </td>
-                  <td style={{ padding: '1rem' }}>
-                    <button onClick={() => openModal(record)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary-600)' }}>
-                      <Edit size={18} />
-                    </button>
-                  </td>
+          <>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid var(--border)', textAlign: 'left', color: 'var(--text-secondary)' }}>
+                  <th style={{ padding: '1rem' }}>Case No.</th>
+                  <th style={{ padding: '1rem' }}>Date</th>
+                  <th style={{ padding: '1rem' }}>Complainant</th>
+                  <th style={{ padding: '1rem' }}>Respondent</th>
+                  <th style={{ padding: '1rem' }}>Status</th>
+                  <th style={{ padding: '1rem' }}>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {/* 4. RENDER PAGINATED RECORDS */}
+                {paginatedRecords.map((record) => (
+                  <tr key={record.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '1rem', fontWeight: 'bold' }}>{record.case_number}</td>
+                    <td style={{ padding: '1rem' }}>{new Date(record.incident_date).toLocaleDateString()}</td>
+                    <td style={{ padding: '1rem' }}>{record.complainant_name}</td>
+                    <td style={{ padding: '1rem' }}>{record.respondent_name}</td>
+                    <td style={{ padding: '1rem' }}>
+                      <span style={{ 
+                        padding: '4px 8px', borderRadius: '999px', fontSize: '0.85rem', fontWeight: 'bold',
+                        background: record.status === 'Active' ? '#fef3c7' : record.status === 'Settled' ? '#d1fae5' : '#fee2e2',
+                        color: record.status === 'Active' ? '#b45309' : record.status === 'Settled' ? '#047857' : '#b91c1c'
+                      }}>
+                        {record.status}
+                      </span>
+                    </td>
+                    <td style={{ padding: '1rem' }}>
+                      <button onClick={() => openModal(record)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary-600)' }}>
+                        <Edit size={18} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* 5. PAGINATION CONTROLS */}
+            {totalPages > 1 && (
+              <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'var(--neutral-50)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                <div style={{ textAlign: 'center', marginBottom: '10px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  Showing {paginatedRecords.length} records on this page (Total: {filteredRecords.length})
+                </div>
+                <Pagination 
+                  currentPage={currentPage} 
+                  totalPages={totalPages} 
+                  onPageChange={goToPage} 
+                />
+              </div>
+            )}
+          </>
         )}
       </div>
 

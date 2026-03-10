@@ -269,7 +269,8 @@ const UsersPage = () => {
   const getRoleBadgeClass = (role) => {
     switch(role) {
       case 'admin': return 'badge-admin';
-      case 'barangay_captain': return 'badge-captain'; // Consider adding this class to your CSS
+      case 'barangay_captain': return 'badge-captain';
+      case 'secretary': return 'badge-warning'; // <--- ADDED SECRETARY BADGE COLOR
       case 'clerk': return 'badge-clerk';
       case 'record_keeper': return 'badge-keeper';
       case 'view_only': return 'badge-view-only'; 
@@ -278,7 +279,14 @@ const UsersPage = () => {
   };
 
   const formatRole = (role) => {
-    const roleMap = { 'admin': 'Administrator', 'barangay_captain': 'Barangay Captain', 'clerk': 'Barangay Clerk', 'record_keeper': 'Record Keeper', 'view_only': 'View Only' };
+    const roleMap = { 
+      'admin': 'Administrator', 
+      'barangay_captain': 'Barangay Captain', 
+      'secretary': 'Barangay Secretary',  // <--- ADDED SECRETARY FORMATTING
+      'clerk': 'Barangay Clerk', 
+      'record_keeper': 'Record Keeper', 
+      'view_only': 'View Only' 
+    };
     return roleMap[role] || role;
   };
 
@@ -409,6 +417,7 @@ const UsersPage = () => {
                     <option value="">Select role</option>
                     <option value="admin">Administrator</option>
                     <option value="barangay_captain">Barangay Captain (View Only + Approvals)</option>
+                    <option value="secretary">Barangay Secretary</option> {/* <--- ADDED SECRETARY HERE */}
                     <option value="clerk">Barangay Clerk</option>
                     <option value="record_keeper">Record Keeper</option>
                   </select>

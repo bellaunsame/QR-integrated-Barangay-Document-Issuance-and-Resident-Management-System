@@ -1,11 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useSettings } from '../context/SettingsContext';
-import { db } from '../services/supabaseClient';
+import { supabase, db } from '../services/supabaseClient';
 import { Link } from 'react-router-dom';
-import { DocumentRequestCard } from '../components/documents';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList 
 } from 'recharts';
 
 import { 
@@ -17,18 +15,17 @@ import {
   Calendar,
   AlertCircle,
   BarChart3,
-  Filter
+  Filter,
+  Scale,
+  Package,
+  FileCheck,
+  AlertTriangle
 } from 'lucide-react';
-
-// --- IMPORTS FOR PAGINATION ---
-import { Pagination } from '../components/common'; 
-import { usePagination } from '../hooks';
 
 import './DashboardPage.css';
 
 const DashboardPage = () => {
   const { user } = useAuth();
-  const { getSetting } = useSettings();
   
   const [stats, setStats] = useState({
     totalResidents: 0,
@@ -39,31 +36,43 @@ const DashboardPage = () => {
   
   const [loading, setLoading] = useState(true);
   
-  // --- CHART & DATA STATES ---
+  // --- RAW DATA STATES ---
   const [allRawRequests, setAllRawRequests] = useState([]); 
-  const [chartData, setChartData] = useState([]);
+  const [allRawBlotters, setAllRawBlotters] = useState([]);
+  const [allRawBorrows, setAllRawBorrows] = useState([]); 
+  
+  // --- CHART & CARD DATA STATES ---
+  const [docChartData, setDocChartData] = useState([]);
+  const [blotterChartData, setBlotterChartData] = useState([]);
+  const [activeBorrows, setActiveBorrows] = useState([]); 
+  
   const [timeFilter, setTimeFilter] = useState('month'); 
 
   useEffect(() => {
     loadDashboardData();
   }, []);
 
+  // Recalculate ALL charts whenever the global filter changes
   useEffect(() => {
-    if (allRawRequests.length > 0) {
-      processChartData(allRawRequests, timeFilter);
+    if (allRawRequests.length > 0 || allRawBlotters.length > 0 || allRawBorrows.length > 0) {
+      processAllChartData(timeFilter);
     }
-  }, [timeFilter, allRawRequests]);
+  }, [timeFilter, allRawRequests, allRawBlotters, allRawBorrows]);
 
   const loadDashboardData = async () => {
     try {
       setLoading(true);
 
-      const [residents, allRequests] = await Promise.all([
+      const [residents, allRequests, blotterRes, borrowRes] = await Promise.all([
         db.residents.getAll(),
-        db.requests.getAll()
+        db.requests.getAll(),
+        supabase.from('blotter_records').select('*'),
+        supabase.from('borrowing_records').select('*, equipment_inventory(item_name)').order('borrow_date', { ascending: false })
       ]);
 
       setAllRawRequests(allRequests);
+      setAllRawBlotters(blotterRes.data || []);
+      setAllRawBorrows(borrowRes.data || []);
 
       const todayManilaStr = new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Manila' });
 
@@ -71,10 +80,8 @@ const DashboardPage = () => {
         const isCompleted = req.status?.toLowerCase() === 'completed' || req.status?.toLowerCase() === 'released';
         const timestamp = req.processed_at || req.updated_at || req.created_at;
         if (!timestamp) return false;
-
         const safeDateString = (!timestamp.includes('+') && !timestamp.endsWith('Z')) ? `${timestamp}Z` : timestamp;
         const reqDateManilaStr = new Date(safeDateString).toLocaleDateString('en-US', { timeZone: 'Asia/Manila' });
-        
         return isCompleted && reqDateManilaStr === todayManilaStr;
       }).length;
 
@@ -96,73 +103,63 @@ const DashboardPage = () => {
     }
   };
 
-  // --- SORT AND PAGINATE REQUESTS ---
-  const sortedRequests = useMemo(() => {
-    return [...allRawRequests].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-  }, [allRawRequests]);
-
-  const { 
-    currentPage, 
-    totalPages, 
-    currentData: currentRecentRequests, 
-    goToPage 
-  } = usePagination(sortedRequests, 3); // <--- Set to exactly 3 items per page
-
-  const processChartData = (requests, filterOption) => {
+  const processAllChartData = (filterOption) => {
     const now = new Date();
     let cutoffDate = new Date();
     
     switch (filterOption) {
-      case 'today':
-        cutoffDate.setHours(0, 0, 0, 0); 
-        break;
-      case 'week':
-        cutoffDate.setDate(now.getDate() - 7);
-        break;
-      case 'month':
-        cutoffDate.setMonth(now.getMonth() - 1);
-        break;
-      case '6months':
-        cutoffDate.setMonth(now.getMonth() - 6);
-        break;
-      case 'year':
-        cutoffDate.setFullYear(now.getFullYear() - 1);
-        break;
-      case 'all':
-        cutoffDate = new Date(0); 
-        break;
-      default:
-        cutoffDate.setMonth(now.getMonth() - 1);
+      case 'today': cutoffDate.setHours(0, 0, 0, 0); break;
+      case 'week': cutoffDate.setDate(now.getDate() - 7); break;
+      case 'month': cutoffDate.setMonth(now.getMonth() - 1); break;
+      case '6months': cutoffDate.setMonth(now.getMonth() - 6); break;
+      case 'year': cutoffDate.setFullYear(now.getFullYear() - 1); break;
+      case 'all': cutoffDate = new Date(0); break;
+      default: cutoffDate.setMonth(now.getMonth() - 1);
     }
 
-    const filteredRequests = requests.filter(req => {
-      const dateString = req.created_at || req.request_date;
-      if (!dateString) return false;
-      const safeDate = (!dateString.includes('+') && !dateString.endsWith('Z')) ? `${dateString}Z` : dateString;
-      return new Date(safeDate) >= cutoffDate;
-    });
+    const filterByDate = (items, dateField) => {
+      return items.filter(item => {
+        const dateString = item[dateField] || item.created_at;
+        if (!dateString) return false;
+        const safeDate = (!dateString.includes('+') && !dateString.endsWith('Z')) ? `${dateString}Z` : dateString;
+        return new Date(safeDate) >= cutoffDate;
+      });
+    };
 
-    const typeCounts = {};
-    filteredRequests.forEach(req => {
+    const filteredDocs = filterByDate(allRawRequests, 'created_at');
+    const docCounts = {};
+    filteredDocs.forEach(req => {
       const docType = req.template?.template_name || req.request_type || 'Unknown Document';
-      typeCounts[docType] = (typeCounts[docType] || 0) + 1;
+      docCounts[docType] = (docCounts[docType] || 0) + 1;
     });
+    setDocChartData(Object.keys(docCounts).map(key => ({ name: key, count: docCounts[key] })).sort((a, b) => b.count - a.count));
 
-    const formattedData = Object.keys(typeCounts).map(key => ({
-      name: key,
-      count: typeCounts[key]
-    })).sort((a, b) => b.count - a.count); 
+    const filteredBlotters = filterByDate(allRawBlotters, 'incident_date');
+    const blotterCounts = { 'Active': 0, 'Settled': 0, 'Escalated': 0, 'Dismissed': 0 };
+    filteredBlotters.forEach(b => {
+      const status = b.status || 'Active';
+      blotterCounts[status] = (blotterCounts[status] || 0) + 1;
+    });
+    setBlotterChartData(Object.keys(blotterCounts).filter(k => blotterCounts[k] > 0).map(key => ({ name: key, count: blotterCounts[key] })));
 
-    setChartData(formattedData);
+    const filteredBorrows = filterByDate(allRawBorrows, 'borrow_date');
+    const activeItems = filteredBorrows
+      .filter(record => record.status === 'Released')
+      .map(record => {
+        const isOverdue = new Date(record.expected_return) < now;
+        return { ...record, display_status: isOverdue ? 'Overdue' : 'Released' };
+      });
+      
+    setActiveBorrows(activeItems);
   };
 
-  const CustomTooltip = ({ active, payload, label }) => {
+  const CustomTooltip = ({ active, payload, label, color }) => {
     if (active && payload && payload.length) {
       return (
         <div style={{ backgroundColor: 'var(--surface)', padding: '10px 15px', border: '1px solid var(--border)', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
           <p style={{ margin: '0 0 5px 0', fontWeight: 'bold', color: 'var(--text-primary)', borderBottom: '1px solid var(--border)', paddingBottom: '5px' }}>{label}</p>
-          <p style={{ margin: 0, color: 'var(--primary-600)', fontWeight: '600' }}>
-            Requested: {payload[0].value} time{payload[0].value > 1 ? 's' : ''}
+          <p style={{ margin: 0, color: color || 'var(--primary-600)', fontWeight: '600' }}>
+            Total: {payload[0].value}
           </p>
         </div>
       );
@@ -174,145 +171,116 @@ const DashboardPage = () => {
     return (
       <div className="dashboard-loading">
         <div className="spinner"></div>
-        <p>Loading dashboard...</p>
+        <p>Loading analytics dashboard...</p>
       </div>
     );
   }
 
   return (
     <div className="dashboard-page">
-      <div className="dashboard-header">
+      {/* HEADER WITH GLOBAL FILTER */}
+      <div className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
         <div>
-          <h1>Dashboard</h1>
-          <p>Welcome back, {user?.full_name}!</p>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><BarChart3 size={28} color="var(--primary-600)" /> Analytics Dashboard</h1>
+          <p>Welcome back, {user?.full_name}! Here is the latest data overview.</p>
         </div>
-        <div className="header-info">
-          <Calendar size={20} />
-          <span>{new Date().toLocaleDateString('en-US', { 
-            timeZone: 'Asia/Manila',
-            weekday: 'long', 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
-          })}</span>
-        </div>
-      </div>
-
-      {/* Statistics Cards */}
-      <div className="stats-grid">
-        <div className="stat-card stat-primary">
-          <div className="stat-icon">
-            <Users size={32} />
-          </div>
-          <div className="stat-content">
-            <div className="stat-value">{stats.totalResidents}</div>
-            <div className="stat-label">Total Residents</div>
-          </div>
-          <div className="stat-trend">
-            <TrendingUp size={16} />
-            <span>Active records</span>
-          </div>
-        </div>
-
-        <div className="stat-card stat-warning">
-          <div className="stat-icon">
-            <Clock size={32} />
-          </div>
-          <div className="stat-content">
-            <div className="stat-value">{stats.pendingRequests}</div>
-            <div className="stat-label">Pending Requests</div>
-          </div>
-          <div className="stat-trend">
-            <AlertCircle size={16} />
-            <span>Awaiting action</span>
-          </div>
-        </div>
-
-        <div className="stat-card stat-success">
-          <div className="stat-icon">
-            <CheckCircle size={32} />
-          </div>
-          <div className="stat-content">
-            <div className="stat-value">{stats.completedToday}</div>
-            <div className="stat-label">Completed Today</div>
-          </div>
-          <div className="stat-trend">
-            <Calendar size={16} />
-            <span>Today's progress</span>
-          </div>
-        </div>
-
-        <div className="stat-card stat-info">
-          <div className="stat-icon">
-            <FileText size={32} />
-          </div>
-          <div className="stat-content">
-            <div className="stat-value">{stats.totalRequests}</div>
-            <div className="stat-label">Total Documents</div>
-          </div>
-          <div className="stat-trend">
-            <BarChart3 size={16} />
-            <span>All time</span>
-          </div>
-        </div>
-      </div>
-
-      {/* ANALYTICS CHART SECTION */}
-      <div className="card" style={{ padding: '20px', marginBottom: '24px', backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <BarChart3 size={22} color="var(--primary-600)" />
-            <h2 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--text-primary)' }}>Document Request Analytics</h2>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <div className="header-info" style={{ margin: 0 }}>
+            <Calendar size={18} />
+            <span>{new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'long', day: 'numeric', year: 'numeric' })}</span>
           </div>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--background)', padding: '5px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-            <Filter size={16} color="var(--text-tertiary)" style={{ marginLeft: '5px' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--border)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+            <Filter size={16} color="var(--text-secondary)" />
             <select 
               value={timeFilter} 
               onChange={(e) => setTimeFilter(e.target.value)}
-              style={{ border: 'none', background: 'transparent', padding: '6px 12px', outline: 'none', cursor: 'pointer', color: 'var(--text-primary)', fontWeight: '500' }}
+              style={{ border: 'none', background: 'transparent', outline: 'none', cursor: 'pointer', color: 'var(--text-primary)', fontWeight: '600', fontSize: '0.9rem' }}
             >
-              <option value="today">Today</option>
-              <option value="week">Past 1 Week</option>
-              <option value="month">Past 1 Month</option>
+              <option value="today">Today Only</option>
+              <option value="week">Past 7 Days</option>
+              <option value="month">Past 30 Days</option>
               <option value="6months">Past 6 Months</option>
               <option value="year">Past 1 Year</option>
               <option value="all">All Time</option>
             </select>
           </div>
         </div>
+      </div>
 
-        {chartData.length === 0 ? (
-          <div style={{ height: '300px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)' }}>
+      {/* STATISTICS CARDS */}
+      <div className="stats-grid">
+        <div className="stat-card stat-primary">
+          <div className="stat-icon"><Users size={32} /></div>
+          <div className="stat-content">
+            <div className="stat-value">{stats.totalResidents}</div>
+            <div className="stat-label">Total Residents</div>
+          </div>
+          <div className="stat-trend"><TrendingUp size={16} /><span>Active records</span></div>
+        </div>
+
+        <div className="stat-card stat-warning">
+          <div className="stat-icon"><Clock size={32} /></div>
+          <div className="stat-content">
+            <div className="stat-value">{stats.pendingRequests}</div>
+            <div className="stat-label">Pending Requests</div>
+          </div>
+          <div className="stat-trend"><AlertCircle size={16} /><span>Awaiting action</span></div>
+        </div>
+
+        <div className="stat-card stat-success">
+          <div className="stat-icon"><CheckCircle size={32} /></div>
+          <div className="stat-content">
+            <div className="stat-value">{stats.completedToday}</div>
+            <div className="stat-label">Completed Today</div>
+          </div>
+          <div className="stat-trend"><Calendar size={16} /><span>Today's progress</span></div>
+        </div>
+
+        <div className="stat-card stat-info">
+          <div className="stat-icon"><FileText size={32} /></div>
+          <div className="stat-content">
+            <div className="stat-value">{stats.totalRequests}</div>
+            <div className="stat-label">Total Documents</div>
+          </div>
+          <div className="stat-trend"><BarChart3 size={16} /><span>All time</span></div>
+        </div>
+      </div>
+
+      {/* CHART SECTION 1: DOCUMENTS (FULL WIDTH) */}
+      <div className="card" style={{ padding: '20px', marginBottom: '24px', backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+          <FileText size={22} color="var(--primary-600)" />
+          <h2 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-primary)' }}>Document Request Analytics</h2>
+        </div>
+
+        {docChartData.length === 0 ? (
+          <div style={{ height: '250px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)' }}>
             <FileText size={48} opacity={0.2} style={{ marginBottom: '10px' }} />
-            <p>No document requests found for the selected time period.</p>
+            <p>No document requests found for this period.</p>
           </div>
         ) : (
           <div style={{ width: '100%', height: 350 }}>
+            {/* Increased left margin to 20 to make room for the new Y-axis label */}
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={chartData}
-                margin={{ top: 20, right: 30, left: 0, bottom: 20 }} 
-              >
+              <BarChart data={docChartData} margin={{ top: 35, right: 30, left: 20, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-                <XAxis 
-                  dataKey="name" 
-                  tick={{ fill: 'var(--text-secondary)', fontSize: 12 }}
-                  tickLine={false}
-                  axisLine={{ stroke: 'var(--border)' }}
-                  height={30}
-                />
+                <XAxis dataKey="name" tick={{ fill: '#334155', fontSize: 14, fontWeight: 600 }} tickLine={false} axisLine={{ stroke: 'var(--border)' }} />
+                
+                {/* Y-AXIS WITH NEW "Total Requests" LABEL */}
                 <YAxis 
                   allowDecimals={false} 
-                  tick={{ fill: 'var(--text-secondary)', fontSize: 12 }}
-                  tickLine={false}
-                  axisLine={false}
+                  tick={{ fill: '#334155', fontSize: 14, fontWeight: 600 }} 
+                  tickLine={false} 
+                  axisLine={false} 
+                  label={{ value: 'Total Requests', angle: -90, position: 'insideLeft', offset: -10, fill: '#64748b', fontWeight: 'bold', fontSize: 14 }}
                 />
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--background)', opacity: 0.4 }} />
+                
+                <Tooltip content={<CustomTooltip color="var(--primary-600)" />} cursor={{ fill: 'var(--background)', opacity: 0.4 }} />
                 <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={60}>
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill="var(--primary-500)" />
-                  ))}
+                  {docChartData.map((entry, index) => (<Cell key={`cell-${index}`} fill="var(--primary-500)" />))}
+                  <LabelList dataKey="count" position="top" style={{ fill: '#1e293b', fontSize: 16, fontWeight: 'bold' }} formatter={(val) => `${val} docs`} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -320,74 +288,124 @@ const DashboardPage = () => {
         )}
       </div>
 
-      {/* Recent Activity */}
-      <div className="dashboard-content">
-        <div>
-          <div className="recent-requests-header">
-            <h2>Recent Document Requests</h2>
-            <Link to="/documents" className="badge badge-primary">View All</Link>
+      {/* CHART SECTION 2: BLOTTER & EQUIPMENT (SPLIT 50/50) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px', marginBottom: '24px' }}>
+        
+        {/* BLOTTER CHART */}
+        <div className="card" style={{ padding: '20px', backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)', height: '400px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+            <Scale size={22} color="#ef4444" />
+            <h2 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-primary)' }}>Blotter Cases by Status</h2>
           </div>
-          
-          <div>
-            {currentRecentRequests.length === 0 ? (
-              <div className="empty-state">
-                <FileText size={48} />
-                <h3>No requests yet</h3>
-                <p>Document requests will appear here</p>
-              </div>
-            ) : (
-              <>
-                <div className="requests-card-grid">
-                  {currentRecentRequests.map((request) => (
-                    <DocumentRequestCard 
-                      key={request.id} 
-                      request={request} 
-                      showActions={false} 
-                    />
-                  ))}
-                </div>
-                
-                {/* --- UPDATED PAGINATION CONTROLS --- */}
-                <div style={{ marginTop: '1.5rem', background: 'var(--surface)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                  <div style={{ textAlign: 'center', marginBottom: '10px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                    Showing {currentRecentRequests.length} of {sortedRequests.length} total requests
-                  </div>
+
+          {blotterChartData.length === 0 ? (
+            <div style={{ height: '250px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)' }}>
+              <Scale size={48} opacity={0.2} style={{ marginBottom: '10px' }} />
+              <p>No blotter records found for this period.</p>
+            </div>
+          ) : (
+            <div style={{ width: '100%', height: 300 }}>
+              {/* Increased left margin to 20 to make room for the new Y-axis label */}
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={blotterChartData} margin={{ top: 35, right: 30, left: 20, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                  <XAxis dataKey="name" tick={{ fill: '#334155', fontSize: 14, fontWeight: 600 }} tickLine={false} axisLine={{ stroke: 'var(--border)' }} />
                   
-                  {/* Buttons will ONLY show if there are 4 or more requests */}
-                  {sortedRequests.length > 3 && (
-                     <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={goToPage} />
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+                  {/* Y-AXIS WITH NEW "Total Cases" LABEL */}
+                  <YAxis 
+                    allowDecimals={false} 
+                    tick={{ fill: '#334155', fontSize: 14, fontWeight: 600 }} 
+                    tickLine={false} 
+                    axisLine={false} 
+                    label={{ value: 'Total Cases', angle: -90, position: 'insideLeft', offset: -10, fill: '#64748b', fontWeight: 'bold', fontSize: 14 }}
+                  />
+
+                  <Tooltip content={<CustomTooltip color="#ef4444" />} cursor={{ fill: 'var(--background)', opacity: 0.4 }} />
+                  <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={60}>
+                    {blotterChartData.map((entry, index) => {
+                      let color = '#f59e0b'; 
+                      if (entry.name.includes('Settled')) color = '#10b981'; 
+                      if (entry.name.includes('Escalated')) color = '#ef4444'; 
+                      if (entry.name.includes('Dismissed')) color = '#64748b'; 
+                      return <Cell key={`cell-${index}`} fill={color} />;
+                    })}
+                    <LabelList dataKey="count" position="top" style={{ fill: '#1e293b', fontSize: 16, fontWeight: 'bold' }} formatter={(val) => `${val} cases`} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
 
-        {/* Quick Actions */}
-        <div className="quick-actions">
-          <h3>Quick Actions</h3>
-          <div className="action-cards">
-            {(user?.role === 'admin' || user?.role === 'record_keeper' || user?.role === 'clerk') && (
-              <Link to="/residents" className="action-card">
-                <Users size={24} />
-                <span>Add New Resident</span>
-              </Link>
-            )}
-            
-            <Link to="/documents" className="action-card">
-              <FileText size={24} />
-              <span>View All Requests</span>
-            </Link>
-            
-            {user?.role === 'admin' && (
-              <Link to="/templates" className="action-card">
-                <FileText size={24} />
-                <span>Manage Templates</span>
-              </Link>
-            )}
+        {/* EQUIPMENT CARD */}
+        <div className="card" style={{ padding: '20px', backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)', height: '400px', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Package size={22} color="#f59e0b" />
+              <h2 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-primary)' }}>Active Borrows</h2>
+            </div>
+            <Link to="/equipment" style={{ fontSize: '0.85rem', color: 'var(--primary-600)', textDecoration: 'none', fontWeight: 'bold' }}>View All</Link>
           </div>
+
+          {activeBorrows.length === 0 ? (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)' }}>
+              <CheckCircle size={48} opacity={0.2} style={{ marginBottom: '10px', color: '#10b981' }} />
+              <p>All items are currently returned!</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', paddingRight: '5px' }}>
+              {activeBorrows.map(borrow => (
+                <div key={borrow.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'var(--background)', border: '1px solid var(--border)', borderRadius: '8px' }}>
+                  <div style={{ overflow: 'hidden' }}>
+                    <p style={{ margin: '0 0 4px 0', fontWeight: 'bold', fontSize: '0.95rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                      {borrow.borrower_name}
+                    </p>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                      {borrow.quantity}x {borrow.equipment_inventory?.item_name || 'Equipment'}
+                    </p>
+                  </div>
+                  <span style={{
+                    padding: '4px 8px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 'bold', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px',
+                    background: borrow.display_status === 'Overdue' ? '#fef2f2' : '#fffbeb',
+                    color: borrow.display_status === 'Overdue' ? '#dc2626' : '#d97706',
+                    border: `1px solid ${borrow.display_status === 'Overdue' ? '#fca5a5' : '#fde68a'}`
+                  }}>
+                    {borrow.display_status === 'Overdue' && <AlertTriangle size={12} />}
+                    {borrow.display_status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {/* QUICK ACTIONS ROW */}
+      <div className="quick-actions">
+        <h3 style={{ marginBottom: '15px' }}>Quick Actions</h3>
+        <div className="action-cards">
+          {(user?.role === 'admin' || user?.role === 'secretary' || user?.role === 'record_keeper' || user?.role === 'clerk') && (
+            <Link to="/residents" className="action-card">
+              <Users size={24} />
+              <span>Add New Resident</span>
+            </Link>
+          )}
+          
+          <Link to="/documents" className="action-card">
+            <FileText size={24} />
+            <span>Manage Requests</span>
+          </Link>
+          
+          {user?.role === 'admin' && (
+            <Link to="/templates" className="action-card">
+              <FileCheck size={24} />
+              <span>Manage Templates</span>
+            </Link>
+          )}
         </div>
       </div>
+
     </div>
   );
 };

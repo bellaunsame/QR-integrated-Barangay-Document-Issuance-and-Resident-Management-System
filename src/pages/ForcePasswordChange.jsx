@@ -1,11 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../services/supabaseClient';
 import { toast } from 'react-hot-toast';
 import { Lock, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 
+// Import Staff Auth Context and Password Hasher
+import { useAuth } from '../context/AuthContext';
+import { hashPassword } from '../services/security/passwordService';
+
+// Background Images (Same as LoginPage)
+import bg1 from '../assets/gallery-1.jpg';
+import bg2 from '../assets/gallery-2.jpg';
+import bg3 from '../assets/gallery-3.jpg';
+import bg4 from '../assets/officials.png';
+import bg5 from '../assets/area.JPG';
+
 import logo from '../assets/brgy.2-icon.png';
 import './LoginPage.css'; 
+
+const backgroundImages = [bg1, bg2, bg3, bg4, bg5];
 
 // Password Validation Regex
 const hasNumber = /\d/;
@@ -13,7 +25,9 @@ const hasSymbol = /[!@#$%^&*(),.?":{}|<>_+\-=\\[\]\\]/;
 
 const ForcePasswordChange = () => {
   const navigate = useNavigate();
-  const [resident, setResident] = useState(null);
+  // Use the STAFF auth context
+  const { user, updateProfile } = useAuth(); 
+  
   const [passwords, setPasswords] = useState({
     newPassword: '',
     confirmPassword: ''
@@ -23,19 +37,17 @@ const ForcePasswordChange = () => {
 
   // 1. Check Session on Load
   useEffect(() => {
-    const sessionStr = localStorage.getItem('resident_session');
-    if (!sessionStr) {
-      navigate('/resident-login');
+    // If no user is logged in, send to staff login
+    if (!user) {
+      navigate('/login', { replace: true });
       return;
     }
     
-    const sessionData = JSON.parse(sessionStr);
-    setResident(sessionData);
-
-    if (!sessionData.needs_password_change) {
-      navigate('/resident-home');
+    // If they somehow got here but don't need a change, send to dashboard
+    if (user && !user.needs_password_change) {
+      navigate('/dashboard', { replace: true });
     }
-  }, [navigate]);
+  }, [user, navigate]);
 
   const handleChange = (e) => {
     setPasswords({ ...passwords, [e.target.name]: e.target.value });
@@ -63,28 +75,22 @@ const ForcePasswordChange = () => {
     }
 
     setLoading(true);
-    const loadingToast = toast.loading('Securing your account...');
+    const loadingToast = toast.loading('Securing your staff account...');
 
     try {
-      // 2. Update the RESIDENTS table (Not the users table!)
-      const { error } = await supabase
-        .from('residents')
-        .update({ 
-          password: passwords.newPassword, 
-          needs_password_change: false 
-        })
-        .eq('id', resident.id);
+      // 2. Hash the new password before saving it (Critical for Staff!)
+      const hashedPassword = await hashPassword(passwords.newPassword);
 
-      if (error) throw error;
-
-      // 3. Update their local session
-      const updatedSession = { ...resident, needs_password_change: false, password: passwords.newPassword };
-      localStorage.setItem('resident_session', JSON.stringify(updatedSession));
+      // 3. Update the USERS table via the AuthContext
+      await updateProfile({ 
+        password_hash: hashedPassword, 
+        needs_password_change: false 
+      });
 
       toast.success('Password updated successfully!', { id: loadingToast, icon: '✅' });
       
-      // 4. Send them to the RESIDENT portal
-      navigate('/resident-home');
+      // 4. Send them to the STAFF dashboard!
+      navigate('/dashboard', { replace: true });
 
     } catch (err) {
       console.error("Update Password Error:", err);
@@ -94,14 +100,28 @@ const ForcePasswordChange = () => {
     }
   };
 
-  if (!resident) return null; 
+  if (!user) return null; 
 
   return (
     <div className="login-page">
+      {/* Background Slider - SAME AS LOGIN PAGE */}
       <div className="login-background">
-        <div className="overlay-gradient" style={{ background: 'linear-gradient(135deg, var(--primary-900) 0%, var(--primary-800) 100%)' }}></div>
+        <div className="scrolling-wrapper">
+          <div className="scrolling-track">
+            {/* Create multiple sets for infinite scroll illusion */}
+            {[...Array(4)].map((_, setIndex) => (
+              <div key={setIndex} className="image-set">
+                {backgroundImages.map((img, index) => (
+                  <img key={`${setIndex}-${index}`} src={img} alt="bg" />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="overlay-gradient"></div>
       </div>
 
+      {/* FORM CARD */}
       <div className="login-card" style={{ maxWidth: '420px', width: '100%', margin: '0 20px', position: 'relative', padding: '2.5rem 2rem', background: '#ffffff', borderRadius: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', zIndex: 10 }}>
         
         <div className="login-header" style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
@@ -112,7 +132,7 @@ const ForcePasswordChange = () => {
           </div>
           <h1 style={{ fontSize: '1.5rem', color: '#1e293b', margin: '0 0 5px 0', fontWeight: '700' }}>Secure Your Account</h1>
           <p style={{ color: '#64748b', margin: 0, fontSize: '0.9rem', lineHeight: '1.4' }}>
-            Hi {resident.first_name}, please change your temporary password to something secure before continuing.
+            Hi {user.full_name}, please change your temporary password to a secure one before accessing the system.
           </p>
         </div>
 

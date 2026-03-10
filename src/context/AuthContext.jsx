@@ -98,7 +98,6 @@ export const AuthProvider = ({ children }) => {
     } catch { return 'unknown'; }
   };
 
-  // --- THE FIX IS HERE: Login ONLY verifies credentials now. No Toasts! ---
   const login = async (email, password, skipSessionSetup = false) => {
     try {
       setLoading(true);
@@ -134,12 +133,10 @@ export const AuthProvider = ({ children }) => {
 
       loginRateLimiter.reset(email);
 
-      // If OTP is required, we stop here and let LoginPage handle the rest
       if (skipSessionSetup) {
         return userData;
       }
       
-      // Otherwise, start session immediately
       await startUserSession(userData);
       return userData;
 
@@ -150,7 +147,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // --- NEW: Session logic extracted so VerifyOTP can call it later ---
   const startUserSession = async (userData) => {
     const ip = await getClientIP();
     const isMobile = /Mobi|Android/i.test(navigator.userAgent);
@@ -191,8 +187,28 @@ export const AuthProvider = ({ children }) => {
     sessionManager.startSession();
 
     await logAuth(ACTIONS.LOGIN_SUCCESS, userData.id, { email: userData.email, role: userData.role, ip });
-    
-    // NOTE: Intentionally NO TOAST here. The toast is handled in LoginPage or VerifyOTP.
+  };
+
+  const updateProfile = async (updatedData) => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .update(updatedData)
+        .eq('id', user.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setUser(data);
+      localStorage.setItem('user', JSON.stringify(data));
+      await logAuth(ACTIONS.USER_UPDATED || 'USER_UPDATED', user.id, { email: user.email, changes: updatedData });
+
+      return data;
+    } catch (error) {
+      console.error('Update profile error:', error);
+      throw error;
+    }
   };
 
   const logout = async () => {
@@ -227,13 +243,39 @@ export const AuthProvider = ({ children }) => {
     return Array.isArray(roles) ? roles.includes(user.role) : user.role === roles;
   };
 
+  // ========================================================
+  // FIXED: UPGRADED PERMISSION ENGINE
+  // ========================================================
   const hasPermission = (permission) => {
     if (!user) return false;
+
+    // Admin bypasses all checks and gets full access
+    if (user.role === 'admin') return true;
+
+    // Specific permissions for other roles
     const permissions = {
-      admin: ['manage_users', 'manage_settings', 'process_documents', 'view_audit_logs'],
-      clerk: ['process_documents', 'view_residents'],
-      record_keeper: ['manage_residents', 'generate_qr']
+      secretary: [
+        'manage_residents', 
+        'process_documents', 
+        'manage_blotter', 
+        'manage_equipment', 
+        'manage_news', 
+        'use_qr_scanner'
+      ],
+      clerk: [
+        'process_documents', 
+        'view_residents', 
+        'manage_equipment',  
+        'manage_blotter'     
+      ],
+      record_keeper: [
+        'manage_residents', 
+        'generate_qr', 
+        'manage_equipment',
+        'process_documents' // <--- ADDED! Record Keeper can now process documents.
+      ]
     };
+    
     return (permissions[user.role] || []).includes(permission);
   };
 
@@ -247,7 +289,8 @@ export const AuthProvider = ({ children }) => {
     logout,
     hasRole,
     hasPermission,
-    startUserSession // Exported so VerifyOTP can trigger it
+    startUserSession,
+    updateProfile 
   };
 
   return (

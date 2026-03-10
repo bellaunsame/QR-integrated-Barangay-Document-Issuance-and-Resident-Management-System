@@ -6,6 +6,7 @@ import { prepareTemplateData, generatePDFDocument, downloadPDF, previewPDF } fro
 
 import toast from 'react-hot-toast';
 import { useLocation } from 'react-router-dom';
+import emailjs from '@emailjs/browser'; 
 
 // Security & Audit Imports
 import { logDataModification, ACTIONS } from '../services/security/auditLogger';
@@ -21,7 +22,7 @@ import {
 import './DocumentRequestsPage.css';
 
 const DocumentRequestsPage = () => {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const { settings } = useSettings();
   const location = useLocation(); 
   
@@ -43,23 +44,17 @@ const DocumentRequestsPage = () => {
   const [selectedRequests, setSelectedRequests] = useState([]);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
 
-  // --- NEW: PAGINATION HOOK SET TO 5 ---
   const { 
     currentPage, 
     totalPages, 
     currentData: currentRequests, 
     goToPage 
-  } = usePagination(filteredRequests, 5); // <--- Changed from 10 to 5
+  } = usePagination(filteredRequests, 5); 
 
   const itemsPerPage = 5;
-  const indexOfFirstItem = (currentPage - 1) * itemsPerPage;
-  const indexOfLastItem = currentPage * itemsPerPage;
+  
+  const canProcessDocs = user?.role === 'admin' || hasPermission('process_documents');
 
-  // --- ROLE PERMISSIONS ---
-  const canProcessDocs = ['admin', 'clerk', 'record_keeper'].includes(user?.role);
-  const isAdmin = user?.role === 'admin';
-
-  // --- HELPER: INSTANT SIDEBAR SYNC ---
   const triggerSidebarUpdate = () => {
     window.dispatchEvent(new Event('docs_updated'));
   };
@@ -131,8 +126,6 @@ const DocumentRequestsPage = () => {
     }
     setFilteredRequests(filtered);
   };
-
-  // --- ACTIONS ---
 
   const handleEditRequest = async (request) => {
     const newPurpose = window.prompt("Update the purpose for this request:", request.purpose || '');
@@ -209,7 +202,7 @@ const DocumentRequestsPage = () => {
       });
 
       if (!skipConfirm) {
-        toast.success('Document accepted & processed!');
+        toast.success('Document Processed & Generated!');
         if (viewingRequest) setViewingRequest(null);
       }
       return true;
@@ -228,8 +221,31 @@ const DocumentRequestsPage = () => {
       triggerSidebarUpdate();
 
       await db.requests.updateStatus(request.id, 'released', user.id);
+
+      if (request.resident?.email) {
+        try {
+          const docName = request.request_type || request.template?.template_name || "DOCUMENT";
+          
+          await emailjs.send(
+            'service_178ko1n',     
+            'template_qzkqkvf',    
+            {
+              to_email: request.resident.email,
+              to_name: request.resident.first_name,
+              barangay_name: "Dos, Calamba",
+              email_subject_message: `Good news! Your requested document has been successfully processed and is now READY FOR PICKUP at the Barangay Hall. Please present your Digital Barangay ID from your Resident Portal upon claiming.`,
+              otp_code: docName.toUpperCase() 
+            },
+            'pfTdQReY0nVV3CjnY'    
+          );
+          console.log(`Email sent to ${request.resident.email}`);
+        } catch (emailErr) {
+          console.error("EmailJS failed to send:", emailErr);
+        }
+      }
+
       if (!skipConfirm) {
-        toast.success('Marked as Released');
+        toast.success('Marked as Released & Email Sent!');
         if (viewingRequest) setViewingRequest(null);
       }
       return true;
@@ -358,7 +374,6 @@ const DocumentRequestsPage = () => {
 
   const getPageTitle = () => selectedStatus === 'all' ? 'All Document Requests' : `${selectedStatus.charAt(0).toUpperCase() + selectedStatus.slice(1)} Requests`;
 
-  // --- ACTION BUTTONS HELPER ---
   const renderActionButtons = (request) => (
     <div className="action-buttons" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
       <button className="btn-icon" onClick={() => setViewingRequest(request)} title="View Details">
@@ -375,16 +390,12 @@ const DocumentRequestsPage = () => {
               <button className="btn-icon" style={{ background: '#f3f4f6', color: '#374151' }} onClick={() => handleEditRequest(request)} title="Edit Request Details">
                 <Edit size={18} />
               </button>
-              {isAdmin && (
-                <>
-                  <button className="btn-icon btn-success" onClick={() => handleProcessRequest(request)} disabled={processingRequest === request.id} title="Accept & Generate PDF">
-                    {processingRequest === request.id ? <div className="spinner-small"></div> : <CheckCircle size={18} />}
-                  </button>
-                  <button className="btn-icon btn-danger" onClick={() => handleArchiveDocument(request)} title="Archive Document">
-                    <Archive size={18} />
-                  </button>
-                </>
-              )}
+              <button className="btn-icon btn-success" onClick={() => handleProcessRequest(request)} disabled={processingRequest === request.id} title="Accept & Generate PDF">
+                {processingRequest === request.id ? <div className="spinner-small"></div> : <CheckCircle size={18} />}
+              </button>
+              <button className="btn-icon btn-danger" onClick={() => handleArchiveDocument(request)} title="Archive Document">
+                <Archive size={18} />
+              </button>
             </>
           )}
 
@@ -407,21 +418,17 @@ const DocumentRequestsPage = () => {
               <button className="btn-icon btn-danger" onClick={() => handleRevokeDocument(request)} title="Revoke Document">
                 <Ban size={18} />
               </button>
-              {isAdmin && (
-                <button className="btn-icon" style={{ background: '#e2e8f0', color: '#475569' }} onClick={() => handleArchiveDocument(request)} title="Archive Document">
-                  <Archive size={18} />
-                </button>
-              )}
+              <button className="btn-icon" style={{ background: '#e2e8f0', color: '#475569' }} onClick={() => handleArchiveDocument(request)} title="Archive Document">
+                <Archive size={18} />
+              </button>
             </>
           )}
 
           {['archived', 'rejected', 'revoked'].includes(request.status) && (
             <>
-              {isAdmin && (
-                <button className="btn-icon btn-primary" onClick={() => handleRetrieveDocument(request)} title="Retrieve Document">
-                  <RefreshCw size={18} />
-                </button>
-              )}
+              <button className="btn-icon btn-primary" onClick={() => handleRetrieveDocument(request)} title="Retrieve Document">
+                <RefreshCw size={18} />
+              </button>
               <button className="btn-icon" style={{ background: '#dbeafe', color: '#1d4ed8' }} onClick={() => handleRenewDocument(request)} title="Renew / Duplicate Request">
                 <Copy size={18} />
               </button>
@@ -465,7 +472,7 @@ const DocumentRequestsPage = () => {
           <div className="batch-actions-bar" style={{ backgroundColor: 'var(--primary-50)', border: '1px solid var(--primary-200)', padding: '12px 20px', borderRadius: '8px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', animation: 'fadeIn 0.2s ease-in-out' }}>
             <span style={{ fontWeight: '600', color: 'var(--primary-700)' }}>{selectedRequests.length} request(s) selected</span>
             <div className="batch-buttons" style={{ display: 'flex', gap: '10px' }}>
-              {selectedStatus === 'pending' && isAdmin && (
+              {selectedStatus === 'pending' && canProcessDocs && (
                 <button className="btn btn-primary" onClick={handleBatchProcess} disabled={isBatchProcessing}><CheckSquare size={18} style={{marginRight: '6px'}} /> Accept Selected</button>
               )}
               {selectedStatus === 'completed' && (
@@ -559,7 +566,7 @@ const DocumentRequestsPage = () => {
               )}
             </div>
 
-            {/* --- NEW PAGINATION CONTROLS --- */}
+            {/* --- PAGINATION CONTROLS --- */}
             {filteredRequests.length > itemsPerPage && (
               <div className="pagination-controls" style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '1rem', padding: '1rem', background: 'var(--neutral-50)', borderRadius: '8px', border: '1px solid var(--border)' }}>
                 <div style={{ textAlign: 'center', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
@@ -576,8 +583,8 @@ const DocumentRequestsPage = () => {
             <DocumentRequestDetails 
               request={viewingRequest} 
               onClose={() => setViewingRequest(null)} 
-              onApprove={(viewingRequest.status === 'pending' && !isAdmin) ? null : handleProcessRequest} 
-              onReject={isAdmin ? handleArchiveDocument : null} 
+              onApprove={(viewingRequest.status === 'pending' && !canProcessDocs) ? null : handleProcessRequest} 
+              onReject={canProcessDocs ? handleArchiveDocument : null} 
               onDownload={handleDownloadDocument} 
             />
           </Modal>

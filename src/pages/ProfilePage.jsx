@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import { User, Mail, Shield, Lock, Save, Key } from 'lucide-react';
+// NEW: Import both hashPassword AND verifyPassword
+import { hashPassword, verifyPassword } from '../services/security/passwordService'; 
 import './ProfilePage.css';
 
 const ProfilePage = () => {
@@ -51,6 +53,7 @@ const ProfilePage = () => {
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
 
+    // 1. Basic validation
     if (passwordData.new_password !== passwordData.confirm_password) {
       toast.error('Passwords do not match');
       return;
@@ -64,9 +67,22 @@ const ProfilePage = () => {
     setLoading(true);
 
     try {
-      // In production, validate current password and update
-      await updateProfile({ password: passwordData.new_password });
+      // 2. SECURITY CHECK: Verify the current password before allowing a change!
+      const isCurrentPasswordValid = await verifyPassword(passwordData.current_password, user.password_hash);
       
+      if (!isCurrentPasswordValid) {
+        toast.error('Incorrect current password.');
+        setLoading(false);
+        return;
+      }
+
+      // 3. Hash the new password
+      const hashedPassword = await hashPassword(passwordData.new_password);
+      
+      // 4. Save to the database
+      await updateProfile({ password_hash: hashedPassword });
+      
+      // 5. Clear the form
       setPasswordData({
         current_password: '',
         new_password: '',
@@ -85,6 +101,7 @@ const ProfilePage = () => {
   const getRoleLabel = (role) => {
     const roleLabels = {
       admin: 'System Administrator',
+      secretary: 'Barangay Secretary',
       clerk: 'Barangay Clerk',
       record_keeper: 'Record Keeper'
     };
@@ -94,6 +111,7 @@ const ProfilePage = () => {
   const getRoleBadgeClass = (role) => {
     const roleMap = {
       admin: 'badge-danger',
+      secretary: 'badge-warning',
       clerk: 'badge-primary',
       record_keeper: 'badge-info'
     };

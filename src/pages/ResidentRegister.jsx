@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabaseClient';
 import { toast } from 'react-hot-toast';
+import { ShieldCheck } from 'lucide-react'; // <-- Added for Success UI
 import ResidentFormModal from '../components/residents/ResidentFormModal'; 
 
 // Images and CSS
@@ -17,6 +18,7 @@ const backgroundImages = [bg1, bg2, bg3, bg4, bg5];
 const ResidentRegister = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false); // <-- NEW: Success State
   const [formData, setFormData] = useState({});
   const [files, setFiles] = useState({ profile: null, validId: null, proof: null }); 
 
@@ -106,9 +108,7 @@ const ResidentRegister = () => {
         proofUrl = proofUrlData.publicUrl;
       }
 
-      // ==========================================
-      // FIX 3: ADDED MISSING REQUIRED LOCATION DATA
-      // ==========================================
+      // 5. Build Payload
       const dbPayload = {
         first_name: formData.first_name,
         middle_name: formData.middle_name || null,
@@ -121,9 +121,9 @@ const ResidentRegister = () => {
         
         full_address: formData.full_address,
         purok: formData.purok || 'Purok 1',
-        barangay: 'Dos',                   // <--- FIX: Auto-fills Barangay
-        city_municipality: 'Calamba City', // <--- FIX: Auto-fills City
-        province: 'Laguna',                // <--- FIX: Auto-fills Province
+        barangay: 'Dos',                   
+        city_municipality: 'Calamba City', 
+        province: 'Laguna',                
         
         residency_type: formData.residency_type || 'Permanent',
         mobile_number: formData.mobile_number, 
@@ -137,13 +137,13 @@ const ResidentRegister = () => {
         account_status: 'Pending'
       };
 
-      // 5. Save to Database
+      // 6. Save to Database
       const { error: dbError } = await supabase.from('residents').insert([dbPayload]);
 
       if (dbError) throw dbError;
 
-      toast.success('Registration submitted! Please wait for barangay approval.', { duration: 5000 });
-      navigate('/resident-login');
+      // --- Trigger Success View ---
+      setIsSuccess(true);
       
     } catch (error) {
       console.error(error); 
@@ -157,6 +157,59 @@ const ResidentRegister = () => {
   const maxDate16 = new Date();
   maxDate16.setFullYear(maxDate16.getFullYear() - 16);
 
+  // ==========================================
+  // RENDER SUCCESS SCREEN (If isSuccess is true)
+  // ==========================================
+  if (isSuccess) {
+    return (
+      <div className="login-page">
+        {/* Background is kept to look seamless */}
+        <div className="login-background">
+          <div className="scrolling-wrapper">
+            <div className="scrolling-track">
+              {[...Array(4)].map((_, setIndex) => (
+                <div key={setIndex} className="image-set">
+                  {backgroundImages.map((img, index) => (
+                    <img key={`${setIndex}-${index}`} src={img} alt={`background ${index + 1}`} />
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="overlay-gradient" style={{ background: 'linear-gradient(135deg, var(--primary-900) 0%, var(--primary-800) 100%)' }}></div>
+        </div>
+
+        <div className="login-card" style={{ maxWidth: '450px', width: '100%', margin: '0 20px', position: 'relative', zIndex: 10, textAlign: 'center', padding: '3rem 2.5rem', background: '#ffffff', borderRadius: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+          <div style={{ background: '#f0fdf4', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem', border: '8px solid #dcfce7' }}>
+            <ShieldCheck size={40} color="#16a34a" />
+          </div>
+          
+          <h2 style={{ color: '#1e293b', marginBottom: '1rem', fontSize: '1.75rem', fontWeight: '700' }}>Registration Sent!</h2>
+          
+          <p style={{ color: '#475569', lineHeight: '1.6', marginBottom: '2rem', fontSize: '1.05rem' }}>
+            Magandang araw! Your application has been successfully submitted to the <strong>Barangay Dos</strong> administration. 
+          </p>
+          
+          <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '8px', borderLeft: '4px solid var(--primary-500)', textAlign: 'left', marginBottom: '2rem' }}>
+            <p style={{ margin: 0, color: '#334155', fontSize: '0.9rem', lineHeight: '1.5' }}>
+              <strong>Next Steps:</strong> Our staff will verify your documents. Once approved, you will receive an email with a <strong>Temporary Password</strong> to access your account.
+            </p>
+          </div>
+
+          <button 
+            onClick={() => navigate('/resident-login')} 
+            style={{ width: '100%', padding: '14px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, var(--primary-600) 0%, var(--primary-700) 100%)', color: 'white', fontSize: '1.05rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)', transition: 'all 0.2s' }}
+          >
+            Got it, take me to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // NORMAL REGISTRATION WIZARD
+  // ==========================================
   return (
     <div className="login-page">
       <div className="login-background">

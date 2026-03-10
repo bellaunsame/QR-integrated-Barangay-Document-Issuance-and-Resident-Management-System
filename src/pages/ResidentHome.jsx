@@ -1,34 +1,45 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Home, FileText, AlertTriangle, Bell, LogOut, QrCode, Phone, ChevronRight, Pin, MapPin, ChevronLeft, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Home, FileText, AlertTriangle, Bell, LogOut, QrCode, Phone, ChevronRight, Pin, MapPin, ChevronLeft, Clock, CheckCircle, XCircle, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../services/supabaseClient'; 
 
 import brgyHallBg from '../assets/Brgyhall.jpg';
+import logo from '../assets/brgy.2-icon.png'; 
 import DocumentRequestForm from '../components/documents/DocumentRequestForm';
+import ResidentBlotterTab from '../components/residents/ResidentBlotterTab'; 
 
 const ResidentHome = () => {
-  const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [user, setUser] = useState(null);
   
   const [activeTab, setActiveTab] = useState('home');
   const [announcements, setAnnouncements] = useState([]);
   const [loadingNews, setLoadingNews] = useState(true);
   
-  // Document Request States
   const [myRequests, setMyRequests] = useState([]);
+  const [templates, setTemplates] = useState([]); 
   const [loadingRequests, setLoadingRequests] = useState(true);
   const [isCreatingRequest, setIsCreatingRequest] = useState(false);
 
-  // 1. Fetch Announcements
   useEffect(() => {
-    const fetchAnnouncements = async () => {
+    const sessionStr = localStorage.getItem('resident_session');
+    if (sessionStr) {
+      setUser(JSON.parse(sessionStr));
+    } else {
+      navigate('/resident-login', { replace: true });
+    }
+  }, [navigate]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchData = async () => {
       try {
         const today = new Date().toISOString().split('T')[0];
         const userPurok = user?.purok || 'All';
 
-        const { data, error } = await supabase
+        const { data: newsData, error: newsError } = await supabase
           .from('announcements')
           .select('*')
           .or(`target_purok.eq.All,target_purok.eq.${userPurok}`)
@@ -37,29 +48,34 @@ const ResidentHome = () => {
           .order('created_at', { ascending: false })
           .limit(10); 
 
-        if (error) throw error;
-        setAnnouncements(data || []);
+        if (newsError) throw newsError;
+        setAnnouncements(newsData || []);
+
+        const { data: tempDocs, error: tempError } = await supabase
+          .from('document_templates')
+          .select('*')
+          .eq('is_active', true);
+        
+        if (tempError) throw tempError;
+        setTemplates(tempDocs || []);
+
       } catch (error) {
-        console.error("Failed to load news:", error);
+        console.error("Failed to load dashboard data:", error);
       } finally {
         setLoadingNews(false);
       }
     };
 
-    fetchAnnouncements();
+    fetchData();
   }, [user]); 
 
-  // 2. Fetch My Document Requests
   const fetchMyRequests = async () => {
     if (!user?.id) return;
     setLoadingRequests(true);
     try {
       const { data, error } = await supabase
         .from('document_requests')
-        .select(`
-          *,
-          template:document_templates(template_name)
-        `)
+        .select(`*, template:document_templates(template_name)`)
         .eq('resident_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -73,29 +89,33 @@ const ResidentHome = () => {
   };
 
   useEffect(() => {
+    if (!user) return;
     fetchMyRequests();
+
+    const channel = supabase
+      .channel('resident-documents')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'document_requests', filter: `resident_id=eq.${user.id}` },
+        (payload) => {
+          fetchMyRequests(); 
+          toast.success(`Your document status was updated to: ${payload.new.status.toUpperCase()}`, { icon: '🔔' });
+        }
+      ).subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [user]);
 
-  // Navigation Handlers to ensure correct state
-  const handleOpenForm = () => {
-    setActiveTab('documents');
-    setIsCreatingRequest(true);
+  const handleOpenForm = () => { setActiveTab('documents'); setIsCreatingRequest(true); };
+  const handleOpenList = () => { setActiveTab('documents'); setIsCreatingRequest(false); };
+
+  const handleLogout = () => {
+    localStorage.removeItem('resident_session');
+    toast.success("Logged out successfully");
+    navigate('/resident-login', { replace: true });
   };
 
-  const handleOpenList = () => {
-    setActiveTab('documents');
-    setIsCreatingRequest(false);
-  };
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-      navigate('/resident-login');
-      toast.success("Logged out successfully");
-    } catch (error) {
-      toast.error("Failed to log out");
-    }
-  };
+  if (!user) return null; 
 
   return (
     <>
@@ -112,65 +132,152 @@ const ResidentHome = () => {
           font-family: system-ui, -apple-system, sans-serif;
         }
         
-        .nav-container { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; height: 70px; width: 100%; }
-        .nav-brand { display: flex; align-items: center; gap: 10px; }
-        .nav-tabs { display: flex; gap: 0.5rem; justify-content: center; flex: 1; padding: 0 20px; }
-        .nav-profile { display: flex; align-items: center; gap: 15px; border-left: 1px solid #e2e8f0; padding-left: 15px; }
-        .profile-text { display: block; text-align: right; }
-        
+        .glass-nav {
+          background: rgba(255, 255, 255, 0.9);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+          position: sticky;
+          top: 0;
+          z-index: 50;
+          padding: 0.5rem 2rem;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        .nav-container { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; height: 65px; width: 100%; }
         .main-content { max-width: 1200px; margin: 2rem auto; width: 100%; padding: 0 2rem; flex: 1; }
         .grid-layout { display: flex; gap: 2rem; }
         .news-column { flex: 2.5; }
         .widgets-column { flex: 1; min-width: 300px; }
         .welcome-title { font-size: 2rem; }
 
+        /* Hide Bottom Nav on Desktop */
+        .mobile-bottom-nav { display: none; }
+
         @media (max-width: 768px) {
-          .nav-container { flex-wrap: wrap; height: auto; padding: 15px 0; }
-          .nav-brand { flex: 1; min-width: 60%; }
-          .nav-profile { border-left: none !important; padding-left: 0 !important; }
-          .nav-tabs { width: 100%; overflow-x: auto; margin-top: 15px; padding-bottom: 5px; justify-content: flex-start; padding: 0; -webkit-overflow-scrolling: touch; }
-          .nav-tabs::-webkit-scrollbar { display: none; }
-          .nav-tabs { -ms-overflow-style: none; scrollbar-width: none; }
-          .nav-tabs button { white-space: nowrap; flex-shrink: 0; }
-          .profile-text { display: none; }
+          .glass-nav { padding: 0.5rem 1rem; }
+          .nav-container { height: 55px; }
+          
+          /* Hide Desktop Tabs on Mobile */
+          .desktop-tabs { display: none !important; } 
+          
           .main-content { margin: 1rem auto; padding: 0 1rem; }
           .grid-layout { flex-direction: column; gap: 1.5rem; }
           .widgets-column { min-width: 100%; }
           .welcome-title { font-size: 1.5rem; }
+
+          /* Add bottom padding so content isn't covered by bottom nav */
+          .resident-layout { padding-bottom: 80px; }
+
+          /* Show Bottom Nav on Mobile */
+          .mobile-bottom-nav {
+            display: flex;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #ffffff;
+            border-top: 1px solid #e2e8f0;
+            box-shadow: 0 -4px 15px rgba(0,0,0,0.05);
+            z-index: 100;
+            justify-content: space-around;
+            align-items: center;
+            padding: 8px 10px;
+            padding-bottom: calc(8px + env(safe-area-inset-bottom)); /* Supports iPhones */
+          }
+
+          .mobile-tab {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #64748b;
+            background: transparent;
+            border: none;
+            flex: 1;
+            padding: 8px 0;
+            cursor: pointer;
+            transition: all 0.2s;
+          }
+
+          .mobile-tab span { margin-top: 2px; }
+          
+          .mobile-tab.active { color: var(--primary-700); }
+          .mobile-tab.active-report { color: #ef4444; }
+          .mobile-tab svg { transition: transform 0.2s; }
+          .mobile-tab.active svg { transform: translateY(-2px); }
         }
       `}</style>
 
       <div className="resident-layout">
-        {/* NAV BAR */}
-        <nav style={{ background: '#fff', padding: '0 2rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', position: 'sticky', top: 0, zIndex: 50 }}>
+        
+        {/* ========================================= */}
+        {/* HEADER / TOP NAV                          */}
+        {/* ========================================= */}
+        <nav className="glass-nav">
           <div className="nav-container">
             
-            <div className="nav-brand" style={{ maxWidth: '350px' }}>
-              <div style={{ background: 'var(--primary-600)', color: 'white', padding: '10px', borderRadius: '8px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>B2</div>
+            {/* BRAND / LOGO */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <img src={logo} alt="Barangay Logo" style={{ width: '45px', height: '45px', objectFit: 'contain', filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.1))' }} />
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <h2 style={{ margin: 0, color: 'var(--primary-800)', fontSize: '1rem', lineHeight: '1.2' }}>Barangay Dos, Calamba</h2>
-                <span style={{ fontSize: '0.7rem', color: '#64748b', lineHeight: '1.2', whiteSpace: 'normal' }}>
-                  Online Document Record & Services Management System
-                </span>
+                <h2 style={{ margin: 0, color: '#1e293b', fontSize: '1.1rem', fontWeight: '800', lineHeight: '1.2' }}>Barangay Dos</h2>
+                <span style={{ fontSize: '0.75rem', color: 'var(--primary-600)', fontWeight: '600' }}>Resident Portal</span>
               </div>
             </div>
 
-            <div className="nav-tabs">
-              <button onClick={() => { setActiveTab('home'); setIsCreatingRequest(false); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 15px', border: 'none', background: activeTab === 'home' ? '#e0e7ff' : 'transparent', color: activeTab === 'home' ? 'var(--primary-700)' : '#64748b', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }}><Home size={18} /> News & Home</button>
-              <button onClick={handleOpenList} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 15px', border: 'none', background: activeTab === 'documents' ? '#e0e7ff' : 'transparent', color: activeTab === 'documents' ? 'var(--primary-700)' : '#64748b', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }}><FileText size={18} /> Documents</button>
-              <button onClick={() => { setActiveTab('report'); setIsCreatingRequest(false); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 15px', border: 'none', background: activeTab === 'report' ? '#fee2e2' : 'transparent', color: activeTab === 'report' ? '#ef4444' : '#64748b', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }}><AlertTriangle size={18} /> File a Report</button>
+            {/* DESKTOP TABS (HIDDEN ON MOBILE) */}
+            <div className="desktop-tabs" style={{ display: 'flex', gap: '8px', background: '#f1f5f9', padding: '6px', borderRadius: '99px', border: '1px solid #e2e8f0' }}>
+              <button onClick={() => { setActiveTab('home'); setIsCreatingRequest(false); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', border: 'none', background: activeTab === 'home' ? '#ffffff' : 'transparent', color: activeTab === 'home' ? 'var(--primary-700)' : '#64748b', borderRadius: '99px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s', boxShadow: activeTab === 'home' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none' }}>
+                <Home size={18} /> Home
+              </button>
+              <button onClick={handleOpenList} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', border: 'none', background: activeTab === 'documents' ? '#ffffff' : 'transparent', color: activeTab === 'documents' ? 'var(--primary-700)' : '#64748b', borderRadius: '99px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s', boxShadow: activeTab === 'documents' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none' }}>
+                <FileText size={18} /> Documents
+              </button>
+              <button onClick={() => { setActiveTab('report'); setIsCreatingRequest(false); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', border: 'none', background: activeTab === 'report' ? '#ef4444' : 'transparent', color: activeTab === 'report' ? '#ffffff' : '#64748b', borderRadius: '99px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s', boxShadow: activeTab === 'report' ? '0 2px 4px rgba(239,68,68,0.3)' : 'none' }}>
+                <AlertTriangle size={18} /> Report
+              </button>
             </div>
 
-            <div className="nav-profile">
-              <div className="profile-text">
-                <p style={{ margin: 0, fontWeight: 'bold', fontSize: '0.9rem', color: '#1e293b' }}>{user?.first_name || 'Resident'}</p>
-                <p style={{ margin: 0, fontSize: '0.75rem', color: '#10b981', fontWeight: 'bold' }}>✓ Verified Account</p>
+            {/* PROFILE & LOGOUT */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+              <div className="desktop-tabs" style={{ textAlign: 'right' }}>
+                <p style={{ margin: 0, fontWeight: 'bold', fontSize: '0.9rem', color: '#1e293b' }}>{user?.first_name}</p>
+                <p style={{ margin: 0, fontSize: '0.7rem', color: '#10b981', fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '3px' }}><CheckCircle size={10} /> Verified</p>
               </div>
-              <button onClick={handleLogout} title="Log Out" style={{ background: '#fef2f2', border: 'none', padding: '10px', borderRadius: '50%', cursor: 'pointer', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><LogOut size={18} /></button>
+              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary-100) 0%, var(--primary-200) 100%)', color: 'var(--primary-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.2rem', border: '2px solid #fff', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                {user?.first_name?.charAt(0) || 'R'}
+              </div>
+              <button onClick={handleLogout} title="Log Out" style={{ background: '#fef2f2', border: '1px solid #fee2e2', padding: '8px', borderRadius: '8px', cursor: 'pointer', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>
+                <LogOut size={20} />
+              </button>
             </div>
 
           </div>
         </nav>
+
+        {/* ========================================= */}
+        {/* MOBILE BOTTOM NAV (VISIBLE ONLY ON PHONES) */}
+        {/* ========================================= */}
+        <div className="mobile-bottom-nav">
+          <button className={`mobile-tab ${activeTab === 'home' ? 'active' : ''}`} onClick={() => { setActiveTab('home'); setIsCreatingRequest(false); }}>
+            <Home size={26} color={activeTab === 'home' ? 'var(--primary-700)' : '#94a3b8'} fill={activeTab === 'home' ? 'var(--primary-100)' : 'none'} />
+            <span>Home</span>
+          </button>
+          
+          <button className={`mobile-tab ${activeTab === 'documents' ? 'active' : ''}`} onClick={handleOpenList}>
+            <FileText size={26} color={activeTab === 'documents' ? 'var(--primary-700)' : '#94a3b8'} fill={activeTab === 'documents' ? 'var(--primary-100)' : 'none'} />
+            <span>Documents</span>
+          </button>
+          
+          <button className={`mobile-tab ${activeTab === 'report' ? 'active-report' : ''}`} onClick={() => { setActiveTab('report'); setIsCreatingRequest(false); }}>
+            <AlertTriangle size={26} color={activeTab === 'report' ? '#ef4444' : '#94a3b8'} fill={activeTab === 'report' ? '#fef2f2' : 'none'} />
+            <span>Report</span>
+          </button>
+        </div>
 
         {/* MAIN CONTENT */}
         <div className="main-content">
@@ -190,26 +297,19 @@ const ResidentHome = () => {
                     <div style={{ textAlign: 'center', padding: '3rem', background: '#fff', borderRadius: '12px', color: '#64748b' }}><Bell size={40} style={{ opacity: 0.2, marginBottom: '10px' }} /><p>No new announcements at this time.</p></div>
                   ) : (
                     announcements.map(news => (
-                      <div key={news.id} className="animation-fade-in" style={{ 
-                        background: news.is_pinned ? '#fefce8' : '#fff', 
-                        borderRadius: '12px', overflow: 'hidden',
-                        boxShadow: news.is_pinned ? '0 10px 15px -3px rgba(245, 158, 11, 0.1), 0 0 0 2px #fde047' : '0 4px 6px -1px rgba(0,0,0,0.05)', 
-                        borderLeft: news.is_pinned ? 'none' : `5px solid ${news.type === 'Warning' ? '#ef4444' : news.type === 'Event' ? '#10b981' : 'var(--primary-500)'}` 
-                      }}>
-                        
+                      <div key={news.id} className="animation-fade-in" style={{ background: news.is_pinned ? '#fefce8' : '#fff', borderRadius: '12px', overflow: 'hidden', boxShadow: news.is_pinned ? '0 10px 15px -3px rgba(245, 158, 11, 0.1), 0 0 0 2px #fde047' : '0 4px 6px -1px rgba(0,0,0,0.05)', borderLeft: news.is_pinned ? 'none' : `5px solid ${news.type === 'Warning' ? '#ef4444' : news.type === 'Event' ? '#10b981' : 'var(--primary-500)'}` }}>
                         {news.image_url && (
-                          <div style={{ width: '100%', height: '250px', background: '#000' }}>
-                            <img src={news.image_url} alt="Announcement Poster" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.9 }} />
+                          // FIXED: Changed objectFit to 'contain' to prevent cropping, and added a subtle background color
+                          <div style={{ width: '100%', height: '250px', background: '#f8fafc', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                            <img src={news.image_url} alt="Announcement Poster" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                           </div>
                         )}
-
                         <div style={{ padding: '20px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px', flexWrap: 'wrap', gap: '10px' }}>
                             <h3 style={{ margin: 0, color: news.is_pinned ? '#92400e' : '#1e293b', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                               {news.is_pinned && <Pin size={18} fill="#f59e0b" color="#f59e0b" />}
                               {news.title}
                             </h3>
-
                             <div style={{ display: 'flex', gap: '8px' }}>
                               {news.target_purok !== 'All' && (
                                 <span style={{ fontSize: '0.75rem', color: '#fff', background: 'var(--primary-600)', display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '12px', fontWeight: 'bold' }}><MapPin size={12}/> {news.target_purok}</span>
@@ -234,7 +334,7 @@ const ResidentHome = () => {
                   <div style={{ background: '#fff', padding: '15px', borderRadius: '12px', display: 'inline-block', marginBottom: '15px' }}>
                     <img src={user?.qr_code_url || "https://upload.wikimedia.org/wikipedia/commons/d/d0/QR_code_for_mobile_English_Wikipedia.svg"} alt="Resident QR" style={{ width: '140px', height: '140px', objectFit: 'contain' }} />
                   </div>
-                  <p style={{ margin: 0, fontSize: '0.85rem', color: '#ffffff', lineHeight: '1.4' }}>Present this QR at the Barangay Hall to easily pull up your records.</p>
+                  <p style={{ margin: 0, fontSize: '0.85rem', color: '#ffffff', lineHeight: '1.4' }}>Present this QR at the Barangay Hall.</p>
                 </div>
 
                 <div style={{ background: '#fff', borderRadius: '12px', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0', marginTop: '1.5rem' }}>
@@ -265,7 +365,6 @@ const ResidentHome = () => {
                       ))}
                     </div>
                   )}
-                  
                   <button onClick={handleOpenForm} style={{ width: '100%', marginTop: '15px', padding: '10px', background: 'transparent', border: '1px dashed var(--primary-400)', color: 'var(--primary-600)', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
                     + Request New Document
                   </button>
@@ -283,105 +382,74 @@ const ResidentHome = () => {
             </div>
           )}
 
-          {/* ========================================= */}
-          {/* TAB 2: DOCUMENTS TAB                        */}
-          {/* ========================================= */}
           {activeTab === 'documents' && (
             <div className="animation-fade-in" style={{ background: '#fff', padding: '2rem', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', minHeight: '60vh' }}>
-              
               {!isCreatingRequest ? (
-                // --- CUSTOM RESIDENT LIST VIEW (Safe & Won't Crash) ---
                 <>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
                     <div>
                       <h2 style={{ color: '#1e293b', margin: '0 0 5px 0' }}>My Document Requests</h2>
-                      <p style={{ color: '#64748b', margin: 0, fontSize: '0.95rem' }}>Track the status of your requested barangay documents here.</p>
+                      <p style={{ color: '#64748b', margin: 0, fontSize: '0.95rem' }}>Track the status of your requests here.</p>
                     </div>
                     <button onClick={handleOpenForm} className="btn btn-primary">
                       <Plus size={18} /> New Request
                     </button>
                   </div>
-
+                  {/* ... Rest of your existing documents code ... */}
                   {loadingRequests ? (
                      <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}><div className="spinner" style={{ margin: '0 auto 10px auto' }}></div>Loading your requests...</div>
                   ) : myRequests.length === 0 ? (
                      <div style={{ background: '#f8fafc', padding: '60px 20px', borderRadius: '12px', textAlign: 'center', border: '2px dashed #cbd5e1' }}>
                        <FileText size={48} color="#94a3b8" style={{ marginBottom: '15px', opacity: 0.5 }} />
                        <h3 style={{ color: '#475569', margin: '0 0 10px 0' }}>No Requests Found</h3>
-                       <p style={{ color: '#64748b', margin: '0 0 20px 0' }}>You haven't requested any documents yet.</p>
                        <button onClick={handleOpenForm} className="btn btn-secondary">Create your first request</button>
                      </div>
                   ) : (
-                    // NATIVE RESIDENT CARD UI
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '20px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
                       {myRequests.map((request) => (
                         <div key={request.id} style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '20px', background: 'var(--surface)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '15px' }}>
                             <div>
                               <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--primary-800)' }}>{request.template?.template_name || 'Document'}</h3>
-                              <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>{new Date(request.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>{new Date(request.created_at).toLocaleDateString()}</span>
                             </div>
-                            
-                            <span className={`badge ${
-                              request.status === 'completed' || request.status === 'released' ? 'badge-success' : 
-                              request.status === 'rejected' ? 'badge-danger' : 'badge-warning'
-                            }`}>
-                              {request.status === 'completed' || request.status === 'released' ? <CheckCircle size={12}/> : 
-                               request.status === 'rejected' ? <XCircle size={12}/> : <Clock size={12}/>}
+                            <span className={`badge ${request.status === 'completed' || request.status === 'released' ? 'badge-success' : request.status === 'rejected' ? 'badge-danger' : 'badge-warning'}`}>
                               {request.status ? request.status.toUpperCase() : 'PENDING'}
                             </span>
                           </div>
-
-                          <div style={{ background: 'var(--neutral-50)', padding: '10px 15px', borderRadius: '8px', fontSize: '0.9rem' }}>
-                            <p style={{ margin: '0 0 5px 0', color: 'var(--text-secondary)' }}><strong>Tracking No:</strong> {request.tracking_code || 'N/A'}</p>
-                            <p style={{ margin: 0, color: 'var(--text-secondary)' }}><strong>Purpose:</strong> {request.purpose || 'Not specified'}</p>
+                          <div style={{ background: 'var(--neutral-50)', padding: '10px', borderRadius: '8px', fontSize: '0.9rem' }}>
+                            <p style={{ margin: '0 0 5px 0' }}><strong>Tracking No:</strong> {request.tracking_code || 'N/A'}</p>
+                            <p style={{ margin: 0 }}><strong>Purpose:</strong> {request.purpose || 'Not specified'}</p>
                           </div>
-
-                          {request.status === 'rejected' && request.remarks && (
-                            <div style={{ marginTop: '15px', padding: '10px', background: '#fee2e2', borderRadius: '8px', borderLeft: '4px solid #ef4444' }}>
-                              <strong style={{ display: 'block', fontSize: '0.85rem', color: '#991b1b', marginBottom: '4px' }}>Reason for Rejection:</strong>
-                              <p style={{ margin: 0, fontSize: '0.85rem', color: '#b91c1c' }}>{request.remarks}</p>
-                            </div>
-                          )}
-
-                          {(request.status === 'completed' || request.status === 'released') && (
-                            <div style={{ marginTop: '15px', padding: '10px', background: '#ecfdf5', borderRadius: '8px', textAlign: 'center' }}>
-                              <strong style={{ color: '#065f46', fontSize: '0.9rem' }}>Ready for Pickup!</strong>
-                              <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#047857' }}>Please proceed to the Barangay Hall to claim your document.</p>
-                            </div>
-                          )}
                         </div>
                       ))}
                     </div>
                   )}
                 </>
               ) : (
-                // --- FORM VIEW ---
                 <>
                   <button onClick={handleOpenList} className="btn btn-secondary" style={{ marginBottom: '20px', background: 'transparent', border: 'none', padding: '5px 0', color: '#64748b' }}>
-                    <ChevronLeft size={18} /> Back to My Requests
+                    <ChevronLeft size={18} /> Back
                   </button>
-                  
-                  <DocumentRequestForm 
-                    residentData={user} // Passes logged in user data to auto-fill the form
-                    onCancel={handleOpenList}
-                    onSubmit={async (payload) => {
-                      // Insert request directly to Supabase from here since it's the Resident App
-                      const { error } = await supabase.from('document_requests').insert([{ ...payload, status: 'pending' }]);
-                      if (error) throw error;
-                      
-                      setIsCreatingRequest(false);
-                      fetchMyRequests(); 
-                      toast.success("Document request submitted successfully!");
-                    }}
-                  />
+                  <DocumentRequestForm residentData={user} templates={templates} onCancel={handleOpenList} onSubmit={async (payload) => {
+                      try {
+                        const cleanPayload = { ...payload, status: 'pending' };
+                        delete cleanPayload.notarizedDocFile;
+                        const { error } = await supabase.from('document_requests').insert([cleanPayload]);
+                        if (error) throw error;
+                        setIsCreatingRequest(false);
+                        fetchMyRequests(); 
+                        toast.success("Request submitted!");
+                      } catch (err) { toast.error("Failed: " + err.message); }
+                  }} />
                 </>
               )}
             </div>
           )}
 
-          {/* TAB 3 Placeholder */}
-          {activeTab === 'report' && (<div className="animation-fade-in" style={{ background: '#fff', padding: '2rem', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}><h2 style={{ color: '#ef4444', margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '10px' }}><AlertTriangle size={24} /> File a Blotter / Report</h2><p style={{ color: '#64748b', marginBottom: '20px' }}>Submit a secure report.</p><div style={{ background: '#fef2f2', padding: '60px 20px', borderRadius: '12px', textAlign: 'center', border: '2px dashed #fca5a5' }}><AlertTriangle size={48} color="#f87171" style={{ marginBottom: '15px' }} /><h3 style={{ color: '#991b1b', margin: '0 0 10px 0' }}>Blotter Filing System</h3></div></div>)}
+          {activeTab === 'report' && (
+             <ResidentBlotterTab user={user} />
+          )} 
         </div>
       </div>
     </>

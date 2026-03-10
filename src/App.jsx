@@ -25,7 +25,7 @@ import ResidentRegister from './pages/ResidentRegister';
 import ResidentHome from './pages/ResidentHome'; 
 import VerifyOTP from './pages/VerifyOTP'; 
 import ForcePasswordChange from './pages/ForcePasswordChange';
-import ResidentSetupPassword from './pages/ResidentSetupPassword'; // <--- NEW: Imported Resident Setup
+import ResidentSetupPassword from './pages/ResidentSetupPassword';
 import DashboardPage from './pages/DashboardPage';
 import ResidentsPage from './pages/ResidentsPage';
 import DocumentRequestsPage from './pages/DocumentRequestsPage';
@@ -127,7 +127,7 @@ function App() {
                     
                     {/* Resident Portal Routes (Self-Protected via localStorage) */}
                     <Route path="/resident-home" element={<ResidentHome />} /> 
-                    <Route path="/resident-setup-password" element={<ResidentSetupPassword />} /> {/* <--- NEW: Added Route */}
+                    <Route path="/resident-setup-password" element={<ResidentSetupPassword />} />
                     
                     <Route path="/verify-otp" element={<VerifyOTP />} /> 
                     <Route path="/scan" element={<QRScanPage />} />
@@ -153,32 +153,33 @@ function App() {
                       <Route path="/dashboard" element={<DashboardPage />} />
                       <Route path="/profile" element={<ProfilePage />} />
                       
+                      {/* ADDED 'secretary' TO ALL RELEVANT PAGES BELOW */}
                       <Route path="/residents" element={
-                        <ProtectedRoute requiredRoles={['admin', 'record_keeper', 'view_only', 'clerk']}>
+                        <ProtectedRoute requiredRoles={['admin', 'secretary', 'record_keeper', 'view_only', 'clerk']}>
                           <ResidentsPage />
                         </ProtectedRoute>
                       } />
                       
                       <Route path="/documents" element={
-                        <ProtectedRoute requiredRoles={['admin', 'clerk', 'record_keeper', 'view_only']}>
+                        <ProtectedRoute requiredRoles={['admin', 'secretary', 'clerk', 'record_keeper', 'view_only']}>
                           <DocumentRequestsPage />
                         </ProtectedRoute>
                       } />
 
                       <Route path="/blotter" element={
-                        <ProtectedRoute requiredRoles={['admin', 'record_keeper', 'clerk']}>
+                        <ProtectedRoute requiredRoles={['admin', 'secretary', 'record_keeper', 'clerk']}>
                           <BlotterPage />
                         </ProtectedRoute>
                       } />
 
                       <Route path="/equipment" element={
-                        <ProtectedRoute requiredRoles={['admin', 'record_keeper', 'clerk']}>
+                        <ProtectedRoute requiredRoles={['admin', 'secretary', 'record_keeper', 'clerk']}>
                           <EquipmentPage />
                         </ProtectedRoute>
                       } />
 
                       <Route path="/announcements" element={
-                        <ProtectedRoute requiredRoles={['admin', 'record_keeper', 'clerk']}>
+                        <ProtectedRoute requiredRoles={['admin', 'secretary', 'record_keeper', 'clerk']}>
                           <AnnouncementsPage />
                         </ProtectedRoute>
                       } />

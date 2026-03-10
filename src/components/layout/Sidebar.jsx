@@ -28,7 +28,7 @@ import logo from "../../assets/brgy.2-icon.png";
 import './Sidebar.css';
 
 const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
-  const { user, logout, hasRole } = useAuth();
+  const { user, logout, hasRole, hasPermission } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -38,7 +38,9 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
     pending: 0,
     completed: 0,
     released: 0,
-    new_devices: 0 
+    new_devices: 0,
+    new_blotters: 0,    // <--- NEW: Blotter count
+    new_equipment: 0    // <--- NEW: Equipment count
   });
 
   // --- INTEGRATED REALTIME LOGIC ---
@@ -62,39 +64,54 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
         setTimeout(() => fetchCounts(), 500);
       }).subscribe();
 
+    // NEW: Realtime listeners for Blotter and Equipment
+    const blotterChannel = supabase.channel('sidebar-blotter-sync')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'blotter_records' }, () => {
+        setTimeout(() => fetchCounts(), 500);
+      }).subscribe();
+
+    const equipmentChannel = supabase.channel('sidebar-equipment-sync')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'borrowing_records' }, () => {
+        setTimeout(() => fetchCounts(), 500);
+      }).subscribe();
+
     return () => {
       window.removeEventListener('docs_updated', fetchCounts);
       supabase.removeChannel(residentChannel);
       supabase.removeChannel(docsChannel);
       supabase.removeChannel(auditChannel);
+      supabase.removeChannel(blotterChannel);
+      supabase.removeChannel(equipmentChannel);
     };
   }, []);
 
+  // Helper to get the time since a tab was last viewed
+  const getSinceTime = (storageKey) => {
+    const yesterday = new Date();
+    yesterday.setHours(yesterday.getHours() - 24);
+    const lastViewedStr = localStorage.getItem(storageKey);
+    
+    if (lastViewedStr) {
+      const lastViewed = new Date(lastViewedStr);
+      if (lastViewed > yesterday) return lastViewed.toISOString();
+    }
+    return yesterday.toISOString();
+  };
+
   const fetchCounts = async () => {
     try {
-      const yesterday = new Date();
-      yesterday.setHours(yesterday.getHours() - 24);
+      const sinceSecurity = getSinceTime('last_viewed_security');
+      const sinceBlotter = getSinceTime('last_viewed_blotter');
+      const sinceEquipment = getSinceTime('last_viewed_equipment');
 
-      // --- NEW: Calculate the time to check from based on last visit ---
-      const lastViewedStr = localStorage.getItem('last_viewed_security');
-      let sinceTime = yesterday;
-
-      if (lastViewedStr) {
-        const lastViewed = new Date(lastViewedStr);
-        // If they viewed it more recently than 24 hours ago, only count things AFTER that visit
-        if (lastViewed > yesterday) {
-          sinceTime = lastViewed;
-        }
-      }
-
-      const [resCount, pendingCount, completedCount, releasedCount, newDevicesCount] = await Promise.all([
+      const [resCount, pendingCount, completedCount, releasedCount, newDevicesCount, newBlottersCount, newEquipmentCount] = await Promise.all([
         supabase.from('residents').select('*', { count: 'exact', head: true }),
         supabase.from('document_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
         supabase.from('document_requests').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
         supabase.from('document_requests').select('*', { count: 'exact', head: true }).eq('status', 'released'),
-        supabase.from('audit_logs').select('*', { count: 'exact', head: true })
-          .eq('action', 'NEW_DEVICE_VERIFIED')
-          .gte('created_at', sinceTime.toISOString()) 
+        supabase.from('audit_logs').select('*', { count: 'exact', head: true }).eq('action', 'NEW_DEVICE_VERIFIED').gte('created_at', sinceSecurity),
+        supabase.from('blotter_records').select('*', { count: 'exact', head: true }).gte('created_at', sinceBlotter),
+        supabase.from('borrowing_records').select('*', { count: 'exact', head: true }).gte('created_at', sinceEquipment)
       ]);
 
       setCounts({
@@ -102,7 +119,9 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
         pending: pendingCount.count || 0,
         completed: completedCount.count || 0,
         released: releasedCount.count || 0,
-        new_devices: newDevicesCount.count || 0 
+        new_devices: newDevicesCount.count || 0,
+        new_blotters: newBlottersCount.count || 0,     // <--- Save new blotters count
+        new_equipment: newEquipmentCount.count || 0    // <--- Save new equipment count
       });
     } catch (error) {
       console.error("Error fetching sidebar counts:", error);
@@ -115,45 +134,60 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
     }
   }, [location.pathname]);
 
-  // --- NEW: Clear Notification on Click ---
+  // --- NEW: Clear Notifications when clicking the respective tabs ---
   useEffect(() => {
     if (location.pathname === '/security') {
       localStorage.setItem('last_viewed_security', new Date().toISOString());
       setCounts(prev => ({ ...prev, new_devices: 0 }));
     }
+    if (location.pathname === '/blotter') {
+      localStorage.setItem('last_viewed_blotter', new Date().toISOString());
+      setCounts(prev => ({ ...prev, new_blotters: 0 }));
+    }
+    if (location.pathname === '/equipment') {
+      localStorage.setItem('last_viewed_equipment', new Date().toISOString());
+      setCounts(prev => ({ ...prev, new_equipment: 0 }));
+    }
   }, [location.pathname]);
 
+  // ==========================================
+  // MENU ITEMS
+  // ==========================================
   const menuItems = [
     {
       icon: <LayoutDashboard size={20} />,
       label: 'Dashboard',
       path: '/dashboard',
-      roles: ['admin', 'clerk', 'record_keeper', 'view_only'] 
+      roles: ['admin', 'secretary', 'clerk', 'record_keeper', 'view_only'] 
     },
     {
       icon: <Users size={20} />,
       label: 'Residents',
       path: '/residents',
-      roles: ['admin', 'record_keeper', 'view_only', 'clerk'],
+      permission: 'manage_residents', 
       badge: counts.residents > 0 ? { text: counts.residents, color: '#dbeafe', textColor: '#1d4ed8' } : null
     },
     {
       icon: <Scale size={20} />,
       label: 'Blotter',
       path: '/blotter',
-      roles: ['admin', 'record_keeper', 'clerk'] 
+      permission: 'manage_blotter',
+      // Red badge for Blotter
+      badge: counts.new_blotters > 0 ? { text: counts.new_blotters, color: '#fee2e2', textColor: '#b91c1c' } : null 
     },
     {
       icon: <Package size={20} />,
       label: 'Equipment',
       path: '/equipment',
-      roles: ['admin', 'record_keeper', 'clerk'] 
+      permission: 'manage_equipment',
+      // Orange/Amber badge for Equipment
+      badge: counts.new_equipment > 0 ? { text: counts.new_equipment, color: '#fef3c7', textColor: '#b45309' } : null 
     },
     {
       icon: <Megaphone size={20} />,
       label: 'Announcements',
       path: '/announcements',
-      roles: ['admin', 'record_keeper', 'clerk']
+      permission: 'manage_news'
     },
     {
       icon: <FileCheck size={20} />,
@@ -171,7 +205,7 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
       icon: <QrCode size={20} />,
       label: 'QR Scanner',
       path: '/scan',
-      roles: ['admin', 'clerk'] 
+      permission: 'use_qr_scanner' 
     },
     {
       icon: <ShieldCheck size={20} />,
@@ -193,9 +227,11 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
     navigate('/login');
   };
 
-  const visibleMenuItems = menuItems.filter(item => 
-    !item.roles || hasRole(item.roles)
-  );
+  const visibleMenuItems = menuItems.filter(item => {
+    if (item.roles) return hasRole(item.roles);
+    if (item.permission) return hasRole('admin') || hasPermission(item.permission);
+    return true; 
+  });
 
   return (
     <>
@@ -226,14 +262,13 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
 
       <aside className={`sidebar ${isOpen ? 'open' : ''} ${isCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
-          {/* --- FIXED OFFICIAL TITLE HERE --- */}
           <div className="sidebar-logo">
             <div className="logo-icon"><img src={logo} alt="Barangay Logo" /></div>
             {!isCollapsed && (
               <div className="logo-text">
                 <h1 style={{ fontSize: '1.1rem', marginBottom: '2px' }}>Barangay Dos</h1>
                 <p style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'normal', paddingRight: '10px' }}>
-                  Online Document Record & Services Management System with Data Visualization
+                  Online Document Record & Services Management System
                 </p>
               </div>
             )}
@@ -247,6 +282,7 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
           <div className="nav-section">
             {!isCollapsed && <div className="nav-section-title">Main Menu</div>}
             
+            {/* FIRST 2 ITEMS (Dashboard & Residents) */}
             {visibleMenuItems.slice(0, 2).map((item) => (
               <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onClose}>
                 <span className="nav-icon">{item.icon}</span>
@@ -263,7 +299,8 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
               </NavLink>
             ))}
 
-            {hasRole(['admin', 'clerk', 'record_keeper', 'view_only']) && (
+            {/* DOCUMENTS DROPDOWN */}
+            {(hasRole('admin') || hasPermission('process_documents')) && (
               <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
                 <div onClick={() => { if (isCollapsed) onToggleCollapse(); setIsDocsOpen(!isDocsOpen); navigate('/documents'); }}
                   style={{
@@ -335,6 +372,7 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
               </div>
             )}
 
+            {/* THE REST OF THE MENU ITEMS */}
             {visibleMenuItems.slice(2).map((item) => (
               <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onClose}>
                 <span className="nav-icon">{item.icon}</span>
