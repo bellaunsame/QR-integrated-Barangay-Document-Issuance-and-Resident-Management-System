@@ -167,7 +167,7 @@ const BlotterPage = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <div>
           <h1 style={{ fontSize: '1.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Scale size={28} color="var(--primary-600)" /> Incident Blotter
+            <Scale size={28} color="var(--primary-600)" /> Incident & Blotter Report
           </h1>
           <p style={{ color: 'var(--text-secondary)' }}>Manage and track barangay incident reports and hearings.</p>
         </div>

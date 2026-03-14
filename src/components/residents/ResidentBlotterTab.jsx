@@ -85,9 +85,6 @@ const ResidentBlotterTab = ({ user }) => {
       // Auto-generate Case Number matching Admin logic
       const caseNumber = `C-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-      // Combine Location into Narrative since Admin table doesn't have a Location column
-      const combinedNarrative = `LOCATION: ${formData.location}\n\nDETAILS: ${formData.narrative}`;
-
       const payload = {
         case_number: caseNumber,
         complainant_id: user.id, // Links to resident
@@ -95,9 +92,10 @@ const ResidentBlotterTab = ({ user }) => {
         respondent_name: formData.respondent_name || 'Unknown',
         incident_type: formData.incident_type,
         incident_date: formData.incident_date,
-        narrative: combinedNarrative,
+        location: formData.location, // <-- FIXED: Location sent separately
+        narrative: formData.narrative, // <-- FIXED: Narrative sent separately
         evidence_url: formData.evidence_url,
-        status: 'Active' // <-- FIXED: Matches your database's check constraint perfectly!
+        status: 'Active' 
       };
 
       const { error } = await supabase.from('blotter_records').insert([payload]);

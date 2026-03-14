@@ -109,7 +109,7 @@ const ResidentHome = () => {
 
   // --- NOTIFICATION STATES ---
   const [showNotifs, setShowNotifs] = useState(false);
-  const [dismissedNotifs, setDismissedNotifs] = useState(new Set()); // NEW: Tracks read notifications
+  const [dismissedNotifs, setDismissedNotifs] = useState(new Set()); // Tracks read notifications
   const notifRef = useRef(null);
 
   useEffect(() => {
@@ -320,15 +320,36 @@ const ResidentHome = () => {
       .filter(a => !likedAnnouncements.has(a.id))
       .map(a => ({ id: `ann_${a.id}`, title: 'New Announcement', desc: a.title, icon: <Bell size={16}/>, color: '#f59e0b', tab: 'home' })),
     
-    // 2. Document Updates (Baked status into ID so it shows up again if status changes)
+    // 2. Document Updates 
     ...myRequests
       .filter(r => r.status !== 'pending')
       .map(r => ({ id: `doc_${r.id}_${r.status}`, title: `Document ${r.status}`, desc: r.template?.template_name || 'Request updated', icon: <FileText size={16}/>, color: r.status === 'rejected' ? '#ef4444' : '#10b981', tab: 'documents' })),
     
-    // 3. Equipment Updates 
+    // 3. Equipment Updates (Pending/Rejected/Returned states)
     ...myEquipmentReqs
-      .filter(e => e.status !== 'Pending')
-      .map(e => ({ id: `eq_${e.id}_${e.status}`, title: `Equipment ${e.status}`, desc: `${e.quantity}x ${e.equipment_inventory?.item_name}`, icon: <Package size={16}/>, color: e.status === 'Rejected' ? '#ef4444' : '#10b981', tab: 'equipment' }))
+      .filter(e => e.status !== 'Pending' && e.status !== 'Released')
+      .map(e => ({ id: `eq_${e.id}_${e.status}`, title: `Equipment ${e.status}`, desc: `${e.quantity}x ${e.equipment_inventory?.item_name}`, icon: <Package size={16}/>, color: e.status === 'Rejected' ? '#ef4444' : '#10b981', tab: 'equipment' })),
+
+    // 4. Equipment Return Reminders (Active Borrows: Due Soon or Overdue)
+    ...myEquipmentReqs
+      .filter(e => e.status === 'Released') 
+      .map(e => {
+        const dueDate = new Date(e.expected_return);
+        const now = new Date();
+        const timeDiff = dueDate - now;
+        
+        // If the date has passed (Overdue)
+        if (timeDiff < 0) {
+          return { id: `rem_overdue_${e.id}`, title: `OVERDUE: Return Equipment`, desc: `Please return ${e.quantity}x ${e.equipment_inventory?.item_name} immediately.`, icon: <AlertTriangle size={16}/>, color: '#ef4444', tab: 'equipment' };
+        } 
+        // If due within the next 24 hours (86400000 milliseconds)
+        else if (timeDiff < 86400000) {
+          return { id: `rem_duesoon_${e.id}`, title: `Reminder: Return Soon`, desc: `Your borrowed ${e.quantity}x ${e.equipment_inventory?.item_name} is due today.`, icon: <Clock size={16}/>, color: '#f59e0b', tab: 'equipment' };
+        }
+        
+        // Otherwise, just a standard 'Released' notification
+        return { id: `eq_${e.id}_${e.status}`, title: `Equipment ${e.status}`, desc: `${e.quantity}x ${e.equipment_inventory?.item_name}`, icon: <Package size={16}/>, color: '#10b981', tab: 'equipment' };
+      }).filter(Boolean)
   ];
 
   // Only show notifications that haven't been dismissed
