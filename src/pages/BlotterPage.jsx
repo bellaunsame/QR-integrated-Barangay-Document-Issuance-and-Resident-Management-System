@@ -3,19 +3,22 @@ import { supabase } from '../services/supabaseClient';
 import { toast } from 'react-hot-toast';
 import { Plus, Search, Edit, Scale, Paperclip, Loader2, Filter } from 'lucide-react';
 
-// --- IMPORT YOUR EXISTING PAGINATION SYSTEM ---
+// --- IMPORT AUTH & PAGINATION ---
+import { useAuth } from '../context/AuthContext';
 import { Pagination } from '../components/common'; 
 import { usePagination } from '../hooks';
 
 const BlotterPage = () => {
+  const { user } = useAuth(); // Get current user
+  const canEdit = !['view_only', 'barangay_captain'].includes(user?.role); // Security Check
+
   const [records, setRecords] = useState([]);
   const [residentNames, setResidentNames] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   
-  // --- FILTER STATES ---
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All'); // New Status Filter
+  const [statusFilter, setStatusFilter] = useState('All'); 
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -26,6 +29,7 @@ const BlotterPage = () => {
     respondent_name: '',
     incident_type: '',
     incident_date: '',
+    location: '', 
     narrative: '',
     status: 'Active',
     evidence_url: ''
@@ -88,10 +92,13 @@ const BlotterPage = () => {
   };
 
   const openModal = (record = null) => {
+    if (!canEdit) return; // Extra security layer
+
     if (record) {
       setFormData({
         ...record,
-        incident_date: new Date(record.incident_date).toISOString().slice(0, 16)
+        incident_date: new Date(record.incident_date).toISOString().slice(0, 16),
+        location: record.location || '' 
       });
       setEditingId(record.id);
     } else {
@@ -101,6 +108,7 @@ const BlotterPage = () => {
         respondent_name: '',
         incident_type: '',
         incident_date: '',
+        location: '', 
         narrative: '',
         status: 'Active',
         evidence_url: ''
@@ -112,6 +120,8 @@ const BlotterPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!canEdit) return;
+
     try {
       if (editingId) {
         const { error } = await supabase.from('blotter_records').update(formData).eq('id', editingId);
@@ -129,7 +139,6 @@ const BlotterPage = () => {
     }
   };
 
-  // --- 1. ADVANCED FILTERING LOGIC ---
   const filteredRecords = records.filter(record => {
     const matchesSearch = 
       record.complainant_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -141,15 +150,8 @@ const BlotterPage = () => {
     return matchesSearch && matchesStatus;
   });
 
-  // --- 2. PAGINATION INTEGRATION ---
-  const { 
-    currentPage, 
-    totalPages, 
-    currentData: paginatedRecords, 
-    goToPage 
-  } = usePagination(filteredRecords, 10); // Show 10 records per page
+  const { currentPage, totalPages, currentData: paginatedRecords, goToPage } = usePagination(filteredRecords, 10); 
 
-  // Reset to page 1 whenever filters change so you don't get stuck on an empty page
   useEffect(() => {
     goToPage(1);
   }, [searchTerm, statusFilter, goToPage]);
@@ -169,20 +171,21 @@ const BlotterPage = () => {
           </h1>
           <p style={{ color: 'var(--text-secondary)' }}>Manage and track barangay incident reports and hearings.</p>
         </div>
-        <button 
-          onClick={() => openModal()}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--primary-600)', color: 'white', padding: '0.75rem 1.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
-        >
-          <Plus size={20} /> Add Record
-        </button>
+        
+        {/* HIDE ADD BUTTON IF VIEW ONLY */}
+        {canEdit && (
+          <button 
+            onClick={() => openModal()}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--primary-600)', color: 'white', padding: '0.75rem 1.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+          >
+            <Plus size={20} /> Add Record
+          </button>
+        )}
       </div>
 
       <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
         
-        {/* --- 3. UPDATED CONTROLS: SEARCH + STATUS FILTER --- */}
         <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-          
-          {/* Search Bar */}
           <div style={{ display: 'flex', alignItems: 'center', background: 'var(--neutral-100)', padding: '0.5rem 1rem', borderRadius: '8px', flex: 2, minWidth: '250px' }}>
             <Search size={20} color="var(--text-tertiary)" style={{ marginRight: '0.5rem' }} />
             <input 
@@ -194,7 +197,6 @@ const BlotterPage = () => {
             />
           </div>
 
-          {/* Status Filter Dropdown */}
           <div style={{ display: 'flex', alignItems: 'center', background: 'var(--neutral-100)', padding: '0.5rem 1rem', borderRadius: '8px', flex: 1, minWidth: '200px' }}>
             <Filter size={20} color="var(--text-tertiary)" style={{ marginRight: '0.5rem' }} />
             <select 
@@ -209,7 +211,6 @@ const BlotterPage = () => {
               <option value="Dismissed">Dismissed</option>
             </select>
           </div>
-
         </div>
 
         {loading ? (
@@ -233,7 +234,6 @@ const BlotterPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {/* 4. RENDER PAGINATED RECORDS */}
                 {paginatedRecords.map((record) => (
                   <tr key={record.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '1rem', fontWeight: 'bold' }}>{record.case_number}</td>
@@ -250,47 +250,40 @@ const BlotterPage = () => {
                       </span>
                     </td>
                     <td style={{ padding: '1rem' }}>
-                      <button onClick={() => openModal(record)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary-600)' }}>
-                        <Edit size={18} />
-                      </button>
+                      {/* HIDE EDIT BUTTON IF VIEW ONLY */}
+                      {canEdit ? (
+                        <button onClick={() => openModal(record)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary-600)' }}>
+                          <Edit size={18} />
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic' }}>No Access</span>
+                      )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
 
-            {/* 5. PAGINATION CONTROLS */}
             {totalPages > 1 && (
               <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'var(--neutral-50)', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                <div style={{ textAlign: 'center', marginBottom: '10px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                  Showing {paginatedRecords.length} records on this page (Total: {filteredRecords.length})
-                </div>
-                <Pagination 
-                  currentPage={currentPage} 
-                  totalPages={totalPages} 
-                  onPageChange={goToPage} 
-                />
+                <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={goToPage} />
               </div>
             )}
           </>
         )}
       </div>
 
-      {/* MODAL FORM WITH UI IMPROVEMENTS */}
-      {isModalOpen && (
+      {isModalOpen && canEdit && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', width: '600px', maxWidth: '95%', maxHeight: '90vh', overflowY: 'auto' }}>
             <h2 style={{ marginBottom: '1.5rem', color: 'var(--text-primary)' }}>{editingId ? 'Edit Blotter Record' : 'New Blotter Record'}</h2>
             
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              
-              {/* Case Number (Read Only) */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                 <label style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)' }}>Case Number <span style={{ color: 'red' }}>*</span></label>
                 <input type="text" name="case_number" value={formData.case_number} readOnly style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid #e5e7eb', backgroundColor: '#f3f4f6', color: '#6b7280', cursor: 'not-allowed', fontWeight: 'bold' }} />
               </div>
 
-              {/* Complainant & Respondent (Auto-completes from DB) */}
               <div style={{ display: 'flex', gap: '1rem' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 }}>
                   <label style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)' }}>Complainant Name <span style={{ color: 'red' }}>*</span></label>
@@ -302,7 +295,6 @@ const BlotterPage = () => {
                 </div>
               </div>
 
-              {/* Incident Type & Date */}
               <div style={{ display: 'flex', gap: '1rem' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 }}>
                   <label style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)' }}>Incident Type <span style={{ color: 'red' }}>*</span></label>
@@ -322,13 +314,16 @@ const BlotterPage = () => {
                 </div>
               </div>
 
-              {/* Narrative */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)' }}>Location of Incident <span style={{ color: 'red' }}>*</span></label>
+                <input type="text" name="location" value={formData.location} onChange={handleInputChange} placeholder="e.g., Purok 1, near the Basketball Court" required style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid #d1d5db' }} />
+              </div>
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                 <label style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)' }}>Incident Narrative <span style={{ color: 'red' }}>*</span></label>
                 <textarea name="narrative" value={formData.narrative} onChange={handleInputChange} placeholder="Describe exactly what happened..." rows="4" required style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid #d1d5db', resize: 'vertical' }}></textarea>
               </div>
 
-              {/* Status & File Upload */}
               <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 }}>
                   <label style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)' }}>Case Status</label>
@@ -352,14 +347,12 @@ const BlotterPage = () => {
                 </div>
               </div>
 
-              {/* If evidence is attached, show a preview link */}
               {formData.evidence_url && (
                 <div style={{ fontSize: '0.85rem', color: '#047857', background: '#d1fae5', padding: '0.5rem', borderRadius: '6px', display: 'inline-block' }}>
                   ✓ Evidence attached. <a href={formData.evidence_url} target="_blank" rel="noreferrer" style={{ color: '#047857', textDecoration: 'underline' }}>View File</a>
                 </div>
               )}
 
-              {/* Submit Buttons */}
               <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
                 <button type="button" onClick={() => setIsModalOpen(false)} style={{ flex: 1, padding: '0.75rem', border: '1px solid #d1d5db', borderRadius: '6px', background: 'transparent', cursor: 'pointer', fontWeight: 'bold', color: 'var(--text-secondary)' }}>Cancel</button>
                 <button type="submit" disabled={uploading} style={{ flex: 1, padding: '0.75rem', border: 'none', borderRadius: '6px', background: 'var(--primary-600)', color: 'white', cursor: uploading ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}>

@@ -55,9 +55,9 @@ const LandingPage = () => {
           <div style={{ background: '#e0f2fe', padding: '0.4rem 1rem', borderRadius: '999px', color: '#0369a1', fontWeight: 'bold', fontSize: '0.8rem', marginBottom: '1rem', display: 'inline-block', border: '1px solid #bae6fd' }}>
             Welcome to the E-Governance Portal
           </div>
-          <h1 className="login-title" style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>Barangay Dos</h1>
+          <h1 className="login-title" style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>Barangay Dos Portal</h1>
           <p className="login-subtitle" style={{ fontSize: '1.1rem', maxWidth: '600px', margin: '0 auto', lineHeight: '1.5' }}>
-            Fast, secure, and accessible services for all residents. Request documents and stay updated directly from your phone.
+            Accessible services for all residents. Request documents and stay updated directly from your phone.
           </p>
         </div>
 

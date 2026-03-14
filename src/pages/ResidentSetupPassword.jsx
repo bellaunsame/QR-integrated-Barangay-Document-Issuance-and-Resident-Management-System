@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabaseClient';
 import { toast } from 'react-hot-toast';
 import { Lock, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { hashPassword } from '../services/security/passwordService'; // <-- ADDED: Import the hasher
 
 // --- IMPORT SAME AS LOGIN ---
 import bg1 from '../assets/gallery-1.jpg';
@@ -59,14 +60,27 @@ const ResidentSetupPassword = () => {
     const loadingToast = toast.loading('Securing your account...');
 
     try {
+      // --- THE FIX: Hash the new password before saving ---
+      const hashedPassword = await hashPassword(passwords.newPassword);
+
       const { error } = await supabase
         .from('residents')
-        .update({ password: passwords.newPassword, needs_password_change: false })
+        .update({ 
+          password_hash: hashedPassword, // Save the hashed version
+          password: null, // Clear the plain text version for security
+          needs_password_change: false 
+        })
         .eq('id', resident.id);
 
       if (error) throw error;
 
-      const updatedSession = { ...resident, needs_password_change: false, password: passwords.newPassword };
+      // Update the local session so they don't get stuck in a loop
+      const updatedSession = { 
+        ...resident, 
+        needs_password_change: false, 
+        password_hash: hashedPassword,
+        password: null 
+      };
       localStorage.setItem('resident_session', JSON.stringify(updatedSession));
 
       toast.success('Password updated successfully!', { id: loadingToast, icon: '✅' });
@@ -84,7 +98,6 @@ const ResidentSetupPassword = () => {
 
   return (
     <div className="login-page">
-      {/* --- ADDED BACKGROUND SLIDER TO MATCH LOGIN/REGISTER --- */}
       <div className="login-background">
         <div className="scrolling-wrapper">
           <div className="scrolling-track">

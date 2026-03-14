@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Edit2, Trash2, Megaphone, AlertTriangle, Bell, Info, Pin, Image as ImageIcon, MapPin, CalendarX2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, Megaphone, AlertTriangle, Bell, Info, Pin, Image as ImageIcon, MapPin, CalendarX2, ThumbsUp, Users, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const AnnouncementsPage = () => {
@@ -11,6 +11,12 @@ const AnnouncementsPage = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   
+  // --- NEW: LIKES VIEWER MODAL STATES ---
+  const [showLikesModal, setShowLikesModal] = useState(false);
+  const [viewingLikesFor, setViewingLikesFor] = useState(null);
+  const [likedResidents, setLikedResidents] = useState([]);
+  const [loadingLikes, setLoadingLikes] = useState(false);
+
   const [formData, setFormData] = useState({ 
     title: '', content: '', type: 'Info', target_purok: 'All', is_pinned: false, expiration_date: '' 
   });
@@ -22,14 +28,73 @@ const AnnouncementsPage = () => {
 
   const loadAnnouncements = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('announcements')
-      .select('*')
-      .order('is_pinned', { ascending: false }) // Pinned items first
-      .order('created_at', { ascending: false });
-      
-    if (error) toast.error("Failed to load announcements");
-    else setAnnouncements(data || []);
-    setLoading(false);
+    try {
+      // Fetch announcements
+      const { data: newsData, error: newsError } = await supabase.from('announcements')
+        .select('*')
+        .order('is_pinned', { ascending: false })
+        .order('created_at', { ascending: false });
+        
+      if (newsError) throw newsError;
+
+      // Fetch the like counts for all announcements
+      const { data: likesData, error: likesError } = await supabase
+        .from('announcement_likes')
+        .select('announcement_id');
+
+      if (likesError) throw likesError;
+
+      // Calculate how many likes each announcement has
+      const likeCounts = {};
+      likesData.forEach(like => {
+        likeCounts[like.announcement_id] = (likeCounts[like.announcement_id] || 0) + 1;
+      });
+
+      // Merge the counts into the announcements data
+      const mergedData = (newsData || []).map(news => ({
+        ...news,
+        like_count: likeCounts[news.id] || 0
+      }));
+
+      setAnnouncements(mergedData);
+    } catch (error) {
+      toast.error("Failed to load announcements");
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- NEW: FETCH WHO LIKED A SPECIFIC POST ---
+  const handleViewLikes = async (announcement) => {
+    setViewingLikesFor(announcement.title);
+    setShowLikesModal(true);
+    setLoadingLikes(true);
+    setLikedResidents([]);
+
+    try {
+      // Fetch names by joining announcement_likes with the residents table
+      const { data, error } = await supabase
+        .from('announcement_likes')
+        .select(`
+          created_at,
+          residents (
+            first_name,
+            last_name,
+            purok
+          )
+        `)
+        .eq('announcement_id', announcement.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setLikedResidents(data || []);
+    } catch (error) {
+      toast.error("Failed to load resident acknowledgements.");
+      console.error(error);
+    } finally {
+      setLoadingLikes(false);
+    }
   };
 
   const handleImageUpload = (e) => {
@@ -47,12 +112,10 @@ const AnnouncementsPage = () => {
     try {
       let finalImageUrl = formData.image_url;
 
-      // 1. Upload image if a new one is selected
       if (imageFile) {
         const fileExt = imageFile.name.split('.').pop();
         const fileName = `announcements/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
         
-        // We reuse your existing 'documents' bucket to store announcement posters
         const { error: uploadError } = await supabase.storage.from('documents').upload(fileName, imageFile);
         if (uploadError) throw uploadError;
         
@@ -132,7 +195,7 @@ const AnnouncementsPage = () => {
                 <tr>
                   <th>Status</th>
                   <th>Title & Content</th>
-                  <th>Target / Expiration</th>
+                  <th>Reach / Engagement</th> {/* Updated Title */}
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -163,11 +226,29 @@ const AnnouncementsPage = () => {
                         </div>
                       </td>
                       <td>
-                        <div style={{ fontSize: '0.85rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <span style={{ display:'flex', alignItems:'center', gap:'4px' }}><MapPin size={14}/> {a.target_purok}</span>
-                          <span style={{ display:'flex', alignItems:'center', gap:'4px', color: (a.expiration_date && new Date(a.expiration_date) < new Date()) ? '#ef4444' : '#64748b' }}>
-                            <CalendarX2 size={14}/> {a.expiration_date ? new Date(a.expiration_date).toLocaleDateString() : 'No expiry'}
-                          </span>
+                        <div style={{ fontSize: '0.85rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          
+                          {/* TARGET AUDIENCE */}
+                          <div style={{ display:'flex', alignItems:'center', gap:'4px' }}>
+                            <MapPin size={14}/> <span>{a.target_purok}</span>
+                          </div>
+
+                          {/* NEW: ACKNOWLEDGEMENT BADGE (Clickable) */}
+                          <div 
+                            onClick={() => a.like_count > 0 ? handleViewLikes(a) : null}
+                            style={{ 
+                              display:'inline-flex', alignItems:'center', gap:'6px', padding: '4px 8px', borderRadius: '20px',
+                              background: a.like_count > 0 ? '#ecfdf5' : '#f1f5f9', 
+                              color: a.like_count > 0 ? '#059669' : '#94a3b8', 
+                              border: a.like_count > 0 ? '1px solid #a7f3d0' : '1px solid #e2e8f0',
+                              fontWeight: 'bold', width: 'fit-content', cursor: a.like_count > 0 ? 'pointer' : 'default',
+                              transition: 'all 0.2s'
+                            }}
+                            title={a.like_count > 0 ? "Click to see who acknowledged" : "No acknowledgements yet"}
+                          >
+                            <ThumbsUp size={14}/> {a.like_count} Acknowledged
+                          </div>
+
                         </div>
                       </td>
                       <td>
@@ -185,7 +266,50 @@ const AnnouncementsPage = () => {
         )}
       </div>
 
-      {/* NEW/EDIT MODAL */}
+      {/* --- NEW: LIKES VIEWER MODAL --- */}
+      {showLikesModal && (
+        <div className="modal-overlay" onClick={() => setShowLikesModal(false)} style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'20px', zIndex:1100 }}>
+          <div className="modal-content animation-fade-in" onClick={e => e.stopPropagation()} style={{ background:'#fff', borderRadius:'12px', width:'100%', maxWidth:'450px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+            
+            <div style={{ padding: '20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', color: '#059669' }}><ThumbsUp size={20} /> Resident Acknowledgements</h3>
+                <p style={{ margin: '5px 0 0 0', fontSize: '0.85rem', color: '#64748b' }}>For: {viewingLikesFor}</p>
+              </div>
+              <button onClick={() => setShowLikesModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><X size={24} /></button>
+            </div>
+
+            <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
+              {loadingLikes ? (
+                <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>Loading residents...</div>
+              ) : likedResidents.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>No one has acknowledged this yet.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {likedResidents.map((record, idx) => (
+                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '15px', padding: '10px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--primary-100)', color: 'var(--primary-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', flexShrink: 0 }}>
+                        {record.residents?.first_name?.charAt(0) || 'R'}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ margin: 0, fontWeight: 'bold', color: '#1e293b' }}>
+                          {record.residents?.first_name} {record.residents?.last_name}
+                        </p>
+                        <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>
+                          {record.residents?.purok} • {new Date(record.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* NEW/EDIT POST MODAL */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)} style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'20px', zIndex:1000 }}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ background:'#fff', borderRadius:'12px', width:'100%', maxWidth:'600px', maxHeight: '90vh', overflowY: 'auto', padding:'25px' }}>
@@ -203,7 +327,6 @@ const AnnouncementsPage = () => {
                 </div>
                 <div>
                   <label style={{ display:'block', marginBottom:'5px', fontWeight:'bold' }}>Target Audience</label>
-                  {/* --- FIXED TARGET AUDIENCE DROPDOWN --- */}
                   <select value={formData.target_purok} onChange={e => setFormData({...formData, target_purok: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'6px', border:'1px solid #cbd5e1' }}>
                     <option value="All">All Residents</option>
                     <option value="Purok 1">Purok 1</option>

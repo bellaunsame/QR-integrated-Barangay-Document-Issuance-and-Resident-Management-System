@@ -150,36 +150,46 @@ function App() {
                         </ProtectedRoute>
                       }
                     >
-                      <Route path="/dashboard" element={<DashboardPage />} />
+                      {/* DASHBOARD: Everyone can view the main dashboard */}
+                      <Route path="/dashboard" element={
+                        <ProtectedRoute requiredRoles={['admin', 'secretary', 'clerk', 'record_keeper', 'barangay_investigator', 'barangay_captain', 'view_only']}>
+                          <DashboardPage />
+                        </ProtectedRoute>
+                      } />
+
                       <Route path="/profile" element={<ProfilePage />} />
                       
-                      {/* ADDED 'secretary' TO ALL RELEVANT PAGES BELOW */}
+                      {/* RESIDENTS: Added captain and view_only */}
                       <Route path="/residents" element={
-                        <ProtectedRoute requiredRoles={['admin', 'secretary', 'record_keeper', 'view_only', 'clerk']}>
+                        <ProtectedRoute requiredRoles={['admin', 'secretary', 'clerk', 'record_keeper', 'barangay_investigator', 'barangay_captain', 'view_only']}>
                           <ResidentsPage />
                         </ProtectedRoute>
                       } />
                       
+                      {/* DOCUMENTS: Added captain and view_only */}
                       <Route path="/documents" element={
-                        <ProtectedRoute requiredRoles={['admin', 'secretary', 'clerk', 'record_keeper', 'view_only']}>
+                        <ProtectedRoute requiredRoles={['admin', 'secretary', 'clerk', 'record_keeper', 'barangay_captain', 'view_only']}>
                           <DocumentRequestsPage />
                         </ProtectedRoute>
                       } />
 
+                      {/* BLOTTER: Added captain and view_only */}
                       <Route path="/blotter" element={
-                        <ProtectedRoute requiredRoles={['admin', 'secretary', 'record_keeper', 'clerk']}>
+                        <ProtectedRoute requiredRoles={['admin', 'secretary', 'record_keeper', 'barangay_investigator', 'barangay_captain', 'view_only']}>
                           <BlotterPage />
                         </ProtectedRoute>
                       } />
 
+                      {/* EQUIPMENT: Added captain and view_only */}
                       <Route path="/equipment" element={
-                        <ProtectedRoute requiredRoles={['admin', 'secretary', 'record_keeper', 'clerk']}>
+                        <ProtectedRoute requiredRoles={['admin', 'secretary', 'clerk', 'barangay_captain', 'view_only']}>
                           <EquipmentPage />
                         </ProtectedRoute>
                       } />
 
+                      {/* ANNOUNCEMENTS: Added captain and view_only */}
                       <Route path="/announcements" element={
-                        <ProtectedRoute requiredRoles={['admin', 'secretary', 'record_keeper', 'clerk']}>
+                        <ProtectedRoute requiredRoles={['admin', 'secretary', 'clerk', 'record_keeper', 'barangay_captain', 'view_only']}>
                           <AnnouncementsPage />
                         </ProtectedRoute>
                       } />

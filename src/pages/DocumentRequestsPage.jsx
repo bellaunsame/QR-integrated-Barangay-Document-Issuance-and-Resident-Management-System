@@ -22,9 +22,12 @@ import {
 import './DocumentRequestsPage.css';
 
 const DocumentRequestsPage = () => {
-  const { user, hasPermission } = useAuth();
+  const { user } = useAuth();
   const { settings } = useSettings();
   const location = useLocation(); 
+
+  // --- SECURITY CHECK: Restrict View Only & Captain ---
+  const canEdit = !['view_only', 'barangay_captain'].includes(user?.role);
   
   // Data States
   const [requests, setRequests] = useState([]);
@@ -52,8 +55,6 @@ const DocumentRequestsPage = () => {
   } = usePagination(filteredRequests, 5); 
 
   const itemsPerPage = 5;
-  
-  const canProcessDocs = user?.role === 'admin' || hasPermission('process_documents');
 
   const triggerSidebarUpdate = () => {
     window.dispatchEvent(new Event('docs_updated'));
@@ -127,7 +128,10 @@ const DocumentRequestsPage = () => {
     setFilteredRequests(filtered);
   };
 
+  // --- ACTIONS (Secured by canEdit) ---
+
   const handleEditRequest = async (request) => {
+    if (!canEdit) return;
     const newPurpose = window.prompt("Update the purpose for this request:", request.purpose || '');
     if (newPurpose === null || newPurpose === request.purpose) return;
 
@@ -143,6 +147,7 @@ const DocumentRequestsPage = () => {
   };
 
   const handleRenewDocument = async (request) => {
+    if (!canEdit) return;
     if (!window.confirm(`Renew this request for ${request.resident?.first_name}?`)) return;
     try {
       const toastId = toast.loading('Renewing document...');
@@ -163,6 +168,7 @@ const DocumentRequestsPage = () => {
   };
 
   const handleRevokeDocument = async (request) => {
+    if (!canEdit) return;
     const reason = window.prompt('Enter reason for revoking this document:');
     if (reason === null) return; 
     try {
@@ -177,6 +183,7 @@ const DocumentRequestsPage = () => {
   };
 
   const handleProcessRequest = async (request, skipConfirm = false) => {
+    if (!canEdit) return false;
     if (!skipConfirm && !window.confirm('Accept and process this request?')) return;
     try {
       setProcessingRequest(request.id);
@@ -215,6 +222,7 @@ const DocumentRequestsPage = () => {
   };
 
   const handleReleaseDocument = async (request, skipConfirm = false) => {
+    if (!canEdit) return false;
     if (!skipConfirm && !window.confirm('Mark this document as released?')) return;
     try {
       setRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'released' } : r));
@@ -238,7 +246,6 @@ const DocumentRequestsPage = () => {
             },
             'pfTdQReY0nVV3CjnY'    
           );
-          console.log(`Email sent to ${request.resident.email}`);
         } catch (emailErr) {
           console.error("EmailJS failed to send:", emailErr);
         }
@@ -255,6 +262,7 @@ const DocumentRequestsPage = () => {
   };
 
   const handleArchiveDocument = async (request) => {
+    if (!canEdit) return;
     if (!window.confirm('Move this request to the Archive?')) return;
     try {
       setRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'archived' } : r));
@@ -268,6 +276,7 @@ const DocumentRequestsPage = () => {
   };
 
   const handleRetrieveDocument = async (request) => {
+    if (!canEdit) return;
     if (!window.confirm('Retrieve this document from archive/rejected?')) return;
     const newStatus = (request.document_url || request.storage_path) ? 'completed' : 'pending';
     const toastId = toast.loading('Retrieving...');
@@ -304,6 +313,7 @@ const DocumentRequestsPage = () => {
   };
 
   const handleCreateRequest = async (formData) => {
+    if (!canEdit) return;
     try {
       setLoading(true);
       let supportingDocUrl = null;
@@ -328,15 +338,18 @@ const DocumentRequestsPage = () => {
   };
 
   const toggleSelectAll = (e) => {
+    if (!canEdit) return;
     if (e.target.checked) setSelectedRequests(currentRequests.map(req => req.id)); 
     else setSelectedRequests([]);
   };
 
   const toggleSelectRequest = (id) => {
+    if (!canEdit) return;
     setSelectedRequests(prev => prev.includes(id) ? prev.filter(reqId => reqId !== id) : [...prev, id]);
   };
 
   const handleBatchProcess = async () => {
+    if (!canEdit) return;
     if (!window.confirm(`Process ${selectedRequests.length} pending requests?`)) return;
     setIsBatchProcessing(true);
     const tid = toast.loading('Batch processing...');
@@ -349,6 +362,7 @@ const DocumentRequestsPage = () => {
   };
 
   const handleBatchRelease = async () => {
+    if (!canEdit) return;
     if (!window.confirm(`Release ${selectedRequests.length} documents?`)) return;
     setIsBatchProcessing(true);
     const tid = toast.loading('Releasing documents...');
@@ -383,7 +397,7 @@ const DocumentRequestsPage = () => {
         <Download size={18} />
       </button>
 
-      {canProcessDocs && (
+      {canEdit ? (
         <>
           {request.status === 'pending' && (
             <>
@@ -435,6 +449,10 @@ const DocumentRequestsPage = () => {
             </>
           )}
         </>
+      ) : (
+        <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic', display: 'flex', alignItems: 'center', marginLeft: '5px' }}>
+          No Access
+        </span>
       )}
     </div>
   );
@@ -463,16 +481,18 @@ const DocumentRequestsPage = () => {
       <div className="document-requests-page">
         <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div><h1>{getPageTitle()}</h1><p>Process and manage barangay document requests</p></div>
-          {user?.role !== 'view_only' && (
+          
+          {/* HIDE CREATE BUTTON IF VIEW ONLY */}
+          {canEdit && (
             <button className="btn btn-primary" onClick={() => setShowForm(true)}><Plus size={20} /> New Request</button>
           )}
         </div>
 
-        {selectedRequests.length > 0 && canProcessDocs && (
+        {selectedRequests.length > 0 && canEdit && (
           <div className="batch-actions-bar" style={{ backgroundColor: 'var(--primary-50)', border: '1px solid var(--primary-200)', padding: '12px 20px', borderRadius: '8px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', animation: 'fadeIn 0.2s ease-in-out' }}>
             <span style={{ fontWeight: '600', color: 'var(--primary-700)' }}>{selectedRequests.length} request(s) selected</span>
             <div className="batch-buttons" style={{ display: 'flex', gap: '10px' }}>
-              {selectedStatus === 'pending' && canProcessDocs && (
+              {selectedStatus === 'pending' && (
                 <button className="btn btn-primary" onClick={handleBatchProcess} disabled={isBatchProcessing}><CheckSquare size={18} style={{marginRight: '6px'}} /> Accept Selected</button>
               )}
               {selectedStatus === 'completed' && (
@@ -497,9 +517,12 @@ const DocumentRequestsPage = () => {
                 <table>
                   <thead>
                     <tr>
-                      <th style={{ width: '40px', textAlign: 'center' }}>
-                        <input type="checkbox" onChange={toggleSelectAll} checked={currentRequests.length > 0 && selectedRequests.length === currentRequests.length} />
-                      </th>
+                      {/* HIDE BATCH CHECKBOX IF VIEW ONLY */}
+                      {canEdit && (
+                        <th style={{ width: '40px', textAlign: 'center' }}>
+                          <input type="checkbox" onChange={toggleSelectAll} checked={currentRequests.length > 0 && selectedRequests.length === currentRequests.length} />
+                        </th>
+                      )}
                       <th>Resident</th>
                       <th>Document Type</th>
                       <th>Status</th>
@@ -509,13 +532,18 @@ const DocumentRequestsPage = () => {
                   </thead>
                   <tbody>
                     {currentRequests.length === 0 ? (
-                      <tr><td colSpan="6" className="empty-row" style={{ textAlign: 'center', padding: '20px' }}>No requests found matching your filters.</td></tr>
+                      <tr><td colSpan={canEdit ? "6" : "5"} className="empty-row" style={{ textAlign: 'center', padding: '20px' }}>No requests found matching your filters.</td></tr>
                     ) : (
                       currentRequests.map((request) => (
                         <tr key={request.id} style={{ backgroundColor: selectedRequests.includes(request.id) ? 'var(--primary-50)' : 'transparent' }}>
-                          <td style={{ textAlign: 'center' }}>
-                            <input type="checkbox" checked={selectedRequests.includes(request.id)} onChange={() => toggleSelectRequest(request.id)} />
-                          </td>
+                          
+                          {/* HIDE ROW CHECKBOX IF VIEW ONLY */}
+                          {canEdit && (
+                            <td style={{ textAlign: 'center' }}>
+                              <input type="checkbox" checked={selectedRequests.includes(request.id)} onChange={() => toggleSelectRequest(request.id)} />
+                            </td>
+                          )}
+
                           <td><strong>{request.resident?.first_name} {request.resident?.last_name}</strong></td>
                           <td><span className="document-badge">{request.request_type || request.template?.template_name}</span></td>
                           <td><span className={`badge ${getStatusBadgeClass(request.status)}`}>{request.status.toUpperCase()}</span></td>
@@ -531,7 +559,7 @@ const DocumentRequestsPage = () => {
 
             {/* MOBILE VIEW */}
             <div className="mobile-cards-container">
-              {currentRequests.length > 0 && (
+              {canEdit && currentRequests.length > 0 && (
                 <div style={{ padding: '12px', background: '#fff', borderRadius: '8px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <input type="checkbox" onChange={toggleSelectAll} checked={currentRequests.length > 0 && selectedRequests.length === currentRequests.length} />
                   <strong style={{ color: 'var(--text-secondary)' }}>Select All on Page</strong>
@@ -545,7 +573,10 @@ const DocumentRequestsPage = () => {
                   <div key={request.id} style={{ background: selectedRequests.includes(request.id) ? 'var(--primary-50)' : '#fff', border: selectedRequests.includes(request.id) ? '1px solid var(--primary-300)' : '1px solid var(--border)', borderRadius: '8px', padding: '15px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <input type="checkbox" checked={selectedRequests.includes(request.id)} onChange={() => toggleSelectRequest(request.id)} style={{ transform: 'scale(1.2)' }} />
+                        {/* HIDE MOBILE CHECKBOX IF VIEW ONLY */}
+                        {canEdit && (
+                          <input type="checkbox" checked={selectedRequests.includes(request.id)} onChange={() => toggleSelectRequest(request.id)} style={{ transform: 'scale(1.2)' }} />
+                        )}
                         <span style={{ fontSize: '1.05rem', fontWeight: '600', color: 'var(--text-primary)' }}>{request.resident?.first_name} {request.resident?.last_name}</span>
                       </div>
                       <span className={`badge ${getStatusBadgeClass(request.status)}`} style={{ fontSize: '0.7rem' }}>{request.status.toUpperCase()}</span>
@@ -583,14 +614,14 @@ const DocumentRequestsPage = () => {
             <DocumentRequestDetails 
               request={viewingRequest} 
               onClose={() => setViewingRequest(null)} 
-              onApprove={(viewingRequest.status === 'pending' && !canProcessDocs) ? null : handleProcessRequest} 
-              onReject={canProcessDocs ? handleArchiveDocument : null} 
+              onApprove={(viewingRequest.status === 'pending' && canEdit) ? handleProcessRequest : null} 
+              onReject={canEdit ? handleArchiveDocument : null} 
               onDownload={handleDownloadDocument} 
             />
           </Modal>
         )}
 
-        {showForm && (
+        {showForm && canEdit && (
           <Modal isOpen={showForm} onClose={() => setShowForm(false)} title="Create New Document Request" size="xl">
             <DocumentRequestForm templates={templates} residents={residents} allRequests={requests} onSubmit={handleCreateRequest} onCancel={() => setShowForm(false)} />
           </Modal>

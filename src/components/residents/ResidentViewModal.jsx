@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Edit2, CheckCircle, XCircle, AlertTriangle, User, Calendar, MapPin, Phone, ShieldCheck, Mail } from 'lucide-react'; 
+import { X, Edit2, CheckCircle, XCircle, AlertTriangle, User, Calendar, MapPin, Phone, ShieldCheck, Mail, FileText } from 'lucide-react'; 
 import { calculateAge } from '../../utils/residentUtils';
 import toast from 'react-hot-toast';
 
@@ -10,7 +10,7 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
   if (!resident) return null;
 
   const isPending = resident.account_status === 'Pending';
-  const age = calculateAge(resident.date_of_birth);
+  const age = resident.date_of_birth ? calculateAge(resident.date_of_birth) : 'N/A';
 
   const handleConfirmReject = () => {
     if (!rejectReason) {
@@ -19,6 +19,13 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
     }
     onReject(resident, rejectReason);
     setRejectMode(false);
+  };
+
+  // --- NEW: Copy to Clipboard Helper ---
+  const handleCopy = (text, label) => {
+    if (!text || text === 'N/A') return;
+    navigator.clipboard.writeText(text);
+    toast.success(`${label} copied to clipboard!`, { icon: '📋' });
   };
 
   // SECURITY: Un-clickable CSS Watermark Overlay
@@ -42,7 +49,7 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
     <div className="modal-overlay" onClick={onClose} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', zIndex: 1000 }}>
       <div className="modal-content" onClick={e => e.stopPropagation()} style={{ 
         background: '#fff', borderRadius: '12px', width: '100%', 
-        maxWidth: isPending ? '1000px' : '600px', 
+        maxWidth: '1000px', // FIX: Always 1000px wide so documents fit perfectly next to text
         maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' 
       }}>
         
@@ -58,7 +65,7 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
         </div>
 
         {/* BODY */}
-        <div style={{ padding: '20px', display: isPending ? 'grid' : 'block', gridTemplateColumns: isPending ? '1fr 1.2fr' : '1fr', gap: '30px' }}>
+        <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '30px' }}>
           
           {/* LEFT SIDE: Text Details */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -69,17 +76,57 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
                 <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><User size={40} color="#94a3b8"/></div>
               )}
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.4rem', color: '#0f172a' }}>{resident.first_name} {resident.middle_name} {resident.last_name} {resident.suffix}</h3>
+                <h3 style={{ margin: 0, fontSize: '1.4rem', color: '#0f172a' }}>
+                  {[resident.first_name, resident.middle_name, resident.last_name, resident.suffix].filter(Boolean).join(' ')}
+                </h3>
                 <span className="badge badge-primary">{resident.residency_type || 'Permanent'} Resident</span>
               </div>
             </div>
 
             <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <p style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px' }}><MapPin size={16} color="#64748b"/> <strong>Address:</strong> {resident.full_address}, {resident.purok}, {resident.barangay}</p>
-              <p style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px' }}><Calendar size={16} color="#64748b"/> <strong>Date of Birth:</strong> {new Date(resident.date_of_birth).toLocaleDateString()} ({age} years old)</p>
-              <p style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px' }}><Phone size={16} color="#64748b"/> <strong>Contact:</strong> {resident.mobile_number || resident.contact_number}</p>
-              <p style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px' }}><Mail size={16} color="#64748b"/> <strong>Email:</strong> {resident.email || 'No email provided'}</p>
-              <p style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px' }}><User size={16} color="#64748b"/> <strong>Gender/Civil Status:</strong> {resident.gender}, {resident.civil_status}</p>
+              <p style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                <MapPin size={16} color="#64748b" style={{ marginTop: '3px' }}/> 
+                <span><strong>Address:</strong> {[resident.full_address, resident.purok, resident.barangay].filter(Boolean).join(', ')}</span>
+              </p>
+              
+              <p style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Calendar size={16} color="#64748b"/> 
+                <strong>Date of Birth:</strong> {resident.date_of_birth ? new Date(resident.date_of_birth).toLocaleDateString() : 'N/A'} ({age !== 'Invalid' ? age : 'N/A'} yrs)
+              </p>
+              
+              {/* UPDATED: Clickable Phone Number */}
+              <p 
+                style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                onClick={() => handleCopy(resident.mobile_number || resident.contact_number, 'Phone Number')}
+                title="Click to copy"
+              >
+                <Phone size={16} color="#64748b"/> 
+                <strong>Contact:</strong> 
+                <span style={{ color: 'var(--primary-600)', textDecoration: 'underline' }}>
+                  {resident.mobile_number || resident.contact_number || 'N/A'}
+                </span>
+              </p>
+              
+              {/* UPDATED: Clickable Email Address */}
+              <p 
+                style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                onClick={() => handleCopy(resident.email, 'Email Address')}
+                title="Click to copy"
+              >
+                <Mail size={16} color="#64748b"/> 
+                <strong>Email:</strong> 
+                <span style={{ color: 'var(--primary-600)', textDecoration: 'underline' }}>
+                  {resident.email || 'N/A'}
+                </span>
+              </p>
+              
+              <p style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <User size={16} color="#64748b"/> 
+                <strong>Gender / Civil Status:</strong> {[resident.gender, resident.civil_status].filter(Boolean).join(' / ') || 'N/A'}
+              </p>
+              <p style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <strong style={{ marginLeft: '24px' }}>Occupation:</strong> {resident.occupation || 'N/A'}
+              </p>
             </div>
             
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
@@ -89,44 +136,44 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
             </div>
           </div>
 
-          {/* RIGHT SIDE: Sensitive Documents */}
-          {isPending && (
-            <div style={{ borderLeft: '1px solid #e2e8f0', paddingLeft: '30px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <h3 style={{ margin: 0, color: '#334155', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <AlertTriangle size={20} color="#eab308"/> Identity Verification
-              </h3>
-              
-              <div>
-                <label style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#475569' }}>Valid ID (National ID, Passport, etc.)</label>
-                {resident.id_image_url ? (
-                  <div style={{ position: 'relative', marginTop: '5px', borderRadius: '8px', overflow: 'hidden', border: '1px solid #cbd5e1', background: '#000' }}>
-                    <img src={resident.id_image_url} alt="Valid ID" style={{ width: '100%', maxHeight: '250px', objectFit: 'contain', display: 'block' }} />
-                    <Watermark />
-                  </div>
-                ) : (
-                  <p style={{ color: '#ef4444', fontSize: '0.9rem', fontStyle: 'italic' }}>No Valid ID Uploaded</p>
-                )}
-              </div>
-
-              <div>
-                <label style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#475569' }}>Proof of Residency</label>
-                {resident.proof_of_residency_url ? (
-                  <div style={{ position: 'relative', marginTop: '5px', borderRadius: '8px', overflow: 'hidden', border: '1px solid #cbd5e1', background: '#000' }}>
-                    {resident.proof_of_residency_url.includes('.pdf') ? (
-                       <a href={resident.proof_of_residency_url} target="_blank" rel="noreferrer" style={{ display:'block', padding:'20px', background:'#f1f5f9', textAlign:'center', color:'var(--primary-600)', fontWeight:'bold' }}>📄 View PDF Document</a>
-                    ) : (
-                      <>
-                        <img src={resident.proof_of_residency_url} alt="Proof of Residency" style={{ width: '100%', maxHeight: '250px', objectFit: 'contain', display: 'block' }} />
-                        <Watermark />
-                      </>
-                    )}
-                  </div>
-                ) : (
-                  <p style={{ color: '#94a3b8', fontSize: '0.9rem', fontStyle: 'italic' }}>No Proof of Residency Uploaded</p>
-                )}
-              </div>
+          {/* RIGHT SIDE: Sensitive Documents (FIX: ALWAYS VISIBLE NOW!) */}
+          <div style={{ borderLeft: '1px solid #e2e8f0', paddingLeft: '30px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <h3 style={{ margin: 0, color: '#334155', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {isPending ? <AlertTriangle size={20} color="#eab308"/> : <FileText size={20} color="var(--primary-600)"/>}
+              Identity Verification
+            </h3>
+            
+            <div>
+              <label style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#475569' }}>Valid ID (National ID, Passport, etc.)</label>
+              {resident.id_image_url ? (
+                <div style={{ position: 'relative', marginTop: '5px', borderRadius: '8px', overflow: 'hidden', border: '1px solid #cbd5e1', background: '#000' }}>
+                  <img src={resident.id_image_url} alt="Valid ID" style={{ width: '100%', maxHeight: '250px', objectFit: 'contain', display: 'block' }} />
+                  <Watermark />
+                </div>
+              ) : (
+                <p style={{ color: '#ef4444', fontSize: '0.9rem', fontStyle: 'italic' }}>No Valid ID Uploaded</p>
+              )}
             </div>
-          )}
+
+            <div>
+              <label style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#475569' }}>Proof of Residency</label>
+              {resident.proof_of_residency_url ? (
+                <div style={{ position: 'relative', marginTop: '5px', borderRadius: '8px', overflow: 'hidden', border: '1px solid #cbd5e1', background: '#000' }}>
+                  {resident.proof_of_residency_url.includes('.pdf') ? (
+                     <a href={resident.proof_of_residency_url} target="_blank" rel="noreferrer" style={{ display:'block', padding:'20px', background:'#f1f5f9', textAlign:'center', color:'var(--primary-600)', fontWeight:'bold' }}>📄 View PDF Document</a>
+                  ) : (
+                    <>
+                      <img src={resident.proof_of_residency_url} alt="Proof of Residency" style={{ width: '100%', maxHeight: '250px', objectFit: 'contain', display: 'block' }} />
+                      <Watermark />
+                    </>
+                  )}
+                </div>
+              ) : (
+                <p style={{ color: '#94a3b8', fontSize: '0.9rem', fontStyle: 'italic' }}>No Proof of Residency Uploaded</p>
+              )}
+            </div>
+          </div>
+
         </div>
 
         {/* FOOTER ACTIONS */}

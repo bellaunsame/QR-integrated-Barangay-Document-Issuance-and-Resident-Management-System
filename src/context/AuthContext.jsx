@@ -244,7 +244,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ========================================================
-  // FIXED: UPGRADED PERMISSION ENGINE
+  // FIXED: UPGRADED PERMISSION ENGINE WITH VIEW ONLY ROLES
   // ========================================================
   const hasPermission = (permission) => {
     if (!user) return false;
@@ -265,14 +265,32 @@ export const AuthProvider = ({ children }) => {
       clerk: [
         'process_documents', 
         'view_residents', 
-        'manage_equipment',  
-        'manage_blotter'     
+        'manage_equipment',
+        'use_qr_scanner'  
       ],
       record_keeper: [
         'manage_residents', 
         'generate_qr', 
-        'manage_equipment',
-        'process_documents' // <--- ADDED! Record Keeper can now process documents.
+        'process_documents' 
+      ],
+      barangay_investigator: [
+        'manage_blotter',   
+        'view_residents'    
+      ],
+      // --- NEW: BARANGAY CAPTAIN & VIEW ONLY PERMISSIONS ---
+      barangay_captain: [
+        'view_residents',
+        'view_documents',
+        'view_blotter',
+        'view_equipment',
+        'view_news'
+      ],
+      view_only: [
+        'view_residents',
+        'view_documents',
+        'view_blotter',
+        'view_equipment',
+        'view_news'
       ]
     };
     

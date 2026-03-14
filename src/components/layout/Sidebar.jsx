@@ -28,7 +28,7 @@ import logo from "../../assets/brgy.2-icon.png";
 import './Sidebar.css';
 
 const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
-  const { user, logout, hasRole, hasPermission } = useAuth();
+  const { user, logout, hasPermission } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -39,8 +39,8 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
     completed: 0,
     released: 0,
     new_devices: 0,
-    new_blotters: 0,    // <--- NEW: Blotter count
-    new_equipment: 0    // <--- NEW: Equipment count
+    new_blotters: 0,
+    new_equipment: 0
   });
 
   // --- INTEGRATED REALTIME LOGIC ---
@@ -64,7 +64,6 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
         setTimeout(() => fetchCounts(), 500);
       }).subscribe();
 
-    // NEW: Realtime listeners for Blotter and Equipment
     const blotterChannel = supabase.channel('sidebar-blotter-sync')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'blotter_records' }, () => {
         setTimeout(() => fetchCounts(), 500);
@@ -85,7 +84,6 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
     };
   }, []);
 
-  // Helper to get the time since a tab was last viewed
   const getSinceTime = (storageKey) => {
     const yesterday = new Date();
     yesterday.setHours(yesterday.getHours() - 24);
@@ -120,8 +118,8 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
         completed: completedCount.count || 0,
         released: releasedCount.count || 0,
         new_devices: newDevicesCount.count || 0,
-        new_blotters: newBlottersCount.count || 0,     // <--- Save new blotters count
-        new_equipment: newEquipmentCount.count || 0    // <--- Save new equipment count
+        new_blotters: newBlottersCount.count || 0,
+        new_equipment: newEquipmentCount.count || 0
       });
     } catch (error) {
       console.error("Error fetching sidebar counts:", error);
@@ -134,7 +132,6 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
     }
   }, [location.pathname]);
 
-  // --- NEW: Clear Notifications when clicking the respective tabs ---
   useEffect(() => {
     if (location.pathname === '/security') {
       localStorage.setItem('last_viewed_security', new Date().toISOString());
@@ -151,43 +148,41 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
   }, [location.pathname]);
 
   // ==========================================
-  // MENU ITEMS
+  // EXPLICIT ROLE-BASED MENU ITEMS
   // ==========================================
   const menuItems = [
     {
       icon: <LayoutDashboard size={20} />,
       label: 'Dashboard',
       path: '/dashboard',
-      roles: ['admin', 'secretary', 'clerk', 'record_keeper', 'view_only'] 
+      roles: ['admin', 'secretary', 'clerk', 'record_keeper', 'barangay_investigator', 'barangay_captain', 'view_only'] 
     },
     {
       icon: <Users size={20} />,
       label: 'Residents',
       path: '/residents',
-      permission: 'manage_residents', 
+      roles: ['admin', 'secretary', 'clerk', 'record_keeper', 'barangay_captain', 'view_only'], 
       badge: counts.residents > 0 ? { text: counts.residents, color: '#dbeafe', textColor: '#1d4ed8' } : null
     },
     {
       icon: <Scale size={20} />,
       label: 'Blotter',
       path: '/blotter',
-      permission: 'manage_blotter',
-      // Red badge for Blotter
+      roles: ['admin', 'secretary', 'barangay_investigator', 'barangay_captain', 'view_only'],
       badge: counts.new_blotters > 0 ? { text: counts.new_blotters, color: '#fee2e2', textColor: '#b91c1c' } : null 
     },
     {
       icon: <Package size={20} />,
       label: 'Equipment',
       path: '/equipment',
-      permission: 'manage_equipment',
-      // Orange/Amber badge for Equipment
+      roles: ['admin', 'secretary', 'clerk', 'barangay_captain', 'view_only'],
       badge: counts.new_equipment > 0 ? { text: counts.new_equipment, color: '#fef3c7', textColor: '#b45309' } : null 
     },
     {
       icon: <Megaphone size={20} />,
       label: 'Announcements',
       path: '/announcements',
-      permission: 'manage_news'
+      roles: ['admin', 'secretary', 'clerk', 'barangay_captain', 'view_only']
     },
     {
       icon: <FileCheck size={20} />,
@@ -205,7 +200,7 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
       icon: <QrCode size={20} />,
       label: 'QR Scanner',
       path: '/scan',
-      permission: 'use_qr_scanner' 
+      roles: ['admin', 'secretary', 'clerk'] // Hide from view-only since scanning implies processing
     },
     {
       icon: <ShieldCheck size={20} />,
@@ -227,11 +222,19 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
     navigate('/login');
   };
 
+  // Safe manual check for roles
   const visibleMenuItems = menuItems.filter(item => {
-    if (item.roles) return hasRole(item.roles);
-    if (item.permission) return hasRole('admin') || hasPermission(item.permission);
+    if (item.roles && user?.role) {
+      return item.roles.includes(user.role);
+    }
+    if (item.permission) {
+      return user?.role === 'admin' || hasPermission(item.permission);
+    }
     return true; 
   });
+
+  // Safe manual check for Documents Dropdown
+  const canViewDocuments = ['admin', 'secretary', 'clerk', 'record_keeper', 'barangay_captain', 'view_only'].includes(user?.role);
 
   return (
     <>
@@ -282,7 +285,7 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
           <div className="nav-section">
             {!isCollapsed && <div className="nav-section-title">Main Menu</div>}
             
-            {/* FIRST 2 ITEMS (Dashboard & Residents) */}
+            {/* FIRST 2 ITEMS (Dashboard & Residents, or Blotter depending on role) */}
             {visibleMenuItems.slice(0, 2).map((item) => (
               <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onClose}>
                 <span className="nav-icon">{item.icon}</span>
@@ -300,7 +303,7 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
             ))}
 
             {/* DOCUMENTS DROPDOWN */}
-            {(hasRole('admin') || hasPermission('process_documents')) && (
+            {canViewDocuments && (
               <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
                 <div onClick={() => { if (isCollapsed) onToggleCollapse(); setIsDocsOpen(!isDocsOpen); navigate('/documents'); }}
                   style={{

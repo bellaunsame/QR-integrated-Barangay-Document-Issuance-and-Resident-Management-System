@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabaseClient';
 import { toast } from 'react-hot-toast';
-import { ShieldCheck } from 'lucide-react'; // <-- Added for Success UI
+import { ShieldCheck } from 'lucide-react'; 
 import ResidentFormModal from '../components/residents/ResidentFormModal'; 
 
 // Images and CSS
@@ -18,7 +18,7 @@ const backgroundImages = [bg1, bg2, bg3, bg4, bg5];
 const ResidentRegister = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false); // <-- NEW: Success State
+  const [isSuccess, setIsSuccess] = useState(false); 
   const [formData, setFormData] = useState({});
   const [files, setFiles] = useState({ profile: null, validId: null, proof: null }); 
 
@@ -163,7 +163,6 @@ const ResidentRegister = () => {
   if (isSuccess) {
     return (
       <div className="login-page">
-        {/* Background is kept to look seamless */}
         <div className="login-background">
           <div className="scrolling-wrapper">
             <div className="scrolling-track">
@@ -211,40 +210,106 @@ const ResidentRegister = () => {
   // NORMAL REGISTRATION WIZARD
   // ==========================================
   return (
-    <div className="login-page">
-      <div className="login-background">
-        <div className="scrolling-wrapper">
-          <div className="scrolling-track">
-            {[...Array(4)].map((_, setIndex) => (
-              <div key={setIndex} className="image-set">
-                {backgroundImages.map((img, index) => (
-                  <img key={`${setIndex}-${index}`} src={img} alt={`background ${index + 1}`} />
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="overlay-gradient"></div>
-      </div>
+    <>
+      {/* MAGIC RESPONSIVE CSS INJECTION 
+        This forces the inner ResidentFormModal to behave on Mobile screens.
+      */}
+      <style>{`
+        .registration-wrapper {
+          position: relative;
+          z-index: 10;
+          width: 100%;
+          min-height: 100vh;
+          display: flex;
+          justify-content: center;
+          align-items: flex-start; /* Start at the top so long forms are scrollable */
+          padding: 20px;
+        }
 
-      <div style={{ position: 'relative', zIndex: 10, width: '100%' }}>
-        <ResidentFormModal 
-          isPublic={true} 
-          formData={formData}
-          loading={loading}
-          maxDate={today}
-          minDate="1900-01-01"
-          maxDate16={maxDate16.toISOString().split('T')[0]}
-          isUnderage={false}
-          handleInputChange={handleInputChange}
-          handleImageUpload={handleImageUpload}
-          handleValidIdUpload={handleValidIdUpload}
-          handleProofUpload={handleProofUpload} 
-          handleSubmit={handleSubmit}
-          closeModal={() => navigate('/')}
-        />
+        .registration-wrapper > div {
+          width: 100%;
+          max-width: 800px;
+          margin: 0 auto;
+        }
+
+        /* Fixes for Mobile Screens (< 768px) */
+        @media (max-width: 768px) {
+          .registration-wrapper {
+            padding: 10px;
+          }
+
+          /* 1. Prevent side-by-side inputs (like First Name / Last Name) from squishing */
+          .registration-wrapper form > div[style*="display: flex"] {
+            flex-direction: column !important;
+            gap: 15px !important;
+          }
+          .registration-wrapper form > div[style*="display: flex"] > div {
+            width: 100% !important;
+            flex: none !important;
+          }
+
+          /* 2. Fix the Step Indicator (1. Personal Info, 2. Address...) */
+          /* Transforms it from a squished row into a clean, swipeable horizontal menu */
+          .registration-wrapper div[style*="justify-content: space-between"] {
+            display: flex !important;
+            flex-wrap: nowrap !important;
+            overflow-x: auto !important;
+            padding-bottom: 15px !important;
+            justify-content: flex-start !important;
+            gap: 30px !important;
+            -webkit-overflow-scrolling: touch;
+          }
+          
+          /* Keep the step text from breaking onto multiple messy lines */
+          .registration-wrapper div[style*="justify-content: space-between"] > div {
+            min-width: max-content !important;
+            white-space: nowrap !important;
+          }
+
+          /* 3. Fix the Image Upload button container */
+          .registration-wrapper .image-upload-container,
+          .registration-wrapper input[type="file"] {
+             width: 100% !important;
+          }
+        }
+      `}</style>
+
+      <div className="login-page">
+        <div className="login-background">
+          <div className="scrolling-wrapper">
+            <div className="scrolling-track">
+              {[...Array(4)].map((_, setIndex) => (
+                <div key={setIndex} className="image-set">
+                  {backgroundImages.map((img, index) => (
+                    <img key={`${setIndex}-${index}`} src={img} alt={`background ${index + 1}`} />
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="overlay-gradient"></div>
+        </div>
+
+        {/* Applied the new responsive wrapper class here */}
+        <div className="registration-wrapper">
+          <ResidentFormModal 
+            isPublic={true} 
+            formData={formData}
+            loading={loading}
+            maxDate={today}
+            minDate="1900-01-01"
+            maxDate16={maxDate16.toISOString().split('T')[0]}
+            isUnderage={false}
+            handleInputChange={handleInputChange}
+            handleImageUpload={handleImageUpload}
+            handleValidIdUpload={handleValidIdUpload}
+            handleProofUpload={handleProofUpload} 
+            handleSubmit={handleSubmit}
+            closeModal={() => navigate('/')}
+          />
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 

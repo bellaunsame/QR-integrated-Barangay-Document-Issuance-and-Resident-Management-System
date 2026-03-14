@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { supabase, db } from '../services/supabaseClient'; // Ensure supabase is imported for auth signup
+import { supabase, db } from '../services/supabaseClient'; 
 import toast from 'react-hot-toast';
 import emailjs from '@emailjs/browser'; 
 import { 
@@ -165,7 +165,6 @@ const UsersPage = () => {
       email: { required: true, type: 'email' },
       full_name: { required: true, type: 'name', minLength: 2 },
       role: { required: true },
-      // Only require manual password input if we are editing and they typed something
       password: { required: false } 
     };
 
@@ -187,7 +186,6 @@ const UsersPage = () => {
       let finalUserData = { ...validation.sanitizedData };
 
       if (editingUser) {
-        // --- EDITING EXISTING USER ---
         if (formData.password) {
           finalUserData.password_hash = await hashPassword(formData.password);
         }
@@ -197,10 +195,8 @@ const UsersPage = () => {
         await logDataModification(currentUser.id, 'users', editingUser.id, ACTIONS.USER_UPDATED, editingUser, finalUserData);
         toast.success('User updated successfully');
       } else {
-        // --- CREATING NEW STAFF USER ---
         const activePassword = generatedPassword;
         
-        // 1. Create Identity in Supabase Auth
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email: emailVal,
           password: activePassword,
@@ -208,24 +204,21 @@ const UsersPage = () => {
 
         if (authError) throw authError;
 
-        // 2. Hash password for local DB storage checks
         finalUserData.password_hash = await hashPassword(activePassword);
-        finalUserData.id = authData.user.id; // Link public table to Auth ID
-        finalUserData.is_verified = true; // Admin created, so it's verified
-        finalUserData.needs_password_change = true; // The Trap!
+        finalUserData.id = authData.user.id; 
+        finalUserData.is_verified = true; 
+        finalUserData.needs_password_change = true; 
         delete finalUserData.password;
 
-        // 3. Save to Public Users Table
         await db.users.create(finalUserData);
         
-        // 4. Send EmailJS containing the Temp Password
         await emailjs.send(
           'service_178ko1n', 
           'template_qzkqkvf', 
           { 
             to_email: formData.email, 
             to_name: formData.full_name, 
-            otp_code: activePassword, // Passing password as the code
+            otp_code: activePassword, 
             email_subject_message: "An official barangay account has been provisioned for you. Please use this temporary password to log in. You will be forced to change it immediately.",
             barangay_name: "Dos Tibag" 
           }, 
@@ -266,13 +259,15 @@ const UsersPage = () => {
     setPasswordStrength(null);
   };
 
+  // --- UPDATED ROLE FORMATTING ---
   const getRoleBadgeClass = (role) => {
     switch(role) {
       case 'admin': return 'badge-admin';
-      case 'barangay_captain': return 'badge-captain';
-      case 'secretary': return 'badge-warning'; // <--- ADDED SECRETARY BADGE COLOR
+      case 'barangay_captain': return 'badge-view-only'; // Make Captain look like view-only
+      case 'secretary': return 'badge-warning'; 
       case 'clerk': return 'badge-clerk';
       case 'record_keeper': return 'badge-keeper';
+      case 'barangay_investigator': return 'badge-danger'; 
       case 'view_only': return 'badge-view-only'; 
       default: return 'badge-default';
     }
@@ -281,11 +276,12 @@ const UsersPage = () => {
   const formatRole = (role) => {
     const roleMap = { 
       'admin': 'Administrator', 
-      'barangay_captain': 'Barangay Captain', 
-      'secretary': 'Barangay Secretary',  // <--- ADDED SECRETARY FORMATTING
+      'barangay_captain': 'Barangay Captain (View Only)', // Explicit label
+      'secretary': 'Barangay Secretary',  
       'clerk': 'Barangay Clerk', 
-      'record_keeper': 'Record Keeper', 
-      'view_only': 'View Only' 
+      'record_keeper': 'Record Keeper',
+      'barangay_investigator': 'Barangay Investigator',
+      'view_only': 'View Only Staff' 
     };
     return roleMap[role] || role;
   };
@@ -416,14 +412,15 @@ const UsersPage = () => {
                   <select name="role" value={formData.role} onChange={handleInputChange} required>
                     <option value="">Select role</option>
                     <option value="admin">Administrator</option>
-                    <option value="barangay_captain">Barangay Captain (View Only + Approvals)</option>
-                    <option value="secretary">Barangay Secretary</option> {/* <--- ADDED SECRETARY HERE */}
+                    <option value="barangay_captain">Barangay Captain (View Only)</option>
+                    <option value="secretary">Barangay Secretary</option> 
                     <option value="clerk">Barangay Clerk</option>
                     <option value="record_keeper">Record Keeper</option>
+                    <option value="barangay_investigator">Barangay Investigator (Blotter)</option>
+                    <option value="view_only">Regular View Only</option>
                   </select>
                 </div>
 
-                {/* DYNAMIC PASSWORD UI BASED ON ADD VS EDIT */}
                 {!editingUser ? (
                   <div className="form-group">
                     <label>Temporary Password *</label>

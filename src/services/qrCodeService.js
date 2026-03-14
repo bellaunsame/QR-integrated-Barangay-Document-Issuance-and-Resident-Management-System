@@ -49,10 +49,16 @@ export const generateQRCodeImage = async (data, options = {}) => {
  */
 export const parseQRData = (qrString) => {
   try {
+    // FIXED: Check if the string actually looks like a JSON object first.
+    // This prevents the app from trying to parse normal URLs and throwing a SyntaxError!
+    if (!qrString || typeof qrString !== 'string' || !qrString.trim().startsWith('{')) {
+      return null;
+    }
+    
     const parsed = JSON.parse(qrString);
     return parsed;
   } catch (error) {
-    console.error('Error parsing QR data:', error);
+    // Silently fail to keep the console clean if someone scans the wrong QR code
     return null;
   }
 };

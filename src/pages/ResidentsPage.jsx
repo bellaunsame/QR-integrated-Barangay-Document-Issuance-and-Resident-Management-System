@@ -7,6 +7,7 @@ import { generateResidentIDImage, downloadResidentID } from '../services/idGener
 import { sendQRCodeEmail } from '../services/emailService';
 import toast from 'react-hot-toast';
 import emailjs from '@emailjs/browser'; 
+import imageCompression from 'browser-image-compression';
 
 // Security & Utils
 import { validateForm } from '../services/security/inputSanitizer';
@@ -21,7 +22,7 @@ import ResidentFormModal from '../components/residents/ResidentFormModal';
 import CameraCaptureModal from '../components/residents/CameraCaptureModal';
 
 // Icons 
-import { Users, Plus, Search, Edit2, Archive, QrCode, Mail, Download, Eye, User, RefreshCw, Home, Clock, Check, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Users, Plus, Search, Edit2, Archive, QrCode, Mail, Download, Eye, User, RefreshCw, Home, Clock, Check, X, ChevronLeft, ChevronRight, FileDown } from 'lucide-react';
 import './ResidentsPage.css';
 
 // --- HELPER: GENERATE RANDOM TEMPORARY PASSWORD ---
@@ -38,6 +39,9 @@ const ResidentsPage = () => {
   const { user } = useAuth();
   const { getSetting } = useSettings();
   
+  // --- SECURITY CHECK: Restrict View Only & Captain ---
+  const canEdit = !['view_only', 'barangay_captain'].includes(user?.role);
+
   // Data States
   const [allResidents, setAllResidents] = useState([]);
   const [filteredResidents, setFilteredResidents] = useState([]);
@@ -171,19 +175,34 @@ const ResidentsPage = () => {
     if (errors[name]) setErrors(prev => ({ ...prev, [name]: null }));
   };
 
-  const handleFileUpload = (e, fieldName) => {
+  const handleFileUpload = async (e, fieldName) => {
     const file = e.target.files[0];
-    if (file) {
-      if (file.size > (fieldName === 'photo_url' ? 2 : 5) * 1024 * 1024) { 
-        toast.error(`File must be less than ${fieldName === 'photo_url' ? '2MB' : '5MB'}`);
-        return;
-      }
+    if (!file) return;
+
+    if (file.size > 15 * 1024 * 1024) { 
+      toast.error("File is too large! Please upload a file under 15MB.");
+      return;
+    }
+
+    const toastId = toast.loading('Optimizing image...');
+
+    try {
+      const options = {
+        maxSizeMB: fieldName === 'photo_url' ? 0.2 : 0.5, 
+        maxWidthOrHeight: 1200,
+        useWebWorker: true
+      };
+
+      const compressedFile = await imageCompression(file, options);
       const reader = new FileReader();
       reader.onloadend = () => {
         setFormData(prev => ({ ...prev, [fieldName]: reader.result }));
-        if (fieldName !== 'photo_url') toast.success("File attached!");
+        toast.success("Image optimized and attached!", { id: toastId });
       };
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(compressedFile);
+    } catch (error) {
+      console.error("Compression error:", error);
+      toast.error("Failed to optimize image.", { id: toastId });
     }
   };
 
@@ -201,6 +220,8 @@ const ResidentsPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!canEdit) return;
+
     const mainAge = calculateAge(formData.date_of_birth);
     if (mainAge === 'Invalid') return toast.error('Invalid Date of Birth.');
 
@@ -257,23 +278,19 @@ const ResidentsPage = () => {
       if (editingResident) {
         res = await db.residents.update(editingResident.id, payload);
         await logDataModification(user.id, 'residents', editingResident.id, ACTIONS.RESIDENT_UPDATED, editingResident, payload);
-        await generateQRForResident({ id: editingResident.id, ...payload });
         toast.success('Resident updated');
       } else {
         payload.created_by = user.id;
         payload.status = 'active'; 
-        payload.account_status = 'Approved'; // ADMIN BYPASSES PENDING
+        payload.account_status = 'Approved'; 
         
-        // Generate temporary password for Admin-created residents too!
         const tempPassword = generateTempPassword();
         payload.password = tempPassword;
         payload.needs_password_change = true;
 
         res = await db.residents.create(payload);
         await logDataModification(user.id, 'residents', res.id, ACTIONS.RESIDENT_CREATED, null, payload);
-        await generateQRForResident(res);
 
-        // --- EMAILJS WORKAROUND APPLIED HERE ---
         if (payload.email) {
           try {
             await emailjs.send(
@@ -306,46 +323,73 @@ const ResidentsPage = () => {
     finally { setLoading(false); }
   };
 
-  const generateQRForResident = async (resident) => {
-    try {
-      const qrData = generateQRData(resident);
-      const qrCodeUrl = await generateQRCodeImage(qrData);
-      await db.residents.update(resident.id, { qr_code_data: qrData, qr_code_url: qrCodeUrl });
-
-      if (resident.email) {
-        try {
-          const { blob } = await generateResidentIDImage(resident);
-          const filePath = `id_cards/${resident.id}_id_card.jpg`;
-          await supabase.storage.from('documents').upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
-          const { data } = supabase.storage.from('documents').getPublicUrl(filePath);
-          await sendQRCodeEmail(resident, data.publicUrl);
-          await db.residents.update(resident.id, { qr_sent_at: new Date().toISOString() });
-        } catch (e) { toast('QR generated but email failed', { icon: '⚠️' }); }
-      }
-    } catch (error) { console.error(error); }
-  };
-
-  const handleResendQR = async (resident) => {
+  const handleResendCredentials = async (resident) => {
+    if (!canEdit) return;
     if (!resident.email) return toast.error('No email address');
     try {
-      setLoading(true); toast.loading('Sending email...', { id: 'qr' });
-      const { blob } = await generateResidentIDImage(resident);
-      const filePath = `id_cards/${resident.id}_id_card.jpg`;
-      await supabase.storage.from('documents').upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
-      const { data } = supabase.storage.from('documents').getPublicUrl(filePath);
-      await sendQRCodeEmail(resident, data.publicUrl);
-      await db.residents.update(resident.id, { qr_sent_at: new Date().toISOString() });
-      toast.success('Sent!', { id: 'qr' });
-    } catch (e) { toast.error('Failed to send', { id: 'qr' }); } 
+      setLoading(true); toast.loading('Sending email...', { id: 'email' });
+      
+      const tempPassword = generateTempPassword();
+      await supabase.from('residents').update({ password: tempPassword, needs_password_change: true }).eq('id', resident.id);
+
+      await emailjs.send(
+        'service_178ko1n',     
+        'template_qzkqkvf',    
+        {
+          to_email: resident.email,
+          to_name: resident.first_name,
+          barangay_name: "Dos, Calamba",
+          email_subject_message: `Your password has been reset by the Admin. You can log into the Resident Portal using your email and the new temporary password below. Login here: ${window.location.origin}/resident-login`,
+          otp_code: tempPassword 
+        },
+        'pfTdQReY0nVV3CjnY'    
+      );
+
+      toast.success('New credentials sent!', { id: 'email' });
+    } catch (e) { 
+      toast.error('Failed to send email', { id: 'email' }); 
+    } 
     finally { setLoading(false); }
   };
 
-  const handleDownloadQR = async (res) => {
-    try { const tid = toast.loading('Generating...'); await downloadResidentID(res); toast.success('Downloaded!', { id: tid }); } 
+  const handleDownloadQROnly = async (resident) => {
+    if (!canEdit) return;
+    const toastId = toast.loading("Generating QR Code...");
+    try {
+      const qrData = generateQRData(resident);
+      const qrCodeBase64 = await generateQRCodeImage(qrData, { width: 800, margin: 2 });
+      
+      const link = document.createElement('a');
+      link.href = qrCodeBase64;
+      link.download = `Barangay_QR_${resident.first_name}_${resident.last_name}.jpg`; 
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      toast.success("QR Code downloaded!", { id: toastId });
+    } catch (error) {
+      console.error("QR Download failed:", error);
+      toast.error("Failed to generate QR.", { id: toastId });
+    }
+  };
+
+  const handleDownloadIDCard = async (res) => {
+    if (!canEdit) return;
+    try { const tid = toast.loading('Generating ID Card...'); await downloadResidentID(res); toast.success('Downloaded!', { id: tid }); } 
     catch (e) { toast.error('Failed to generate ID'); }
   };
 
+  const handleViewResident = (resident) => {
+    const safeResident = { ...resident };
+    Object.keys(safeResident).forEach(key => {
+      if (safeResident[key] === null) safeResident[key] = '';
+    });
+    safeResident.age = calculateAge(resident.date_of_birth);
+    setViewingResident(safeResident);
+  };
+
   const handleEdit = (resident) => {
+    if (!canEdit) return;
     setEditingResident(resident);
     const safeData = { ...resident };
     Object.keys(safeData).forEach(k => { if (safeData[k] === null) safeData[k] = ''; });
@@ -353,17 +397,13 @@ const ResidentsPage = () => {
     setFormData(safeData); setErrors({}); setShowModal(true);
   };
 
-  // ==========================================
-  // --- NEW MAGIC APPROVAL LOGIC WITH WORKAROUND ---
-  // ==========================================
   const handleApprove = async (resident) => {
+    if (!canEdit) return;
     try {
       setLoading(true);
       
-      // 1. Generate the random temporary password
       const tempPassword = generateTempPassword();
 
-      // 2. Update Supabase Resident Record
       const { error } = await supabase
         .from('residents')
         .update({ 
@@ -375,7 +415,6 @@ const ResidentsPage = () => {
         
       if (error) throw error;
 
-      // 3. Send Email with Credentials (using the existing OTP template!)
       if (resident.email) {
         await emailjs.send(
           'service_178ko1n',     
@@ -384,7 +423,7 @@ const ResidentsPage = () => {
             to_email: resident.email,
             to_name: resident.first_name,
             barangay_name: "Dos, Calamba",
-            email_subject_message: `Your account registration has been APPROVED! You can now log into the Resident Portal using your email and the temporary password below. Login here: ${window.location.origin}/resident-login`,
+            email_subject_message: `Your account registration has been APPROVED! You can now log into the Resident Portal to download your QR Code and ID. Login here: ${window.location.origin}/resident-login`,
             otp_code: tempPassword 
           },
           'pfTdQReY0nVV3CjnY'    
@@ -397,16 +436,15 @@ const ResidentsPage = () => {
       await loadResidents();
     } catch (e) { 
       console.error(e);
-      toast.error('Failed to approve resident or send email.'); 
+      toast.error('Failed to approve resident.'); 
     }
     finally { setLoading(false); }
   };
 
-  // UPDATED REJECT HANDLER
   const handleReject = async (resident, reason = "Registration declined by Barangay Staff.") => {
+    if (!canEdit) return;
     try {
       setLoading(true);
-      
       const { error } = await supabase.from('residents').delete().eq('id', resident.id);
       if (error) throw error;
       
@@ -421,6 +459,7 @@ const ResidentsPage = () => {
   };
 
   const handleArchiveResident = async (resident) => {
+    if (!canEdit) return;
     if (!window.confirm(`Are you sure you want to archive ${resident.first_name} ${resident.last_name}?`)) return;
     try {
       setLoading(true);
@@ -434,6 +473,7 @@ const ResidentsPage = () => {
   };
 
   const handleRestoreResident = async (resident) => {
+    if (!canEdit) return;
     if (!window.confirm(`Restore ${resident.first_name} ${resident.last_name} back to active residents?`)) return;
     try {
       setLoading(true);
@@ -447,6 +487,7 @@ const ResidentsPage = () => {
   };
 
   const openAddModal = () => {
+    if (!canEdit) return;
     setEditingResident(null);
     setFormData({
       ...getEmptyFormData({ barangay: getSetting('barangay_name', 'Barangay'), city_municipality: getSetting('city_municipality', ''), province: getSetting('province', '') }),
@@ -456,6 +497,35 @@ const ResidentsPage = () => {
   };
 
   const closeModal = () => { setShowModal(false); setEditingResident(null); setErrors({}); };
+
+  const exportToCSV = () => {
+    if (filteredResidents.length === 0) return toast.error("No residents to export.");
+
+    const headers = ['First Name', 'Middle Name', 'Last Name', 'Suffix', 'Gender', 'Civil Status', 'Date of Birth', 'Age', 'Contact', 'Email', 'Address', 'Purok', 'Residency Type', 'Status'];
+    
+    const csvRows = filteredResidents.map(r => {
+      const safeAddress = `"${(r.full_address || '').replace(/"/g, '""')}"`;
+      const age = calculateAge(r.date_of_birth);
+
+      return [
+        r.first_name || '', r.middle_name || '', r.last_name || '', r.suffix || '',
+        r.gender || '', r.civil_status || '', r.date_of_birth || '',
+        age !== 'Invalid' ? age : '', r.mobile_number || r.contact_number || '',
+        r.email || '', safeAddress, r.purok || '', r.residency_type || '', r.account_status || ''
+      ].join(',');
+    });
+
+    const csvContent = [headers.join(','), ...csvRows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Barangay_Residents_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <>
@@ -480,21 +550,31 @@ const ResidentsPage = () => {
           .residents-page .page-header button { width: 100%; justify-content: center; }
           .residents-controls { flex-direction: column !important; align-items: stretch !important; gap: 1rem; }
           .search-box { width: 100%; }
+          .hide-on-mobile { display: none; }
         }
       `}</style>
 
       <div className="residents-page">
         <div className="page-header">
           <div><h1>Residents Management</h1><p>Manage barangay residents, update info, and generate QR codes</p></div>
-          {user?.role !== 'view_only' && (
+          
+          {/* HIDE ADD BUTTON IF VIEW ONLY */}
+          {canEdit && (
             <button className="btn btn-primary" onClick={openAddModal}><Plus size={20} /> Add New</button>
           )}
         </div>
 
         <div className="residents-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '15px' }}>
-          <div className="search-box" style={{ flex: '1', minWidth: '250px' }}>
-            <Search size={20} />
-            <input type="text" placeholder="Search residents..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); goToPage(1); }} />
+          
+          <div style={{ display: 'flex', gap: '10px', flex: '1', minWidth: '250px' }}>
+            <div className="search-box" style={{ flex: '1' }}>
+              <Search size={20} />
+              <input type="text" placeholder="Search residents..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); goToPage(1); }} />
+            </div>
+            
+            <button className="btn btn-secondary" onClick={exportToCSV} title="Export to Excel/CSV">
+              <FileDown size={20} /> <span className="hide-on-mobile">Export</span>
+            </button>
           </div>
           
           <div className="view-toggle">
@@ -531,7 +611,7 @@ const ResidentsPage = () => {
                       <th>Contact</th>
                       <th style={{textAlign:'center'}}>Docs</th>
                       <th>Age/Gender</th>
-                      <th>QR</th>
+                      <th>QR Status</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -566,11 +646,23 @@ const ResidentsPage = () => {
                           <td><div className="contact-cell"><span>{r.mobile_number || r.contact_number || 'N/A'}</span><small>{r.email || 'No email'}</small></div></td>
                           <td style={{ textAlign: 'center' }}><span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--primary-600)' }}>{r.document_requests?.length || 0}</span></td>
                           <td>{calculateAge(r.date_of_birth)} yrs / {r.gender}</td>
-                          <td>{r.qr_code_url ? <span className="badge badge-success"><QrCode size={14} /> Yes</span> : <span className="badge badge-warning">Pending</span>}</td>
+                          
+                          <td>
+                            {r.account_status === 'Pending' ? (
+                              <span className="badge badge-warning">Pending Approval</span>
+                            ) : (
+                              <span className="badge badge-success" style={{ background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' }}>
+                                <QrCode size={12} style={{ marginRight: '4px', display: 'inline' }}/> Ready
+                              </span>
+                            )}
+                          </td>
+                          
                           <td>
                             <div className="action-buttons">
-                              <button className="btn-icon" onClick={() => setViewingResident(r)} title="View Details"><Eye size={18} /></button>
-                              {user?.role !== 'view_only' && (
+                              <button className="btn-icon" onClick={() => handleViewResident(r)} title="View Details"><Eye size={18} /></button>
+                              
+                              {/* HIDE ACTIONS IF VIEW ONLY */}
+                              {canEdit ? (
                                 <>
                                   {viewMode === 'pending' ? (
                                     <>
@@ -579,8 +671,10 @@ const ResidentsPage = () => {
                                     </>
                                   ) : viewMode === 'active' ? (
                                     <>
-                                      <button className="btn-icon" onClick={() => handleDownloadQR(r)} title="Download QR"><Download size={18} /></button>
-                                      <button className="btn-icon" onClick={() => handleResendQR(r)} disabled={!r.email} title="Email QR"><Mail size={18} /></button>
+                                      <button className="btn-icon" onClick={() => handleDownloadQROnly(r)} title="Download QR Code Only"><QrCode size={18} /></button>
+                                      <button className="btn-icon" onClick={() => handleDownloadIDCard(r)} title="Download Full ID Card"><Download size={18} /></button>
+                                      <button className="btn-icon" onClick={() => handleResendCredentials(r)} disabled={!r.email} title="Resend Login Credentials"><Mail size={18} /></button>
+                                      
                                       <button className="btn-icon" onClick={() => handleEdit(r)} title="Edit Resident"><Edit2 size={18} /></button>
                                       {user?.role === 'admin' && (
                                         <button className="btn-icon btn-danger" onClick={() => handleArchiveResident(r)} title="Archive Resident"><Archive size={18} /></button>
@@ -590,6 +684,8 @@ const ResidentsPage = () => {
                                     <button className="btn-icon btn-primary" onClick={() => handleRestoreResident(r)} title="Restore Resident"><RefreshCw size={18} /></button>
                                   )}
                                 </>
+                              ) : (
+                                <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic', marginLeft: '5px' }}>No Access</span>
                               )}
                             </div>
                           </td>
@@ -632,12 +728,15 @@ const ResidentsPage = () => {
                     </div>
                     <div style={{ marginBottom: '12px', fontSize: '0.9rem', display: 'flex', justifyContent: 'space-between' }}>
                        <span><strong>Docs:</strong> <span style={{color:'var(--primary-600)', fontWeight:'bold'}}>{r.document_requests?.length || 0}</span></span>
-                       <span><strong>QR:</strong> {r.qr_code_url ? <span className="badge badge-success" style={{fontSize:'0.7rem'}}><QrCode size={12}/> Yes</span> : <span className="badge badge-warning" style={{fontSize:'0.7rem'}}>Pending</span>}</span>
+                       
+                       <span><strong>QR:</strong> {r.account_status === 'Pending' ? <span className="badge badge-warning" style={{fontSize:'0.7rem'}}>Pending</span> : <span className="badge badge-success" style={{fontSize:'0.7rem', background: '#dcfce7', color: '#166534'}}><QrCode size={12}/> Ready</span>}</span>
                     </div>
 
                     <div className="action-buttons" style={{ borderTop: '1px solid var(--border)', paddingTop: '12px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                      <button className="btn-icon" onClick={() => setViewingResident(r)}><Eye size={18} /></button>
-                      {user?.role !== 'view_only' && (
+                      <button className="btn-icon" onClick={() => handleViewResident(r)}><Eye size={18} /></button>
+                      
+                      {/* HIDE ACTIONS IF VIEW ONLY */}
+                      {canEdit ? (
                         <>
                           {viewMode === 'pending' ? (
                             <>
@@ -646,8 +745,9 @@ const ResidentsPage = () => {
                             </>
                           ) : viewMode === 'active' ? (
                             <>
-                              <button className="btn-icon" onClick={() => handleDownloadQR(r)}><Download size={18} /></button>
-                              <button className="btn-icon" onClick={() => handleResendQR(r)} disabled={!r.email}><Mail size={18} /></button>
+                              <button className="btn-icon" onClick={() => handleDownloadQROnly(r)} title="Download QR Code"><QrCode size={18} /></button>
+                              <button className="btn-icon" onClick={() => handleDownloadIDCard(r)} title="Download ID Card"><Download size={18} /></button>
+                              <button className="btn-icon" onClick={() => handleResendCredentials(r)} disabled={!r.email} title="Resend Credentials"><Mail size={18} /></button>
                               <button className="btn-icon" onClick={() => handleEdit(r)}><Edit2 size={18} /></button>
                               {user?.role === 'admin' && (
                                 <button className="btn-icon btn-danger" onClick={() => handleArchiveResident(r)} title="Archive Resident"><Archive size={18} /></button>
@@ -657,6 +757,8 @@ const ResidentsPage = () => {
                             <button className="btn-icon btn-primary" onClick={() => handleRestoreResident(r)} title="Restore Resident"><RefreshCw size={18} /></button>
                           )}
                         </>
+                      ) : (
+                        <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic', marginLeft: '5px', alignSelf: 'center' }}>No Access</span>
                       )}
                     </div>
                   </div>
@@ -723,19 +825,19 @@ const ResidentsPage = () => {
         <ResidentViewModal 
           resident={viewingResident} 
           onClose={() => setViewingResident(null)} 
-          onEdit={() => { 
+          onEdit={canEdit ? () => { 
             setViewingResident(null); 
             handleEdit(viewingResident); 
-          }} 
-          onApprove={(res) => {
+          } : null} 
+          onApprove={canEdit ? (res) => {
             setViewingResident(null);
             handleApprove(res);
-          }}
-          onReject={handleReject}
+          } : null}
+          onReject={canEdit ? handleReject : null}
           userRole={user?.role} 
         />
         
-        {showModal && (
+        {showModal && canEdit && (
           <ResidentFormModal 
             editingResident={editingResident} 
             formData={formData} 
