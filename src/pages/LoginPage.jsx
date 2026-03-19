@@ -215,7 +215,7 @@ const LoginPage = () => {
               style={{ width: '80px', height: '80px', objectFit: 'contain' }} 
             />
           </div>
-          <h1 className="login-title">QR-Integrated BDIS</h1>
+          <h1 className="login-title">Barangay Services Management System</h1>
           <h2 className="login-title-2">Barangay Dos in City of Calamba</h2>
           <p className="login-subtitle">Sign in to your account to access into the system</p>
         </div>

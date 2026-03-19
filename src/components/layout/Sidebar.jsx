@@ -166,7 +166,7 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
     },
     {
       icon: <Scale size={20} />,
-      label: 'Blotter',
+      label: 'Incident & Blotter Reports',
       path: '/blotter',
       roles: ['admin', 'secretary', 'barangay_investigator', 'barangay_captain', 'view_only'],
       badge: counts.new_blotters > 0 ? { text: counts.new_blotters, color: '#fee2e2', textColor: '#b91c1c' } : null 
