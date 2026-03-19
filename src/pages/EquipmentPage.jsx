@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { toast } from 'react-hot-toast';
 import emailjs from '@emailjs/browser'; 
-import { Plus, Search, Package, CheckCircle, AlertTriangle, Edit2, Filter, Wrench, Trash2, AlertOctagon, Loader2, Bell, XCircle, Mail } from 'lucide-react';
+import { Plus, Search, Package, CheckCircle, AlertTriangle, Edit2, Filter, Wrench, Trash2, AlertOctagon, Loader2, Bell, XCircle, Mail, PackageCheck } from 'lucide-react';
 
 // --- IMPORT AUTH & PAGINATION ---
 import { useAuth } from '../context/AuthContext';
@@ -95,9 +95,12 @@ const EquipmentPage = () => {
         throw new Error(`Insufficient stock. Only ${item?.available_quantity || 0} left.`);
       }
 
+      // Deduct from inventory since it's reserved for them now
       const newQty = item.available_quantity - record.quantity;
       await supabase.from('equipment_inventory').update({ available_quantity: newQty }).eq('id', record.equipment_id);
-      await supabase.from('borrowing_records').update({ status: 'Released' }).eq('id', record.id);
+      
+      // Update status to Ready to Pickup
+      await supabase.from('borrowing_records').update({ status: 'Ready to Pickup' }).eq('id', record.id);
 
       const contactInfo = getResidentEmail(record.borrower_name);
       if (contactInfo && contactInfo.email) {
@@ -107,19 +110,36 @@ const EquipmentPage = () => {
             to_email: contactInfo.email,
             to_name: contactInfo.first_name,
             barangay_name: "Dos, Calamba",
-            email_subject_message: `Good news! Your equipment request for ${record.quantity}x ${record.equipment_inventory.item_name} has been APPROVED. You may now proceed to the Barangay Hall to pick it up.`,
-            otp_code: `Return by: ${new Date(record.expected_return).toLocaleDateString()}` 
+            email_subject_message: `Good news! Your equipment request for ${record.quantity}x ${record.equipment_inventory.item_name} has been APPROVED. You may now proceed to the Barangay Hall to pick it up. Please return it by: ${new Date(record.expected_return).toLocaleDateString()}.`,
+            otp_code: "READY TO PICKUP" 
           },
           'pfTdQReY0nVV3CjnY'    
         );
-        toast.success('Approved and email sent!', { id: toastId });
+        toast.success('Approved! Set to Ready for Pickup.', { id: toastId });
       } else {
-        toast.success('Approved! (Resident email not found)', { id: toastId });
+        toast.success('Approved! Set to Ready for Pickup. (No email found)', { id: toastId });
       }
 
       fetchData();
     } catch (error) { toast.error(error.message, { id: toastId }); } 
     finally { setIsProcessing(false); }
+  };
+
+  // NEW: RELEASE EQUIPMENT (When resident actually takes it from Barangay Hall)
+  const handleReleaseEquipment = async (record) => {
+    if (!canEdit || isProcessing) return;
+    setIsProcessing(true);
+    const toastId = toast.loading('Marking as Released...');
+
+    try {
+      await supabase.from('borrowing_records').update({ status: 'Released' }).eq('id', record.id);
+      toast.success('Equipment physically released to resident!', { id: toastId });
+      fetchData();
+    } catch (error) {
+      toast.error('Failed to mark as released.', { id: toastId });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const openRejectModal = (record) => {
@@ -143,10 +163,11 @@ const EquipmentPage = () => {
         await emailjs.send(
           'service_178ko1n', 'template_qzkqkvf', 
           {
-            to_email: contactInfo.email, to_name: contactInfo.first_name,
+            to_email: contactInfo.email, 
+            to_name: contactInfo.first_name,
             barangay_name: "Dos, Calamba",
-            email_subject_message: `We are sorry, but your equipment request for ${selectedRecord.quantity}x ${selectedRecord.equipment_inventory?.item_name || 'equipment'} has been REJECTED. Please see the Admin's reason below. If you have questions, please contact the Barangay Hall.`,
-            otp_code: rejectReason 
+            email_subject_message: `We are sorry, but your equipment request for ${selectedRecord.quantity}x ${selectedRecord.equipment_inventory?.item_name || 'equipment'} has been REJECTED. Reason from Admin: "${rejectReason}". If you have questions, please contact the Barangay Hall.`,
+            otp_code: "REJECTED" 
           }, 'pfTdQReY0nVV3CjnY'    
         );
         toast.success('Rejected and email sent.', { id: toastId });
@@ -157,6 +178,38 @@ const EquipmentPage = () => {
       setIsRejectModalOpen(false); fetchData();
     } catch (error) { toast.error('Failed to reject request.', { id: toastId }); } 
     finally { setIsProcessing(false); }
+  };
+
+  const handleSendOverdueEmail = async (record) => {
+    if (!canEdit || isProcessing) return;
+    
+    const contactInfo = getResidentEmail(record.borrower_name);
+    if (!contactInfo || !contactInfo.email) {
+      toast.error('Resident email not found. Cannot send reminder.');
+      return;
+    }
+
+    setIsProcessing(true);
+    const toastId = toast.loading('Sending overdue notice...');
+
+    try {
+      await emailjs.send(
+        'service_178ko1n', 'template_qzkqkvf', 
+        {
+          to_email: contactInfo.email,
+          to_name: contactInfo.first_name,
+          barangay_name: "Dos, Calamba",
+          email_subject_message: `Ito ay isang pormal na paalala na ang iyong hiniram na ${record.quantity}x ${record.equipment_inventory?.item_name} noong ${new Date(record.borrow_date).toLocaleDateString()} ay OVERDUE na. Mangyari lamang na ibalik ito sa lalong madaling panahon sa Barangay Hall.`,
+          otp_code: "OVERDUE" 
+        },
+        'pfTdQReY0nVV3CjnY'    
+      );
+      toast.success('Overdue notice sent!', { id: toastId });
+    } catch (error) {
+      toast.error('Failed to send notice.', { id: toastId });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleBorrowSubmit = async (e) => {
@@ -171,6 +224,7 @@ const EquipmentPage = () => {
         setIsProcessing(false); return;
       }
 
+      // Direct dispatch assumes they are physically taking it right now (Released)
       const { error: insertError } = await supabase.from('borrowing_records').insert([formData]);
       if (insertError) throw insertError;
 
@@ -305,6 +359,7 @@ const EquipmentPage = () => {
       matchesStatus = record.display_status === 'Pending';
     } else {
       if (record.display_status === 'Pending') return false; 
+      if (statusFilter === 'Ready to Pickup') matchesStatus = record.display_status === 'Ready to Pickup';
       if (statusFilter === 'Released') matchesStatus = record.display_status === 'Released';
       if (statusFilter === 'Overdue') matchesStatus = record.display_status === 'Overdue';
       if (statusFilter === 'Returned') matchesStatus = record.display_status.includes('Returned');
@@ -369,6 +424,7 @@ const EquipmentPage = () => {
               <Filter size={20} color="var(--text-tertiary)" style={{ marginRight: '0.5rem' }} />
               <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', cursor: 'pointer', color: 'var(--text-primary)', fontWeight: '500' }}>
                 <option value="All">All Statuses</option>
+                <option value="Ready to Pickup">Ready to Pickup</option>
                 <option value="Released">Currently Released</option>
                 <option value="Overdue">Overdue Items</option>
                 <option value="Returned">Returned</option>
@@ -451,7 +507,7 @@ const EquipmentPage = () => {
                           {/* HIDE APPROVE/REJECT IF VIEW ONLY */}
                           {canEdit ? (
                             <>
-                              <button onClick={() => handleApproveRequest(record)} title="Approve & Send Email" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', background: '#d1fae5', color: '#047857', border: '1px solid #a7f3d0', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s' }}><CheckCircle size={18} /></button>
+                              <button onClick={() => handleApproveRequest(record)} title="Approve (Ready to Pickup)" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', background: '#d1fae5', color: '#047857', border: '1px solid #a7f3d0', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s' }}><CheckCircle size={18} /></button>
                               <button onClick={() => openRejectModal(record)} title="Reject Request" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', background: '#fee2e2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s' }}><XCircle size={18} /></button>
                             </>
                           ) : (
@@ -490,8 +546,8 @@ const EquipmentPage = () => {
                         <td style={{ padding: '1rem' }}>
                           <span style={{ 
                             padding: '4px 8px', borderRadius: '999px', fontSize: '0.85rem', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px',
-                            background: record.display_status === 'Released' ? '#fef3c7' : record.display_status.includes('Returned') ? '#d1fae5' : '#fee2e2',
-                            color: record.display_status === 'Released' ? '#b45309' : record.display_status.includes('Returned') ? '#047857' : '#b91c1c'
+                            background: record.display_status === 'Ready to Pickup' ? '#e0e7ff' : record.display_status === 'Released' ? '#fef3c7' : record.display_status.includes('Returned') ? '#d1fae5' : '#fee2e2',
+                            color: record.display_status === 'Ready to Pickup' ? '#4338ca' : record.display_status === 'Released' ? '#b45309' : record.display_status.includes('Returned') ? '#047857' : '#b91c1c'
                           }}>
                             {record.display_status === 'Overdue' && <AlertTriangle size={12} />}
                             {record.display_status}
@@ -501,11 +557,28 @@ const EquipmentPage = () => {
                           {record.damage_notes || '--'}
                         </td>
                         <td style={{ padding: '1rem' }}>
-                          {/* HIDE RETURN BUTTON IF VIEW ONLY */}
+                          {/* HIDE ACTION BUTTONS IF VIEW ONLY */}
                           {canEdit ? (
-                            (record.display_status === 'Released' || record.display_status === 'Overdue') && (
-                              <button onClick={() => openReturnModal(record)} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: '#10b981', color: 'white', border: 'none', padding: '0.5rem 0.75rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold' }}><CheckCircle size={14} /> Return</button>
-                            )
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              
+                              {/* NEW RELEASE BUTTON (If Ready to Pickup) */}
+                              {record.display_status === 'Ready to Pickup' && (
+                                <button onClick={() => handleReleaseEquipment(record)} disabled={isProcessing} title="Mark as taken by resident" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: '#3b82f6', color: 'white', border: 'none', padding: '0.5rem 0.75rem', borderRadius: '6px', cursor: isProcessing ? 'not-allowed' : 'pointer', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                                  <PackageCheck size={14} /> Release
+                                </button>
+                              )}
+
+                              {(record.display_status === 'Released' || record.display_status === 'Overdue') && (
+                                <button onClick={() => openReturnModal(record)} title="Process Return" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: '#10b981', color: 'white', border: 'none', padding: '0.5rem 0.75rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold' }}><CheckCircle size={14} /> Return</button>
+                              )}
+                              
+                              {/* OVERDUE BUTTON */}
+                              {record.display_status === 'Overdue' && (
+                                <button onClick={() => handleSendOverdueEmail(record)} disabled={isProcessing} title="Send Email Reminder" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: '#ef4444', color: 'white', border: 'none', padding: '0.5rem 0.75rem', borderRadius: '6px', cursor: isProcessing ? 'not-allowed' : 'pointer', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                                  <Mail size={14} /> Remind
+                                </button>
+                              )}
+                            </div>
                           ) : (
                             <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic' }}>No Access</span>
                           )}
