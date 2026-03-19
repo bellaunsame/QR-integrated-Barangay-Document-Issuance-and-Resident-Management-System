@@ -58,15 +58,11 @@ const DashboardPage = () => {
   const isBoss = user?.role === 'admin' || user?.role === 'barangay_captain';
   const isInvestigator = user?.role === 'barangay_investigator';
   
-  // Rule definitions:
   const showGeneralStats = !isInvestigator; 
   const showDocs = isBoss || hasPermission('process_documents');
   const showBlotter = isBoss || hasPermission('manage_blotter');
   const showEquipment = isBoss || hasPermission('manage_equipment');
-  
-  // ---> FIXED: Now strictly checks if they are allowed to manage news! <---
   const showNews = isBoss || hasPermission('manage_news'); 
-  
   const showManageResidentsLink = isBoss || (!isInvestigator && hasPermission('manage_residents'));
 
   useEffect(() => {
@@ -286,8 +282,9 @@ const DashboardPage = () => {
               <p>No document requests found for this period.</p>
             </div>
           ) : (
-            <div style={{ width: '100%', height: 350 }}>
-              <ResponsiveContainer width="100%" height="100%">
+            <div style={{ width: '100%', height: '350px' }}>
+              {/* THE FIX: width="99%" and strict height */}
+              <ResponsiveContainer width="99%" height={350}>
                 <BarChart data={docChartData} margin={{ top: 35, right: 30, left: 20, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                   <XAxis dataKey="name" tick={{ fill: '#334155', fontSize: 14, fontWeight: 600 }} tickLine={false} axisLine={{ stroke: 'var(--border)' }} />
@@ -327,8 +324,9 @@ const DashboardPage = () => {
                   <p>No blotter records found for this period.</p>
                 </div>
               ) : (
-                <div style={{ width: '100%', height: 300 }}>
-                  <ResponsiveContainer width="100%" height="100%">
+                <div style={{ width: '100%', height: '300px' }}>
+                  {/* THE FIX: width="99%" and strict height */}
+                  <ResponsiveContainer width="99%" height={300}>
                     <BarChart data={blotterChartData} margin={{ top: 35, right: 30, left: 20, bottom: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                       <XAxis dataKey="name" tick={{ fill: '#334155', fontSize: 14, fontWeight: 600 }} tickLine={false} axisLine={{ stroke: 'var(--border)' }} />
