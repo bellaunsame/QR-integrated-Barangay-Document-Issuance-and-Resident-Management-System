@@ -195,7 +195,7 @@ const AnnouncementsPage = () => {
                 <tr>
                   <th>Status</th>
                   <th>Title & Content</th>
-                  <th>Reach / Engagement</th> {/* Updated Title */}
+                  <th>Reach / Engagement</th>
                   <th>Actions</th>
                 </tr>
               </thead>

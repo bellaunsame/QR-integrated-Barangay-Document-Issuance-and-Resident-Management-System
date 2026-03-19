@@ -1,259 +1,313 @@
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Plus, ChevronLeft, Clock, ShieldAlert, Paperclip, Loader2 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
-import toast from 'react-hot-toast';
+import { toast } from 'react-hot-toast';
+import { 
+  AlertCircle, Gavel, Send, Clock, CheckCircle, XCircle, 
+  Info, ChevronLeft, User, MapPin, Calendar, FileText, List 
+} from 'lucide-react';
 
 const ResidentBlotterTab = ({ user }) => {
-  const [view, setView] = useState('list'); // 'list' or 'form'
-  const [myReports, setMyReports] = useState([]);
+  const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showForm, setShowForm] = useState(false);
 
-  // Form State matching the Admin BlotterPage schema
   const [formData, setFormData] = useState({
-    incident_type: 'Property Dispute',
-    incident_date: '',
-    location: '', 
+    report_type: 'Incident', 
     respondent_name: '',
+    incident_type: '',
+    incident_date: '',
+    location: '',
     narrative: '',
-    evidence_url: ''
+    is_agreed: false
   });
 
-  // 1. Fetch Resident's Reports
+  useEffect(() => {
+    fetchMyReports();
+  }, [user]);
+
   const fetchMyReports = async () => {
-    setLoading(true);
     try {
+      setLoading(true);
+      const fullName = `${user.first_name} ${user.last_name}`;
+      
       const { data, error } = await supabase
         .from('blotter_records')
         .select('*')
-        .eq('complainant_id', user.id) // Crucial: Only loads THIS resident's reports
-        .order('incident_date', { ascending: false });
+        .or(`complainant_name.ilike.%${fullName}%,respondent_name.ilike.%${fullName}%`)
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setMyReports(data || []);
-    } catch (error) {
-      console.error("Error fetching reports:", error);
+      setReports(data || []);
+    } catch (err) {
+      console.error("Fetch Error:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    if (user) fetchMyReports();
-  }, [user]);
-
   const handleInputChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
-  // 2. Handle Evidence Upload
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    setUploading(true);
-    const fileExt = file.name.split('.').pop();
-    const fileName = `Resident-${Date.now()}-${Math.random()}.${fileExt}`;
-
-    try {
-      const { data, error } = await supabase.storage
-        .from('blotter_evidence')
-        .upload(fileName, file);
-
-      if (error) throw error;
-
-      const { data: publicUrlData } = supabase.storage
-        .from('blotter_evidence')
-        .getPublicUrl(fileName);
-
-      setFormData({ ...formData, evidence_url: publicUrlData.publicUrl });
-      toast.success('Evidence attached successfully!');
-    } catch (error) {
-      toast.error('Failed to upload file.');
-    } finally {
-      setUploading(false);
+    const { name, value, type, checked } = e.target;
+    
+    if (name === 'report_type') {
+      setFormData({ ...formData, report_type: value, incident_type: '' });
+    } else {
+      setFormData({ ...formData, [name]: type === 'checkbox' ? checked : value });
     }
   };
 
-  // 3. Submit New Blotter Report
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setSubmitting(true);
+    if (!formData.is_agreed) {
+      return toast.error("Please confirm that the information is correct.");
+    }
+
+    setIsSubmitting(true);
+    const toastId = toast.loading("Submitting report...");
 
     try {
-      // Auto-generate Case Number matching Admin logic
-      const caseNumber = `C-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const prefix = formData.report_type === 'Incident' ? 'INC' : 'BLT';
+      const caseNum = `${prefix}-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-      const payload = {
-        case_number: caseNumber,
-        complainant_id: user.id, // Links to resident
+      const { error } = await supabase.from('blotter_records').insert([{
+        case_number: caseNum,
         complainant_name: `${user.first_name} ${user.last_name}`,
-        respondent_name: formData.respondent_name || 'Unknown',
+        respondent_name: formData.respondent_name,
         incident_type: formData.incident_type,
         incident_date: formData.incident_date,
-        location: formData.location, // <-- FIXED: Location sent separately
-        narrative: formData.narrative, // <-- FIXED: Narrative sent separately
-        evidence_url: formData.evidence_url,
-        status: 'Active' 
-      };
-
-      const { error } = await supabase.from('blotter_records').insert([payload]);
+        location: formData.location,
+        narrative: formData.narrative,
+        report_type: formData.report_type,
+        status: 'Pending' 
+      }]);
 
       if (error) throw error;
 
-      toast.success("Incident report filed successfully! Your Case No is " + caseNumber);
-      setView('list');
-      fetchMyReports(); // Refresh the list
-      
-      // Reset form
-      setFormData({
-        incident_type: 'Property Dispute',
-        incident_date: '',
-        location: '',
-        respondent_name: '',
-        narrative: '',
-        evidence_url: ''
-      });
-
-    } catch (error) {
-      console.error("Submission Error:", error);
-      toast.error("Failed to submit report.");
+      toast.success("Report submitted to Barangay Staff!", { id: toastId });
+      setFormData({ report_type: 'Incident', respondent_name: '', incident_type: '', incident_date: '', location: '', narrative: '', is_agreed: false });
+      setShowForm(false);
+      fetchMyReports();
+    } catch (err) {
+      toast.error(err.message, { id: toastId });
     } finally {
-      setSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
-  const getStatusColor = (status) => {
-    const s = status?.toLowerCase() || '';
-    if (s.includes('settled') || s.includes('resolved')) return '#10b981'; // Green
-    if (s.includes('active') || s.includes('ongoing')) return '#f59e0b'; // Orange
-    if (s.includes('escalated') || s.includes('dismissed')) return '#ef4444'; // Red
-    return '#3b82f6'; // Blue fallback
+  // Reusable input style
+  const inputStyle = {
+    width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', 
+    backgroundColor: '#f8fafc', fontSize: '0.95rem', outline: 'none', transition: 'border-color 0.2s'
   };
 
   return (
-    <div className="animation-fade-in" style={{ background: '#fff', padding: '2rem', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', minHeight: '60vh' }}>
-      
-      {view === 'list' ? (
+    <div className="animation-fade-in" style={{ background: '#fff', padding: '2rem', borderRadius: '12px', minHeight: '60vh' }}>
+      {!showForm ? (
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
             <div>
-              <h2 style={{ color: '#1e293b', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <AlertTriangle size={24} color="#ef4444" /> Incident & Blotter Reports
-              </h2>
-              <p style={{ color: '#64748b', margin: 0, fontSize: '0.95rem' }}>Confidential filing of complaints and community concerns.</p>
+              <h2 style={{ color: '#1e293b', margin: '0 0 5px 0' }}>Incident & Blotter History</h2>
+              <p style={{ color: '#64748b', margin: 0, fontSize: '0.95rem' }}>View the status of your reported cases under the Katarungang Pambarangay.</p>
             </div>
-            <button onClick={() => setView('form')} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '10px 15px', borderRadius: '8px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', transition: 'background 0.2s' }}>
-              <Plus size={18} /> File New Report
+            <button onClick={() => setShowForm(true)} className="btn btn-primary" style={{ display: 'flex', gap: '8px', background: '#ef4444', borderColor: '#ef4444' }}>
+              <Send size={18} /> File a Report
             </button>
           </div>
 
-          <h3 style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '10px', color: '#334155' }}>My Filed Reports</h3>
-          
           {loading ? (
-             <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}><div className="spinner" style={{ margin: '0 auto 10px auto' }}></div>Loading your reports...</div>
-          ) : myReports.length === 0 ? (
-            <div style={{ background: '#f8fafc', padding: '40px 20px', borderRadius: '12px', textAlign: 'center', border: '2px dashed #cbd5e1' }}>
-              <ShieldAlert size={48} color="#94a3b8" style={{ marginBottom: '15px', opacity: 0.5 }} />
-              <h3 style={{ color: '#475569', margin: '0 0 10px 0' }}>No Reports Filed</h3>
-              <p style={{ color: '#64748b', margin: '0 0 20px 0' }}>You have not filed any blotters or incident reports.</p>
+            <div style={{ textAlign: 'center', padding: '3rem' }}><div className="spinner"></div></div>
+          ) : reports.length === 0 ? (
+            <div style={{ background: '#f8fafc', padding: '60px 20px', borderRadius: '12px', textAlign: 'center', border: '2px dashed #cbd5e1' }}>
+              <AlertCircle size={48} color="#94a3b8" style={{ marginBottom: '15px', opacity: 0.5 }} />
+              <h3 style={{ color: '#475569' }}>No Reports Found</h3>
+              <p style={{ color: '#64748b' }}>You haven't filed any incidents or blotters yet.</p>
             </div>
           ) : (
-            <div style={{ display: 'grid', gap: '15px' }}>
-              {myReports.map((report) => (
-                <div key={report.id} style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '15px', background: '#fff', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <strong style={{ fontSize: '1.1rem', color: '#0f172a', display: 'block' }}>{report.incident_type}</strong>
-                      <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Case No: <strong>{report.case_number}</strong> | Date: {new Date(report.incident_date).toLocaleDateString()}</span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '20px' }}>
+              {reports.map((report) => {
+                const isRespondent = report.respondent_name.toLowerCase().includes(user.last_name.toLowerCase());
+
+                return (
+                <div key={report.id} style={{ border: isRespondent ? '2px solid #ef4444' : '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', background: isRespondent ? '#fef2f2' : '#fff' }}>
+                  {isRespondent && (
+                    <div style={{ background: '#ef4444', color: 'white', padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', display: 'inline-block', marginBottom: '10px' }}>
+                      ⚠️ CASE FILED AGAINST YOU
                     </div>
-                    <span style={{ 
-                      background: `${getStatusColor(report.status)}20`, 
-                      color: getStatusColor(report.status), 
-                      padding: '4px 10px', 
-                      borderRadius: '12px', 
-                      fontSize: '0.8rem', 
-                      fontWeight: 'bold',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '5px'
-                    }}>
-                      <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: getStatusColor(report.status) }}></div>
-                      {report.status || 'Active'}
+                  )}
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: '800', padding: '2px 8px', borderRadius: '4px', background: report.report_type === 'Blotter' ? '#fee2e2' : '#fef3c7', color: report.report_type === 'Blotter' ? '#b91c1c' : '#b45309' }}>
+                      {report.report_type?.toUpperCase() || 'INCIDENT'}
+                    </span>
+                    <span className={`badge ${report.status === 'Settled' ? 'badge-success' : report.status === 'Pending' ? 'badge-warning' : 'badge-info'}`}>
+                      {report.status}
                     </span>
                   </div>
-                  <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', fontSize: '0.9rem', color: '#475569' }}>
-                    <strong>Respondent:</strong> {report.respondent_name || 'Unknown'} 
+
+                  <h3 style={{ margin: '0 0 5px 0', fontSize: '1.1rem' }}>{report.case_number}</h3>
+                  <p style={{ fontSize: '0.9rem', color: '#475569', marginBottom: '15px' }}>
+                    <strong>{isRespondent ? 'Complainant:' : 'Against:'}</strong> {isRespondent ? report.complainant_name : report.respondent_name}
+                  </p>
+
+                  <div style={{ fontSize: '0.85rem', color: '#64748b', background: isRespondent ? '#fee2e2' : '#f8fafc', padding: '10px', borderRadius: '8px' }}>
+                    <p style={{ margin: '0 0 5px 0' }}><strong>Type:</strong> {report.incident_type}</p>
+                    <p style={{ margin: '0 0 5px 0' }}><strong>Date:</strong> {new Date(report.incident_date).toLocaleDateString()}</p>
+                    <p style={{ margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><strong>Details:</strong> {report.narrative}</p>
+
+                    {report.summon_schedule && (
+                       <div style={{ margin: '10px 0 0 0', padding: '10px', background: '#fff', border: '1px solid #ef4444', borderRadius: '6px', color: '#b91c1c' }}>
+                         <strong><Gavel size={14}/> Hearing Schedule:</strong><br/>
+                         {new Date(report.summon_schedule).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short'})}
+                       </div>
+                    )}
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           )}
         </>
       ) : (
-        <>
-          {/* FORM VIEW */}
-          <button onClick={() => setView('list')} style={{ marginBottom: '20px', background: 'transparent', border: 'none', padding: '5px 0', color: '#64748b', display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-            <ChevronLeft size={18} /> Back to My Reports
+        <div style={{ maxWidth: '800px', margin: '0 auto', animation: 'fadeIn 0.3s ease' }}>
+          
+          <button 
+            onClick={() => setShowForm(false)} 
+            style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#475569', padding: '8px 16px', borderRadius: '20px', cursor: 'pointer', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '600', transition: 'all 0.2s' }}
+            onMouseOver={(e) => e.currentTarget.style.background = '#e2e8f0'}
+            onMouseOut={(e) => e.currentTarget.style.background = '#f1f5f9'}
+          >
+             <ChevronLeft size={16} /> Back to History
           </button>
-
-          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
-            <h3 style={{ color: '#b91c1c', margin: '0 0 5px 0' }}>Confidentiality Notice</h3>
-            <p style={{ margin: 0, color: '#991b1b', fontSize: '0.9rem' }}>Information submitted here goes directly to the Barangay Administration. False reporting is punishable by law.</p>
-          </div>
-
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-              <label style={{ fontWeight: 'bold', color: '#334155' }}>Type of Incident *</label>
-              <select name="incident_type" value={formData.incident_type} onChange={handleInputChange} required style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                <option value="Theft">Theft / Robbery</option>
-                <option value="Physical Altercation">Physical Altercation</option>
-                <option value="Property Dispute">Property Dispute</option>
-                <option value="Noise Complaint">Noise Complaint</option>
-                <option value="Domestic Dispute">Domestic / Family Dispute</option>
-                <option value="Other">Other</option>
-              </select>
+          
+          <div style={{ background: '#ffffff', padding: '2.5rem', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)' }}>
+            
+            <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '1.5rem', marginBottom: '2rem' }}>
+              <h2 style={{ marginTop: 0, margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b', fontSize: '1.8rem' }}>
+                <Send size={28} color="#ef4444" /> File Official Report
+              </h2>
+              <p style={{ margin: 0, color: '#64748b' }}>Please complete the form below. False reporting is punishable by law.</p>
             </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                <label style={{ fontWeight: 'bold', color: '#334155' }}>Date & Time of Incident *</label>
-                <input type="datetime-local" name="incident_date" value={formData.incident_date} onChange={handleInputChange} required style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                <label style={{ fontWeight: 'bold', color: '#334155' }}>Location of Incident *</label>
-                <input type="text" name="location" value={formData.location} onChange={handleInputChange} placeholder="e.g., Front of Blk 2 Lot 4" required style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+            
+            {/* Legal Disclaimer Box */}
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '16px', borderRadius: '12px', marginBottom: '25px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+              <Info size={24} color="#2563eb" style={{ flexShrink: 0 }} />
+              <div style={{ fontSize: '0.9rem', color: '#1e3a8a', lineHeight: '1.5' }}>
+                <strong>Katarungang Pambarangay Notice:</strong> Serious crimes (e.g., offenses punishable by imprisonment exceeding one year, or a fine exceeding PHP 5,000, violence against women, and drug offenses) must be reported directly to the Philippine National Police (PNP).
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-              <label style={{ fontWeight: 'bold', color: '#334155' }}>Name of Respondent (Person being reported)</label>
-              <input type="text" name="respondent_name" value={formData.respondent_name} onChange={handleInputChange} placeholder="Leave blank if unknown" style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
-            </div>
+            <form onSubmit={handleSubmit}>
+              
+              {/* SECTION: REPORT TYPE */}
+              <div style={{ marginBottom: '2rem' }}>
+                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '12px', color: '#334155', fontSize: '1.1rem' }}>1. What type of report are you filing? *</label>
+                <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+                  <label style={{ flex: 1, minWidth: '280px', padding: '20px', borderRadius: '12px', border: formData.report_type === 'Incident' ? '2px solid #f59e0b' : '1px solid #cbd5e1', background: formData.report_type === 'Incident' ? '#fffbeb' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: '12px', transition: 'all 0.2s', boxShadow: formData.report_type === 'Incident' ? '0 4px 6px -1px rgba(245, 158, 11, 0.1)' : 'none' }}>
+                    <input type="radio" name="report_type" value="Incident" checked={formData.report_type === 'Incident'} onChange={handleInputChange} style={{ marginTop: '5px', accentColor: '#f59e0b', width: '18px', height: '18px' }} />
+                    <div>
+                      <div style={{ fontWeight: 'bold', color: '#b45309', fontSize: '1.1rem', marginBottom: '4px' }}>Record of Occurrence</div>
+                      <div style={{ fontSize: '0.85rem', color: '#d97706', lineHeight: '1.4' }}>Minor disputes, local ordinance violations, or for insurance purposes (Not for formal charges).</div>
+                    </div>
+                  </label>
+                  
+                  <label style={{ flex: 1, minWidth: '280px', padding: '20px', borderRadius: '12px', border: formData.report_type === 'Blotter' ? '2px solid #ef4444' : '1px solid #cbd5e1', background: formData.report_type === 'Blotter' ? '#fef2f2' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: '12px', transition: 'all 0.2s', boxShadow: formData.report_type === 'Blotter' ? '0 4px 6px -1px rgba(239, 68, 68, 0.1)' : 'none' }}>
+                    <input type="radio" name="report_type" value="Blotter" checked={formData.report_type === 'Blotter'} onChange={handleInputChange} style={{ marginTop: '5px', accentColor: '#ef4444', width: '18px', height: '18px' }} />
+                    <div>
+                      <div style={{ fontWeight: 'bold', color: '#b91c1c', fontSize: '1.1rem', marginBottom: '4px' }}>Formal Complaint (Blotter)</div>
+                      <div style={{ fontSize: '0.85rem', color: '#ef4444', lineHeight: '1.4' }}>Triggers mandatory barangay conciliation/mediation via Lupon Tagapamayapa.</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-              <label style={{ fontWeight: 'bold', color: '#334155' }}>Narrative / Details *</label>
-              <textarea name="narrative" value={formData.narrative} onChange={handleInputChange} placeholder="Describe exactly what happened..." rows="5" required style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', resize: 'vertical' }}></textarea>
-            </div>
+              <hr style={{ border: 0, borderTop: '1px solid #e2e8f0', margin: '2rem 0' }} />
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-              <label style={{ fontWeight: 'bold', color: '#334155' }}>Attach Evidence (Optional)</label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '10px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '8px', cursor: 'pointer', justifyContent: 'center', color: '#64748b' }}>
-                {uploading ? <Loader2 size={18} className="animate-spin" /> : <Paperclip size={18} />}
-                {uploading ? 'Uploading...' : (formData.evidence_url ? 'Evidence Attached ✓' : 'Click to Upload Photo or PDF')}
-                <input type="file" onChange={handleFileUpload} style={{ display: 'none' }} disabled={uploading} accept="image/*,.pdf" />
-              </label>
-            </div>
+              {/* SECTION: INCIDENT DETAILS */}
+              <div style={{ marginBottom: '2rem' }}>
+                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '16px', color: '#334155', fontSize: '1.1rem' }}>2. Incident Details</label>
+                
+                <div style={{ display: 'flex', gap: '20px', marginBottom: '20px', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: '250px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', marginBottom: '8px', fontSize: '0.9rem', color: '#475569' }}>
+                      <User size={16} /> Involved Person(s) / Respondent *
+                    </label>
+                    <input type="text" name="respondent_name" value={formData.respondent_name} onChange={handleInputChange} placeholder="Names, Ages, Addresses (or 'Unknown')" required style={inputStyle} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: '250px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', marginBottom: '8px', fontSize: '0.9rem', color: '#475569' }}>
+                      <List size={16} /> Type of Incident *
+                    </label>
+                    <select name="incident_type" value={formData.incident_type} onChange={handleInputChange} required style={inputStyle}>
+                      <option value="">-- Select Type --</option>
+                      {formData.report_type === 'Incident' ? (
+                        <>
+                          <option value="Minor Civil Dispute">Minor Civil Dispute (Neighbor quarrels, petty debts)</option>
+                          <option value="VAWC">VAWC (Violence Against Women & Children)</option>
+                          <option value="Criminal Offense (Light)">Criminal Offense (Light Penalties)</option>
+                          <option value="Local Ordinance Violation">Violation of Local Ordinance</option>
+                          <option value="Public Safety Incident">Public Safety Incident (Accidents, Fires)</option>
+                          <option value="Other">Other</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="Civil Dispute">Civil Dispute (Property, Debts)</option>
+                          <option value="Minor Criminal Offense">Minor Criminal Offense (Theft, Physical Injury)</option>
+                          <option value="Family / Domestic Conflict">Family / Domestic Conflict</option>
+                          <option value="Public Nuisance / Disturbance">Public Nuisance (Noise, Vending)</option>
+                          <option value="Assault or Threat">Assault, Harassment or Threat</option>
+                          <option value="Other">Other</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+                </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-              <button type="button" onClick={() => setView('list')} style={{ padding: '10px 20px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Cancel</button>
-              <button type="submit" disabled={submitting || uploading} style={{ padding: '10px 20px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: (submitting || uploading) ? 'not-allowed' : 'pointer' }}>
-                {submitting ? 'Submitting...' : 'Submit Report'}
+                <div style={{ display: 'flex', gap: '20px', marginBottom: '20px', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: '200px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', marginBottom: '8px', fontSize: '0.9rem', color: '#475569' }}>
+                      <Calendar size={16} /> Date & Time of Incident *
+                    </label>
+                    <input type="datetime-local" name="incident_date" value={formData.incident_date} onChange={handleInputChange} required style={inputStyle} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: '200px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', marginBottom: '8px', fontSize: '0.9rem', color: '#475569' }}>
+                      <MapPin size={16} /> Exact Location *
+                    </label>
+                    <input type="text" name="location" value={formData.location} onChange={handleInputChange} placeholder="Where exactly did it happen?" required style={inputStyle} />
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', marginBottom: '8px', fontSize: '0.9rem', color: '#475569' }}>
+                    <FileText size={16} /> Narrative / Complete Details *
+                  </label>
+                  <textarea name="narrative" value={formData.narrative} onChange={handleInputChange} rows="6" placeholder="Provide the complete narrative (Who, What, When, Where, Why, How)..." required style={{...inputStyle, resize: 'vertical'}}></textarea>
+                </div>
+              </div>
+
+              {/* SECTION: AGREEMENT & SUBMIT */}
+              <div style={{ background: '#f8fafc', padding: '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '25px', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                <input type="checkbox" name="is_agreed" id="is_agreed" checked={formData.is_agreed} onChange={handleInputChange} style={{ marginTop: '4px', cursor: 'pointer', width: '20px', height: '20px', accentColor: '#ef4444' }} />
+                <label htmlFor="is_agreed" style={{ fontSize: '0.9rem', color: '#334155', lineHeight: '1.5', cursor: 'pointer' }}>
+                  <strong>Declaration of Truth:</strong> I hereby certify that all statements provided in this report are true, correct, and completely accurate to the best of my knowledge. I understand that filing a false or malicious report is punishable by Philippine law.
+                </label>
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={isSubmitting || !formData.is_agreed} 
+                style={{ 
+                  width: '100%', padding: '16px', borderRadius: '12px', border: 'none', 
+                  background: formData.is_agreed ? '#ef4444' : '#94a3b8', color: 'white', 
+                  fontWeight: 'bold', fontSize: '1.1rem', cursor: formData.is_agreed ? 'pointer' : 'not-allowed', 
+                  display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px',
+                  transition: 'background 0.2s', boxShadow: formData.is_agreed ? '0 4px 10px rgba(239, 68, 68, 0.3)' : 'none'
+                }}
+              >
+                {isSubmitting ? "Submitting Report..." : <><Send size={20} /> Submit Official Report</>}
               </button>
-            </div>
-          </form>
-        </>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
