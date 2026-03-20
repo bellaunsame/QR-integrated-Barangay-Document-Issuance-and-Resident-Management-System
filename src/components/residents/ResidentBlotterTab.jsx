@@ -3,14 +3,17 @@ import { supabase } from '../../services/supabaseClient';
 import { toast } from 'react-hot-toast';
 import { 
   AlertCircle, Gavel, Send, Clock, CheckCircle, XCircle, 
-  Info, ChevronLeft, User, MapPin, Calendar, FileText, List 
+  Info, ChevronLeft, User, MapPin, Calendar, FileText, List, Search 
 } from 'lucide-react';
+import emailjs from '@emailjs/browser'; // <-- Make sure to run: npm install @emailjs/browser
 
 const ResidentBlotterTab = ({ user }) => {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(false);
+
+  const [searchTerm, setSearchTerm] = useState('');
 
   const [formData, setFormData] = useState({
     report_type: 'Incident', 
@@ -48,7 +51,6 @@ const ResidentBlotterTab = ({ user }) => {
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
-    
     if (name === 'report_type') {
       setFormData({ ...formData, report_type: value, incident_type: '' });
     } else {
@@ -69,6 +71,7 @@ const ResidentBlotterTab = ({ user }) => {
       const prefix = formData.report_type === 'Incident' ? 'INC' : 'BLT';
       const caseNum = `${prefix}-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
+      // 1. Save to Supabase Database
       const { error } = await supabase.from('blotter_records').insert([{
         case_number: caseNum,
         complainant_name: `${user.first_name} ${user.last_name}`,
@@ -83,10 +86,33 @@ const ResidentBlotterTab = ({ user }) => {
 
       if (error) throw error;
 
-      toast.success("Report submitted to Barangay Staff!", { id: toastId });
+      // 2. Send the Email Notification using EmailJS
+      try {
+        const emailParams = {
+          to_name: user.first_name,
+          to_email: user.email, 
+          case_number: caseNum,
+          report_type: formData.report_type,
+          incident_type: formData.incident_type,
+          date_filed: new Date().toLocaleDateString()
+        };
+
+        // REPLACE THESE 3 STRINGS WITH YOUR EMAILJS KEYS
+        await emailjs.send(
+          'YOUR_SERVICE_ID',   // <-- Replace with EmailJS Service ID
+          'YOUR_TEMPLATE_ID',  // <-- Replace with EmailJS Template ID
+          emailParams,
+          'YOUR_PUBLIC_KEY'    // <-- Replace with EmailJS Public Key
+        );
+        console.log("Confirmation email sent to resident.");
+      } catch (emailError) {
+        console.error("Email failed to send. Database save was still successful.", emailError);
+      }
+
+      toast.success("Report submitted! A confirmation email has been sent.", { id: toastId });
       setFormData({ report_type: 'Incident', respondent_name: '', incident_type: '', incident_date: '', location: '', narrative: '', is_agreed: false });
       setShowForm(false);
-      fetchMyReports();
+      fetchMyReports(); // Refresh the list
     } catch (err) {
       toast.error(err.message, { id: toastId });
     } finally {
@@ -94,7 +120,18 @@ const ResidentBlotterTab = ({ user }) => {
     }
   };
 
-  // Reusable input style
+  // Safe filtering logic (prevents crashes if a column is null)
+  const filteredReports = reports.filter(r => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      (r.case_number || '').toLowerCase().includes(searchLower) ||
+      (r.incident_type || '').toLowerCase().includes(searchLower) ||
+      (r.status || '').toLowerCase().includes(searchLower) ||
+      (r.respondent_name || '').toLowerCase().includes(searchLower) ||
+      (r.complainant_name || '').toLowerCase().includes(searchLower)
+    );
+  });
+
   const inputStyle = {
     width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', 
     backgroundColor: '#f8fafc', fontSize: '0.95rem', outline: 'none', transition: 'border-color 0.2s'
@@ -104,14 +141,28 @@ const ResidentBlotterTab = ({ user }) => {
     <div className="animation-fade-in" style={{ background: '#fff', padding: '2rem', borderRadius: '12px', minHeight: '60vh' }}>
       {!showForm ? (
         <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
             <div>
               <h2 style={{ color: '#1e293b', margin: '0 0 5px 0' }}>Incident & Blotter History</h2>
               <p style={{ color: '#64748b', margin: 0, fontSize: '0.95rem' }}>View the status of your reported cases under the Katarungang Pambarangay.</p>
             </div>
-            <button onClick={() => setShowForm(true)} className="btn btn-primary" style={{ display: 'flex', gap: '8px', background: '#ef4444', borderColor: '#ef4444' }}>
-              <Send size={18} /> File a Report
-            </button>
+            
+            {/* Search Bar & File Report Button */}
+            <div style={{ display: 'flex', gap: '10px', flex: 1, maxWidth: '500px', justifyContent: 'flex-end', minWidth: '300px' }}>
+              <div style={{ position: 'relative', flex: 1 }}>
+                <input
+                  type="text"
+                  placeholder="Search case no, type, or name..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px 10px 35px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.9rem' }}
+                />
+                <Search size={16} color="#94a3b8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+              </div>
+              <button onClick={() => { setShowForm(true); setSearchTerm(''); }} className="btn btn-primary" style={{ display: 'flex', gap: '8px', background: '#ef4444', borderColor: '#ef4444', whiteSpace: 'nowrap' }}>
+                <Send size={18} /> File Report
+              </button>
+            </div>
           </div>
 
           {loading ? (
@@ -122,10 +173,16 @@ const ResidentBlotterTab = ({ user }) => {
               <h3 style={{ color: '#475569' }}>No Reports Found</h3>
               <p style={{ color: '#64748b' }}>You haven't filed any incidents or blotters yet.</p>
             </div>
+          ) : filteredReports.length === 0 ? (
+             <div style={{ background: '#f8fafc', padding: '40px 20px', borderRadius: '12px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
+               <Search size={32} color="#94a3b8" style={{ marginBottom: '10px', opacity: 0.5 }} />
+               <h3 style={{ color: '#475569', margin: '0 0 5px 0' }}>No matches found</h3>
+               <p style={{ color: '#64748b', margin: 0, fontSize: '0.9rem' }}>We couldn't find any reports matching "{searchTerm}"</p>
+             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '20px' }}>
-              {reports.map((report) => {
-                const isRespondent = report.respondent_name.toLowerCase().includes(user.last_name.toLowerCase());
+              {filteredReports.map((report) => {
+                const isRespondent = (report.respondent_name || '').toLowerCase().includes(user.last_name.toLowerCase());
 
                 return (
                 <div key={report.id} style={{ border: isRespondent ? '2px solid #ef4444' : '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', background: isRespondent ? '#fef2f2' : '#fff' }}>
@@ -187,17 +244,15 @@ const ResidentBlotterTab = ({ user }) => {
               <p style={{ margin: 0, color: '#64748b' }}>Please complete the form below. False reporting is punishable by law.</p>
             </div>
             
-            {/* Legal Disclaimer Box */}
             <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '16px', borderRadius: '12px', marginBottom: '25px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
               <Info size={24} color="#2563eb" style={{ flexShrink: 0 }} />
               <div style={{ fontSize: '0.9rem', color: '#1e3a8a', lineHeight: '1.5' }}>
-                <strong>Katarungang Pambarangay Notice:</strong> Serious crimes (e.g., offenses punishable by imprisonment exceeding one year, or a fine exceeding PHP 5,000, violence against women, and drug offenses) must be reported directly to the Philippine National Police (PNP).
+                <strong>Katarungang Pambarangay Notice:</strong> Serious crimes must be reported directly to the Philippine National Police (PNP).
               </div>
             </div>
 
             <form onSubmit={handleSubmit}>
               
-              {/* SECTION: REPORT TYPE */}
               <div style={{ marginBottom: '2rem' }}>
                 <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '12px', color: '#334155', fontSize: '1.1rem' }}>1. What type of report are you filing? *</label>
                 <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
@@ -205,7 +260,7 @@ const ResidentBlotterTab = ({ user }) => {
                     <input type="radio" name="report_type" value="Incident" checked={formData.report_type === 'Incident'} onChange={handleInputChange} style={{ marginTop: '5px', accentColor: '#f59e0b', width: '18px', height: '18px' }} />
                     <div>
                       <div style={{ fontWeight: 'bold', color: '#b45309', fontSize: '1.1rem', marginBottom: '4px' }}>Record of Occurrence</div>
-                      <div style={{ fontSize: '0.85rem', color: '#d97706', lineHeight: '1.4' }}>Minor disputes, local ordinance violations, or for insurance purposes (Not for formal charges).</div>
+                      <div style={{ fontSize: '0.85rem', color: '#d97706', lineHeight: '1.4' }}>Minor disputes, local ordinance violations, or for insurance purposes.</div>
                     </div>
                   </label>
                   
@@ -221,7 +276,6 @@ const ResidentBlotterTab = ({ user }) => {
 
               <hr style={{ border: 0, borderTop: '1px solid #e2e8f0', margin: '2rem 0' }} />
 
-              {/* SECTION: INCIDENT DETAILS */}
               <div style={{ marginBottom: '2rem' }}>
                 <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '16px', color: '#334155', fontSize: '1.1rem' }}>2. Incident Details</label>
                 
@@ -240,20 +294,20 @@ const ResidentBlotterTab = ({ user }) => {
                       <option value="">-- Select Type --</option>
                       {formData.report_type === 'Incident' ? (
                         <>
-                          <option value="Minor Civil Dispute">Minor Civil Dispute (Neighbor quarrels, petty debts)</option>
-                          <option value="VAWC">VAWC (Violence Against Women & Children)</option>
-                          <option value="Criminal Offense (Light)">Criminal Offense (Light Penalties)</option>
+                          <option value="Minor Civil Dispute">Minor Civil Dispute</option>
+                          <option value="VAWC">VAWC</option>
+                          <option value="Criminal Offense (Light)">Criminal Offense (Light)</option>
                           <option value="Local Ordinance Violation">Violation of Local Ordinance</option>
-                          <option value="Public Safety Incident">Public Safety Incident (Accidents, Fires)</option>
+                          <option value="Public Safety Incident">Public Safety Incident</option>
                           <option value="Other">Other</option>
                         </>
                       ) : (
                         <>
                           <option value="Civil Dispute">Civil Dispute (Property, Debts)</option>
-                          <option value="Minor Criminal Offense">Minor Criminal Offense (Theft, Physical Injury)</option>
+                          <option value="Minor Criminal Offense">Minor Criminal Offense</option>
                           <option value="Family / Domestic Conflict">Family / Domestic Conflict</option>
-                          <option value="Public Nuisance / Disturbance">Public Nuisance (Noise, Vending)</option>
-                          <option value="Assault or Threat">Assault, Harassment or Threat</option>
+                          <option value="Public Nuisance / Disturbance">Public Nuisance</option>
+                          <option value="Assault or Threat">Assault or Threat</option>
                           <option value="Other">Other</option>
                         </>
                       )}
@@ -284,7 +338,6 @@ const ResidentBlotterTab = ({ user }) => {
                 </div>
               </div>
 
-              {/* SECTION: AGREEMENT & SUBMIT */}
               <div style={{ background: '#f8fafc', padding: '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '25px', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
                 <input type="checkbox" name="is_agreed" id="is_agreed" checked={formData.is_agreed} onChange={handleInputChange} style={{ marginTop: '4px', cursor: 'pointer', width: '20px', height: '20px', accentColor: '#ef4444' }} />
                 <label htmlFor="is_agreed" style={{ fontSize: '0.9rem', color: '#334155', lineHeight: '1.5', cursor: 'pointer' }}>

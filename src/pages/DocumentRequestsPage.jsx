@@ -128,8 +128,6 @@ const DocumentRequestsPage = () => {
     setFilteredRequests(filtered);
   };
 
-  // --- ACTIONS (Secured by canEdit) ---
-
   const handleEditRequest = async (request) => {
     if (!canEdit) return;
     const newPurpose = window.prompt("Update the purpose for this request:", request.purpose || '');
@@ -221,6 +219,7 @@ const DocumentRequestsPage = () => {
     }
   };
 
+  // --- FIXED: Fetch the fresh link from Supabase before sending! ---
   const handleReleaseDocument = async (request, skipConfirm = false) => {
     if (!canEdit) return false;
     if (!skipConfirm && !window.confirm('Mark this document as released?')) return;
@@ -232,17 +231,30 @@ const DocumentRequestsPage = () => {
 
       if (request.resident?.email) {
         try {
-          const docName = request.request_type || request.template?.template_name || "DOCUMENT";
+          // WE FETCH THE LATEST LINK DIRECTLY FROM THE DATABASE HERE
+          const { data: latestDbData } = await supabase
+            .from('document_requests')
+            .select('document_url')
+            .eq('id', request.id)
+            .single();
+
+          const docName = request.request_type || request.template?.template_name || "Document";
+          const docLink = latestDbData?.document_url || request.document_url || ""; 
           
+          // Uses standard text with newline breaks. Email clients will auto-link the URL!
+          const emailMessage = docLink 
+            ? `Good news! Your requested ${docName} has been successfully processed. You can now securely download and print your document yourself using the link below:\n\n🔗 ${docLink}\n\nAlternatively, you may still claim a physical copy at the Barangay Hall. Please present your Digital Barangay ID from your Resident Portal upon claiming.`
+            : `Good news! Your requested ${docName} has been successfully processed and is now READY FOR PICKUP at the Barangay Hall. Please present your Digital Barangay ID from your Resident Portal upon claiming.`;
+
           await emailjs.send(
             'service_178ko1n',     
             'template_qzkqkvf',    
             {
               to_email: request.resident.email,
               to_name: request.resident.first_name,
-              barangay_name: "Dos, Calamba",
-              email_subject_message: `Good news! Your requested document has been successfully processed and is now READY FOR PICKUP at the Barangay Hall. Please present your Digital Barangay ID from your Resident Portal upon claiming.`,
-              otp_code: docName.toUpperCase() 
+              barangay_name: "Dos",
+              email_subject_message: emailMessage,
+              otp_code: "APPROVED" 
             },
             'pfTdQReY0nVV3CjnY'    
           );
@@ -257,6 +269,7 @@ const DocumentRequestsPage = () => {
       }
       return true;
     } catch (error) {
+      toast.error('Failed to release document');
       return false;
     }
   };

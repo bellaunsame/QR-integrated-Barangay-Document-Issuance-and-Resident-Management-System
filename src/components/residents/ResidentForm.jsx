@@ -8,8 +8,9 @@ import './ResidentForm.css';
 /**
  * ResidentForm Component
  * Form for adding or editing resident information (Single Page Version)
+ * @param {boolean} isResidentMode - Turns on the Agreement Checkbox for residents
  */
-const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
+const ResidentForm = ({ resident = null, onSubmit, onCancel, isResidentMode = false }) => {
   const [formData, setFormData] = useState({
     first_name: resident?.first_name || '',
     middle_name: resident?.middle_name || '',
@@ -41,6 +42,9 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
+  // --- NEW: Agreement state for residents ---
+  const [isAgreed, setIsAgreed] = useState(false);
+
   const civilStatusOptions = ['Single', 'Married', 'Widowed', 'Separated', 'Divorced'];
   const genderOptions = ['Male', 'Female'];
 
@@ -70,6 +74,13 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // --- NEW: Prevent submission if resident didn't agree ---
+    if (isResidentMode && !isAgreed) {
+      toast.error("Please confirm your details are true and correct by checking the box.");
+      return;
+    }
+
     setLoading(true);
     setErrors({});
 
@@ -473,6 +484,23 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
         </div>
       )}
 
+      {/* --- DECLARATION OF TRUTH CHECKBOX (RESIDENTS ONLY) --- */}
+      {isResidentMode && (
+        <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+            <input 
+              type="checkbox" 
+              checked={isAgreed}
+              onChange={(e) => setIsAgreed(e.target.checked)}
+              style={{ marginTop: '4px', width: '18px', height: '18px', accentColor: 'var(--primary-600)', cursor: 'pointer' }}
+            />
+            <span style={{ fontSize: '0.9rem', color: '#334155', lineHeight: '1.5' }}>
+              <strong>Declaration of Truth:</strong> I hereby certify that all information provided is true and correct. I understand that providing false credentials may result in the rejection of my registration and potential legal consequences.
+            </span>
+          </label>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="form-actions">
         <button
@@ -487,7 +515,8 @@ const ResidentForm = ({ resident = null, onSubmit, onCancel }) => {
         <button
           type="submit"
           className="btn btn-primary"
-          disabled={loading}
+          disabled={loading || (isResidentMode && !isAgreed)}
+          style={{ opacity: (isResidentMode && !isAgreed) ? 0.6 : 1, cursor: (isResidentMode && !isAgreed) ? 'not-allowed' : 'pointer' }}
         >
           {loading ? (
             <>
