@@ -1,31 +1,17 @@
 import React, { useState } from 'react';
-import { X, Edit2, CheckCircle, XCircle, AlertTriangle, User, Calendar, MapPin, Phone, ShieldCheck, Mail, FileText, UserCheck } from 'lucide-react'; 
+import { X, Edit2, CheckCircle, XCircle, AlertTriangle, User, Calendar, MapPin, Phone, ShieldCheck, Mail, FileText } from 'lucide-react'; 
 import { calculateAge } from '../../utils/residentUtils';
+import { supabase } from '../../services/supabaseClient';
 import toast from 'react-hot-toast';
 
 const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, userRole }) => {
   const [rejectMode, setRejectMode] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
 
-  // --- Security Verification Checklist State ---
-  const [verificationChecklist, setVerificationChecklist] = useState({
-    idMatchesName: false,
-    addressMatchesProof: false,
-    selfieMatchesId: false, // This now represents the Liveness Check validation
-    idIsValid: false
-  });
-
   if (!resident) return null;
 
   const isPending = resident.account_status === 'Pending';
   const age = resident.date_of_birth ? calculateAge(resident.date_of_birth) : 'N/A';
-
-  // Check if all security boxes are checked
-  const isAllChecked = Object.values(verificationChecklist).every(Boolean);
-
-  const handleChecklistChange = (field) => {
-    setVerificationChecklist(prev => ({ ...prev, [field]: !prev[field] }));
-  };
 
   const handleConfirmReject = () => {
     if (!rejectReason) {
@@ -36,7 +22,7 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
     setRejectMode(false);
   };
 
-  // Copy to Clipboard Helper
+  // --- NEW: Copy to Clipboard Helper ---
   const handleCopy = (text, label) => {
     if (!text || text === 'N/A') return;
     navigator.clipboard.writeText(text);
@@ -62,15 +48,14 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
 
   return (
     <div className="modal-overlay" onClick={onClose} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', zIndex: 1000 }}>
-      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ 
+      <div className="modal-content animation-fade-in" onClick={e => e.stopPropagation()} style={{ 
         background: '#fff', borderRadius: '12px', width: '100%', 
-        maxWidth: '1000px', 
-        maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-        display: 'flex', flexDirection: 'column'
+        maxWidth: '1000px', // FIX: Always 1000px wide so documents fit perfectly next to text
+        maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' 
       }}>
         
         {/* HEADER */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', borderBottom: '1px solid #e2e8f0', background: isPending ? '#fffbeb' : '#f8fafc' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', borderBottom: '1px solid #e2e8f0', background: isPending ? '#fffbeb' : '#f8fafc', borderTopLeftRadius: '12px', borderTopRightRadius: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             {isPending ? <ShieldCheck size={28} color="#d97706" /> : <User size={28} color="var(--primary-600)" />}
             <h2 style={{ margin: 0, color: '#1e293b', fontSize: '1.4rem' }}>
@@ -81,11 +66,13 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
         </div>
 
         {/* BODY */}
-        <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '30px', flex: 1 }}>
+        <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '30px' }}>
           
-          {/* LEFT SIDE: Text Details */}
+          {/* LEFT SIDE: Text Details & Background Check */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '10px' }}>
+            
+            {/* Resident Name & Photo */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '5px' }}>
               {resident.photo_url ? (
                 <img src={resident.photo_url} alt="Profile Avatar" style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #e2e8f0' }} />
               ) : (
@@ -113,6 +100,47 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
               </div>
             </div>
 
+            {/* --- BACKGROUND / BLOTTER CHECK UI --- */}
+            <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <h4 style={{ margin: '0 0 10px 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px', color: '#334155' }}>
+                <Scale size={18} color="var(--primary-600)"/> Background Check
+              </h4>
+              
+              {loadingHits ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', fontSize: '0.9rem' }}>
+                  <Loader2 size={16} className="animate-spin" /> Scanning barangay records...
+                </div>
+              ) : blotterHits.length === 0 ? (
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', color: '#059669', background: '#ecfdf5', padding: '10px', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
+                  <CheckCircle size={20} style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div style={{ fontSize: '0.9rem' }}>
+                    <strong>Clear Record</strong>
+                    <div style={{ fontSize: '0.8rem', color: '#047857', marginTop: '2px' }}>No derogatory or blotter records found.</div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ background: activeHits.length > 0 ? '#fef2f2' : '#fffbeb', border: `1px solid ${activeHits.length > 0 ? '#fecaca' : '#fde68a'}`, padding: '10px', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: activeHits.length > 0 ? '#dc2626' : '#d97706', marginBottom: '8px' }}>
+                    <ShieldAlert size={18} />
+                    <strong style={{ fontSize: '0.95rem' }}>
+                      {activeHits.length > 0 ? 'Active Derogatory Record(s)' : 'Past Blotter Record(s)'}
+                    </strong>
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '0.85rem', color: '#475569' }}>
+                    {blotterHits.map((hit, index) => (
+                      <li key={index} style={{ marginBottom: '4px' }}>
+                        <strong>{hit.case_number}</strong>: {hit.incident_type} 
+                        <span style={{ marginLeft: '6px', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem', background: hit.status === 'Active' ? '#fee2e2' : '#f1f5f9', color: hit.status === 'Active' ? '#b91c1c' : '#64748b' }}>
+                          {hit.status}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {/* Resident Demographics & Contact */}
             <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <p style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                 <MapPin size={16} color="#64748b" style={{ marginTop: '3px' }}/> 
@@ -212,7 +240,7 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
               {resident.proof_of_residency_url ? (
                 <div style={{ position: 'relative', marginTop: '5px', borderRadius: '8px', overflow: 'hidden', border: '1px solid #cbd5e1', background: '#000' }}>
                   {resident.proof_of_residency_url.includes('.pdf') ? (
-                     <a href={resident.proof_of_residency_url} target="_blank" rel="noreferrer" style={{ display:'block', padding:'20px', background:'#f1f5f9', textAlign:'center', color:'var(--primary-600)', fontWeight:'bold' }}>📄 View PDF Document</a>
+                     <a href={resident.proof_of_residency_url} target="_blank" rel="noreferrer" style={{ display:'block', padding:'20px', background:'#f1f5f9', textAlign:'center', color:'var(--primary-600)', fontWeight:'bold', textDecoration: 'none' }}>📄 View PDF Document</a>
                   ) : (
                     <>
                       <img src={resident.proof_of_residency_url} alt="Proof of Residency" style={{ width: '100%', maxHeight: '250px', objectFit: 'contain', display: 'block' }} />

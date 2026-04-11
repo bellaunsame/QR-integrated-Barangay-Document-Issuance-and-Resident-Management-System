@@ -10,7 +10,7 @@ import DocumentRequestForm from '../components/documents/DocumentRequestForm';
 import ResidentBlotterTab from '../components/residents/ResidentBlotterTab'; 
 import ResidentProfileTab from '../components/residents/ResidentProfileTab'; 
 
-// Import the newly separated CSS file
+// Import the separated CSS file
 import './ResidentHome.css';
 
 import { generateQRData, generateQRCodeImage } from '../services/qrCodeService';
@@ -594,8 +594,6 @@ const ResidentHome = () => {
                       <div key={news.id} className="animation-fade-in" style={{ background: news.is_pinned ? '#fefce8' : '#fff', borderRadius: '12px', overflow: 'hidden', boxShadow: news.is_pinned ? '0 10px 15px -3px rgba(245, 158, 11, 0.1), 0 0 0 2px #fde047' : '0 4px 6px -1px rgba(0,0,0,0.05)', borderLeft: news.is_pinned ? 'none' : `5px solid var(--primary-500)` }}>
                         {news.image_url && <img src={news.image_url} alt="Poster" style={{ width: '100%', height: '250px', objectFit: 'cover' }} />}
                         <div style={{ padding: '20px' }}>
-                          
-                          {/* UPDATED HEADER: Includes the timestamp */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
                             <h3 style={{ margin: 0, color: '#1e293b', paddingRight: '15px' }}>
                               {news.is_pinned && <Pin size={16} color="#f59e0b" style={{marginRight:'5px'}}/>}
@@ -605,9 +603,7 @@ const ResidentHome = () => {
                               <Clock size={12} /> {timeAgo(news.created_at)}
                             </span>
                           </div>
-
                           <p style={{ color: '#475569', whiteSpace: 'pre-wrap', marginBottom: '1rem', lineHeight: '1.5' }}>{news.content}</p>
-                          
                           <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
                             <button onClick={() => handleAcknowledge(news.id)} disabled={isLiked || isLiking} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '20px', border: isLiked ? '1px solid #a7f3d0' : '1px solid #cbd5e1', background: isLiked ? '#ecfdf5' : 'transparent', color: isLiked ? '#059669' : '#64748b', cursor: isLiked ? 'default' : 'pointer' }}>
                               {isLiked ? <><CheckCircle size={16} /> Acknowledged</> : <><ThumbsUp size={16} /> Acknowledge</>}

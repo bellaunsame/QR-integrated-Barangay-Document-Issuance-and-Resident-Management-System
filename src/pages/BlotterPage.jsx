@@ -100,19 +100,65 @@ const BlotterPage = () => {
     setIsModalOpen(true);
   };
 
+  // --- NEW REUSABLE FUNCTION: Send Status Email ---
+  const sendStatusEmail = async (complainantName, newStatus, caseNum) => {
+    // Find the resident who filed the report by matching their name
+    const resident = allResidents.find(r => `${r.first_name} ${r.last_name}`.toLowerCase() === complainantName.toLowerCase());
+    
+    if (!resident || !resident.email) return; // If no email matches, silently skip
+
+    const statusMap = {
+      'Active': 'Kasalukuyang Binibigyang Aksyon (Active)',
+      'Settled': 'Naayos na / Tapos na (Settled)',
+      'Escalated': 'Ipinasa sa Mas Mataas na Hukuman (Escalated to PNP/Court)',
+      'Dismissed': 'Ibinasura / Walang Sala (Dismissed)'
+    };
+
+    try {
+      await emailjs.send(
+        'service_178ko1n', 
+        'template_qzkqkvf', 
+        {
+          to_email: resident.email,
+          to_name: resident.first_name,
+          barangay_name: "Dos, Calamba",
+          email_subject_message: `Ang iyong inihain na ulat na may Case Number: ${caseNum} ay binago ang status sa: ${statusMap[newStatus] || newStatus}.\n\nMangyari po na bisitahin ang inyong Resident Portal para sa karagdagang detalye o magtungo sa Barangay Hall kung kinakailangan.`,
+          otp_code: newStatus.toUpperCase() // Populates the dashed box
+        },
+        'pfTdQReY0nVV3CjnY'
+      );
+    } catch (error) {
+      console.error("Status email failed:", error);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     const payload = { ...formData, summon_schedule: formData.summon_schedule || null }; 
     try {
       let dbError;
+      let statusChanged = false;
+
+      // Check if status changed before updating
       if (editingId) {
+        const originalRecord = records.find(r => r.id === editingId);
+        if (originalRecord && originalRecord.status !== formData.status) {
+          statusChanged = true;
+        }
         const { error } = await supabase.from('blotter_records').update(payload).eq('id', editingId);
         dbError = error;
       } else {
         const { error } = await supabase.from('blotter_records').insert([payload]);
         dbError = error;
       }
+
       if (dbError) throw dbError;
+
+      // Trigger Email ONLY if status changed
+      if (statusChanged) {
+        await sendStatusEmail(formData.complainant_name, formData.status, formData.case_number);
+      }
+
       toast.success('Record saved successfully');
       setIsModalOpen(false);
       fetchRecords();
@@ -121,12 +167,16 @@ const BlotterPage = () => {
     }
   };
 
-  // --- NEW: ACCEPT PENDING REPORT ---
+  // --- UPDATED: ACCEPT PENDING REPORT NOW SENDS EMAIL ---
   const handleAcceptReport = async (record) => {
     if (!window.confirm(`Accept this ${record.report_type} report and mark it as Active?`)) return;
     try {
       const { error } = await supabase.from('blotter_records').update({ status: 'Active' }).eq('id', record.id);
       if (error) throw error;
+      
+      // Trigger Email Notification
+      await sendStatusEmail(record.complainant_name, 'Active', record.case_number);
+
       toast.success('Report accepted and marked as Active.');
       fetchRecords();
     } catch (error) {

@@ -124,7 +124,8 @@ const DocumentRequestForm = ({
     purpose: '',
     custom_purpose: '', 
     request_reason: '',
-    notarizedDocFile: null
+    notarizedDocFile: null,
+    isAgreed: false // <--- NEW: Agreement State
   });
 
   const [errors, setErrors] = useState({});
@@ -208,7 +209,7 @@ const DocumentRequestForm = ({
   };
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
+    const { name, value, type, checked } = e.target;
     
     if (name === 'template_id') {
       const selectedTemp = templates.find(t => t.id === value);
@@ -217,6 +218,9 @@ const DocumentRequestForm = ({
         template_id: value,
         request_type: selectedTemp ? selectedTemp.template_name : ''
       }));
+    } else if (type === 'checkbox') {
+      // Handle the Agreement Checkbox
+      setFormData(prev => ({ ...prev, [name]: checked }));
     } else {
       setFormData(prev => ({ ...prev, [name]: value }));
     }
@@ -275,6 +279,11 @@ const DocumentRequestForm = ({
       }
     }
 
+    // Validation for Agreement Checkbox (Only if user is a Resident)
+    if (residentData && !formData.isAgreed) {
+      newErrors.isAgreed = 'You must agree to the terms before submitting.';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -293,8 +302,10 @@ const DocumentRequestForm = ({
         purpose: finalPurpose,
         is_duplicate_request: isDuplicate 
       };
-      // Clean up the temporary field so we don't send it to the database
+      
+      // Clean up temporary UI fields so we don't send them to the database
       delete payloadToSubmit.custom_purpose;
+      delete payloadToSubmit.isAgreed; 
 
       await onSubmit(payloadToSubmit);
     } catch (error) {
@@ -367,7 +378,7 @@ const DocumentRequestForm = ({
           {/* ========================================= */}
           <div style={{ flex: '1 1 400px', display: 'flex', flexDirection: 'column', gap: '1.5rem', minWidth: '350px' }}>
             
-            {/* --- NEW: SMART RESIDENT DISPLAY --- */}
+            {/* --- SMART RESIDENT DISPLAY --- */}
             {residentData ? (
               // RESIDENT MODE: Show Verified Banner, hide Search
               <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '15px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '15px' }}>
@@ -596,15 +607,42 @@ const DocumentRequestForm = ({
           </div>
         </div>
 
+        {/* --- ERROR DISPLAY --- */}
         {errors.submit && <div style={{ color: '#ef4444', marginTop: '1rem', textAlign: 'center' }}>{errors.submit}</div>}
 
-        <div style={{ marginTop: '2rem', borderTop: '1px solid var(--border)', paddingTop: '1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={loading}>
-            <X size={20} /> Cancel
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={loading || hasPendingRequest} >
-            {loading ? <><div className="spinner-small"></div>Submitting...</> : <><Save size={20} />Submit Request</>}
-          </button>
+        {/* --- ACTIONS & RESIDENT AGREEMENT CHECKBOX --- */}
+        <div style={{ marginTop: '2rem', borderTop: '1px solid var(--border)', paddingTop: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '1rem' }}>
+          
+          {/* ONLY SHOW CHECKBOX IF IT IS A RESIDENT LOGGED IN */}
+          {residentData && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', maxWidth: '600px', padding: '10px 15px', background: 'var(--surface)', border: `1px solid ${errors.isAgreed ? '#ef4444' : 'var(--border)'}`, borderRadius: '8px' }}>
+              <input 
+                type="checkbox" 
+                id="isAgreed" 
+                name="isAgreed" 
+                checked={formData.isAgreed} 
+                onChange={handleChange} 
+                style={{ marginTop: '3px', transform: 'scale(1.2)', cursor: 'pointer', accentColor: 'var(--primary-600)' }} 
+              />
+              <label htmlFor="isAgreed" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', cursor: 'pointer', lineHeight: '1.4', margin: 0 }}>
+                I hereby declare that all information provided in this request is true, correct, and complete to the best of my knowledge. I understand that submitting false or misleading information may result in the rejection of this request.
+              </label>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={loading}>
+              <X size={20} /> Cancel
+            </button>
+            <button 
+              type="submit" 
+              className="btn btn-primary" 
+              // Disable if loading, pending, or if Resident mode and not agreed
+              disabled={loading || hasPendingRequest || (residentData && !formData.isAgreed)} 
+            >
+              {loading ? <><div className="spinner-small"></div>Submitting...</> : <><Save size={20} />Submit Request</>}
+            </button>
+          </div>
         </div>
       </form>
 
