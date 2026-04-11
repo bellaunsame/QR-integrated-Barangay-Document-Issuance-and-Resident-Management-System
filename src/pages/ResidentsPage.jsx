@@ -283,6 +283,7 @@ const ResidentsPage = () => {
         payload.created_by = user.id;
         payload.status = 'active'; 
         payload.account_status = 'Approved'; 
+        payload.is_verified = true; // Auto-verify if added manually by staff
         
         const tempPassword = generateTempPassword();
         payload.password = tempPassword;
@@ -300,7 +301,7 @@ const ResidentsPage = () => {
                 to_email: payload.email,
                 to_name: payload.first_name,
                 barangay_name: "Dos, Calamba",
-                email_subject_message: `Your account has been created by the Barangay Admin. You can now log into the Resident Portal using your email and the temporary password below. Login here: ${window.location.origin}/resident-login`,
+                email_subject_message: `Your account has been created and verified by the Barangay Admin. You have full access to Document Requests, Equipment Borrowing, and Incident Reporting. Login here: ${window.location.origin}/resident-login`,
                 otp_code: tempPassword 
               },
               'pfTdQReY0nVV3CjnY'    
@@ -404,10 +405,12 @@ const ResidentsPage = () => {
       
       const tempPassword = generateTempPassword();
 
+      // Include is_verified in the payload
       const { error } = await supabase
         .from('residents')
         .update({ 
           account_status: 'Approved',
+          is_verified: true,
           password: tempPassword,
           needs_password_change: true 
         })
@@ -423,14 +426,14 @@ const ResidentsPage = () => {
             to_email: resident.email,
             to_name: resident.first_name,
             barangay_name: "Dos, Calamba",
-            email_subject_message: `Your account registration has been APPROVED! You can now log into the Resident Portal to download your QR Code and ID. Login here: ${window.location.origin}/resident-login`,
+            email_subject_message: `Your account registration has been VERIFIED and APPROVED! You now have full access to Document Requests, Equipment Borrowing, and Blotter Reporting. Login here: ${window.location.origin}/resident-login`,
             otp_code: tempPassword 
           },
           'pfTdQReY0nVV3CjnY'    
         );
-        toast.success(`${resident.first_name} approved! Credentials sent to email.`);
+        toast.success(`${resident.first_name} verified & approved! Credentials sent to email.`);
       } else {
-        toast.success(`${resident.first_name} approved! (No email on file)`);
+        toast.success(`${resident.first_name} verified & approved! (No email on file)`);
       }
 
       await loadResidents();
@@ -529,34 +532,9 @@ const ResidentsPage = () => {
 
   return (
     <>
-      <style>{`
-        .desktop-table-container { display: block; }
-        .mobile-cards-container { display: none; }
-        
-        .view-toggle { display: flex; gap: 10px; }
-        .view-toggle button { flex: 1; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); transition: all 0.2s; }
-        .view-toggle button.active-tab { background: var(--primary-50); color: var(--primary-700); border-color: var(--primary-300); }
-        
-        .status-cell { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
-        .badge-permanent { background: #dcfce7; color: #3730a3; border: 1px solid #bbf7d0; padding: 4px 8px; font-weight: 600; }
-        .badge-tenant { background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; padding: 4px 8px; font-weight: 600; }
-        .badge-boarder { background: #fae8ff; color: #86198f; border: 1px solid #f5d0fe; padding: 4px 8px; font-weight: 600; }
-        .badge-transient { background: #fef08a; color: #a16207; border: 1px solid #fde047; padding: 4px 8px; font-weight: 600; }
-
-        @media (max-width: 768px) {
-          .desktop-table-container { display: none; }
-          .mobile-cards-container { display: flex; flex-direction: column; gap: 1rem; }
-          .residents-page .page-header { flex-direction: column !important; align-items: flex-start !important; gap: 1rem; }
-          .residents-page .page-header button { width: 100%; justify-content: center; }
-          .residents-controls { flex-direction: column !important; align-items: stretch !important; gap: 1rem; }
-          .search-box { width: 100%; }
-          .hide-on-mobile { display: none; }
-        }
-      `}</style>
-
       <div className="residents-page">
         <div className="page-header">
-          <div><h1>Residents Management</h1><p>Manage barangay residents, update info, and generate QR codes</p></div>
+          <div><h1>Residents Management</h1><p>Manage barangay residents, review registrations, and update info</p></div>
           
           {/* HIDE ADD BUTTON IF VIEW ONLY */}
           {canEdit && (
@@ -564,10 +542,9 @@ const ResidentsPage = () => {
           )}
         </div>
 
-        <div className="residents-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '15px' }}>
-          
+        <div className="residents-controls">
           <div style={{ display: 'flex', gap: '10px', flex: '1', minWidth: '250px' }}>
-            <div className="search-box" style={{ flex: '1' }}>
+            <div className="search-box">
               <Search size={20} />
               <input type="text" placeholder="Search residents..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); goToPage(1); }} />
             </div>
@@ -611,7 +588,7 @@ const ResidentsPage = () => {
                       <th>Contact</th>
                       <th style={{textAlign:'center'}}>Docs</th>
                       <th>Age/Gender</th>
-                      <th>QR Status</th>
+                      <th>Verification</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -629,9 +606,9 @@ const ResidentsPage = () => {
                       currentResidents.map((r) => (
                         <tr key={r.id} style={{ opacity: viewMode === 'archived' ? 0.7 : 1 }}>
                           <td>
-                            <div className="resident-name" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div className="resident-name">
                               {r.photo_url ? <img src={r.photo_url} alt="pic" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover' }} /> : <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><User size={20} color="#94a3b8"/></div>}
-                              <div style={{ display: 'flex', flexDirection: 'column' }}><strong>{r.first_name} {r.last_name} {r.suffix}</strong><small>{r.civil_status}</small></div>
+                              <div className="resident-name-text"><strong>{r.first_name} {r.last_name} {r.suffix}</strong><small>{r.civil_status}</small></div>
                             </div>
                           </td>
                           <td>{r.full_address}, {r.barangay}</td>
@@ -647,26 +624,31 @@ const ResidentsPage = () => {
                           <td style={{ textAlign: 'center' }}><span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--primary-600)' }}>{r.document_requests?.length || 0}</span></td>
                           <td>{calculateAge(r.date_of_birth)} yrs / {r.gender}</td>
                           
+                          {/* UPDATED VERIFICATION COLUMN */}
                           <td>
                             {r.account_status === 'Pending' ? (
-                              <span className="badge badge-warning">Pending Approval</span>
-                            ) : (
+                              <span className="badge badge-warning">Pending Review</span>
+                            ) : r.is_verified ? (
                               <span className="badge badge-success" style={{ background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' }}>
-                                <QrCode size={12} style={{ marginRight: '4px', display: 'inline' }}/> Ready
+                                <Check size={12} style={{ marginRight: '4px', display: 'inline' }}/> Verified
+                              </span>
+                            ) : (
+                              <span className="badge badge-secondary" style={{ background: '#e2e8f0', color: '#475569', border: '1px solid #cbd5e1' }}>
+                                Unverified
                               </span>
                             )}
                           </td>
                           
                           <td>
                             <div className="action-buttons">
-                              <button className="btn-icon" onClick={() => handleViewResident(r)} title="View Details"><Eye size={18} /></button>
+                              <button className="btn-icon" onClick={() => handleViewResident(r)} title="Review/View Details"><Eye size={18} /></button>
                               
                               {/* HIDE ACTIONS IF VIEW ONLY */}
                               {canEdit ? (
                                 <>
                                   {viewMode === 'pending' ? (
                                     <>
-                                      <button className="btn-icon" style={{color: '#10b981', background: '#d1fae5'}} onClick={() => handleApprove(r)} title="Approve Resident"><Check size={18} /></button>
+                                      <button className="btn-icon" style={{color: '#10b981', background: '#d1fae5'}} onClick={() => handleApprove(r)} title="Verify & Approve Resident"><Check size={18} /></button>
                                       <button className="btn-icon" style={{color: '#ef4444', background: '#fee2e2'}} onClick={() => handleReject(r)} title="Reject & Delete"><X size={18} /></button>
                                     </>
                                   ) : viewMode === 'active' ? (
@@ -726,22 +708,24 @@ const ResidentsPage = () => {
                       <strong>Contact:</strong> {r.mobile_number || r.contact_number || 'N/A'} <br/>
                       <strong>Email:</strong> {r.email || 'N/A'}
                     </div>
-                    <div style={{ marginBottom: '12px', fontSize: '0.9rem', display: 'flex', justifyContent: 'space-between' }}>
+                    
+                    {/* UPDATED VERIFICATION MOBILE */}
+                    <div style={{ marginBottom: '12px', fontSize: '0.9rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                        <span><strong>Docs:</strong> <span style={{color:'var(--primary-600)', fontWeight:'bold'}}>{r.document_requests?.length || 0}</span></span>
                        
-                       <span><strong>QR:</strong> {r.account_status === 'Pending' ? <span className="badge badge-warning" style={{fontSize:'0.7rem'}}>Pending</span> : <span className="badge badge-success" style={{fontSize:'0.7rem', background: '#dcfce7', color: '#166534'}}><QrCode size={12}/> Ready</span>}</span>
+                       <span><strong>Status:</strong> {r.account_status === 'Pending' ? <span className="badge badge-warning" style={{fontSize:'0.7rem'}}>Pending Review</span> : r.is_verified ? <span className="badge badge-success" style={{fontSize:'0.7rem', background: '#dcfce7', color: '#166534'}}><Check size={12}/> Verified</span> : <span className="badge badge-secondary" style={{fontSize:'0.7rem', background: '#e2e8f0', color: '#475569'}}>Unverified</span>}</span>
                     </div>
 
                     <div className="action-buttons" style={{ borderTop: '1px solid var(--border)', paddingTop: '12px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                      <button className="btn-icon" onClick={() => handleViewResident(r)}><Eye size={18} /></button>
+                      <button className="btn-icon" onClick={() => handleViewResident(r)} title="Review Details"><Eye size={18} /></button>
                       
                       {/* HIDE ACTIONS IF VIEW ONLY */}
                       {canEdit ? (
                         <>
                           {viewMode === 'pending' ? (
                             <>
-                              <button className="btn-icon" style={{color: '#10b981', background: '#d1fae5'}} onClick={() => handleApprove(r)}><Check size={18} /></button>
-                              <button className="btn-icon" style={{color: '#ef4444', background: '#fee2e2'}} onClick={() => handleReject(r)}><X size={18} /></button>
+                              <button className="btn-icon" style={{color: '#10b981', background: '#d1fae5'}} onClick={() => handleApprove(r)} title="Verify & Approve"><Check size={18} /></button>
+                              <button className="btn-icon" style={{color: '#ef4444', background: '#fee2e2'}} onClick={() => handleReject(r)} title="Reject"><X size={18} /></button>
                             </>
                           ) : viewMode === 'active' ? (
                             <>

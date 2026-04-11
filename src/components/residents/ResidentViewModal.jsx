@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Edit2, CheckCircle, XCircle, AlertTriangle, User, Calendar, MapPin, Phone, ShieldCheck, Mail, FileText } from 'lucide-react'; 
+import { X, Edit2, CheckCircle, XCircle, AlertTriangle, User, Calendar, MapPin, Phone, ShieldCheck, Mail, FileText, UserCheck } from 'lucide-react'; 
 import { calculateAge } from '../../utils/residentUtils';
 import toast from 'react-hot-toast';
 
@@ -7,10 +7,25 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
   const [rejectMode, setRejectMode] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
 
+  // --- Security Verification Checklist State ---
+  const [verificationChecklist, setVerificationChecklist] = useState({
+    idMatchesName: false,
+    addressMatchesProof: false,
+    selfieMatchesId: false, // This now represents the Liveness Check validation
+    idIsValid: false
+  });
+
   if (!resident) return null;
 
   const isPending = resident.account_status === 'Pending';
   const age = resident.date_of_birth ? calculateAge(resident.date_of_birth) : 'N/A';
+
+  // Check if all security boxes are checked
+  const isAllChecked = Object.values(verificationChecklist).every(Boolean);
+
+  const handleChecklistChange = (field) => {
+    setVerificationChecklist(prev => ({ ...prev, [field]: !prev[field] }));
+  };
 
   const handleConfirmReject = () => {
     if (!rejectReason) {
@@ -21,7 +36,7 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
     setRejectMode(false);
   };
 
-  // --- NEW: Copy to Clipboard Helper ---
+  // Copy to Clipboard Helper
   const handleCopy = (text, label) => {
     if (!text || text === 'N/A') return;
     navigator.clipboard.writeText(text);
@@ -49,8 +64,9 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
     <div className="modal-overlay" onClick={onClose} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', zIndex: 1000 }}>
       <div className="modal-content" onClick={e => e.stopPropagation()} style={{ 
         background: '#fff', borderRadius: '12px', width: '100%', 
-        maxWidth: '1000px', // FIX: Always 1000px wide so documents fit perfectly next to text
-        maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' 
+        maxWidth: '1000px', 
+        maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+        display: 'flex', flexDirection: 'column'
       }}>
         
         {/* HEADER */}
@@ -65,13 +81,13 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
         </div>
 
         {/* BODY */}
-        <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '30px' }}>
+        <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '30px', flex: 1 }}>
           
           {/* LEFT SIDE: Text Details */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '10px' }}>
               {resident.photo_url ? (
-                <img src={resident.photo_url} alt="Profile" style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #e2e8f0' }} />
+                <img src={resident.photo_url} alt="Profile Avatar" style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #e2e8f0' }} />
               ) : (
                 <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><User size={40} color="#94a3b8"/></div>
               )}
@@ -79,7 +95,21 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
                 <h3 style={{ margin: 0, fontSize: '1.4rem', color: '#0f172a' }}>
                   {[resident.first_name, resident.middle_name, resident.last_name, resident.suffix].filter(Boolean).join(' ')}
                 </h3>
-                <span className="badge badge-primary">{resident.residency_type || 'Permanent'} Resident</span>
+                
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '5px' }}>
+                  <span className="badge badge-primary">{resident.residency_type || 'Permanent'} Resident</span>
+                  {resident.account_status === 'Pending' ? (
+                    <span className="badge badge-warning">Pending Review</span>
+                  ) : resident.is_verified ? (
+                    <span className="badge badge-success" style={{ background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' }}>
+                      <ShieldCheck size={12} style={{ display: 'inline', marginRight: '4px' }} /> Verified
+                    </span>
+                  ) : (
+                    <span className="badge badge-secondary" style={{ background: '#e2e8f0', color: '#475569', border: '1px solid #cbd5e1' }}>
+                      Unverified
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -94,7 +124,6 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
                 <strong>Date of Birth:</strong> {resident.date_of_birth ? new Date(resident.date_of_birth).toLocaleDateString() : 'N/A'} ({age !== 'Invalid' ? age : 'N/A'} yrs)
               </p>
               
-              {/* UPDATED: Clickable Phone Number */}
               <p 
                 style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
                 onClick={() => handleCopy(resident.mobile_number || resident.contact_number, 'Phone Number')}
@@ -107,7 +136,6 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
                 </span>
               </p>
               
-              {/* UPDATED: Clickable Email Address */}
               <p 
                 style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
                 onClick={() => handleCopy(resident.email, 'Email Address')}
@@ -136,23 +164,47 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
             </div>
           </div>
 
-          {/* RIGHT SIDE: Sensitive Documents (FIX: ALWAYS VISIBLE NOW!) */}
+          {/* RIGHT SIDE: Sensitive Documents */}
           <div style={{ borderLeft: '1px solid #e2e8f0', paddingLeft: '30px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <h3 style={{ margin: 0, color: '#334155', display: 'flex', alignItems: 'center', gap: '8px' }}>
               {isPending ? <AlertTriangle size={20} color="#eab308"/> : <FileText size={20} color="var(--primary-600)"/>}
               Identity Verification
             </h3>
             
+            {/* --- UPDATED: Valid ID (Front and Back) --- */}
             <div>
-              <label style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#475569' }}>Valid ID (National ID, Passport, etc.)</label>
-              {resident.id_image_url ? (
-                <div style={{ position: 'relative', marginTop: '5px', borderRadius: '8px', overflow: 'hidden', border: '1px solid #cbd5e1', background: '#000' }}>
-                  <img src={resident.id_image_url} alt="Valid ID" style={{ width: '100%', maxHeight: '250px', objectFit: 'contain', display: 'block' }} />
-                  <Watermark />
+              <label style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#475569', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                Valid ID 
+                {resident.id_type && <span style={{ background: '#e2e8f0', padding: '2px 8px', borderRadius: '10px', fontSize: '0.75rem', color: '#334155' }}>{resident.id_type}</span>}
+              </label>
+              
+              <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
+                {/* Front Image */}
+                <div style={{ flex: 1, position: 'relative', borderRadius: '8px', overflow: 'hidden', border: '1px solid #cbd5e1', background: '#000', minHeight: '120px' }}>
+                  {resident.id_image_url ? (
+                    <>
+                      <img src={resident.id_image_url} alt="Valid ID Front" style={{ width: '100%', height: '100%', maxHeight: '200px', objectFit: 'contain', display: 'block' }} />
+                      <Watermark />
+                      <div style={{ position: 'absolute', bottom: 0, width: '100%', background: 'rgba(0,0,0,0.6)', color: 'white', textAlign: 'center', fontSize: '0.7rem', padding: '4px' }}>FRONT</div>
+                    </>
+                  ) : (
+                    <div style={{ padding: '20px', textAlign: 'center', color: '#ef4444', fontSize: '0.8rem', fontStyle: 'italic' }}>No Front Image</div>
+                  )}
                 </div>
-              ) : (
-                <p style={{ color: '#ef4444', fontSize: '0.9rem', fontStyle: 'italic' }}>No Valid ID Uploaded</p>
-              )}
+
+                {/* Back Image */}
+                <div style={{ flex: 1, position: 'relative', borderRadius: '8px', overflow: 'hidden', border: '1px solid #cbd5e1', background: '#000', minHeight: '120px' }}>
+                  {resident.id_image_back_url ? (
+                    <>
+                      <img src={resident.id_image_back_url} alt="Valid ID Back" style={{ width: '100%', height: '100%', maxHeight: '200px', objectFit: 'contain', display: 'block' }} />
+                      <Watermark />
+                      <div style={{ position: 'absolute', bottom: 0, width: '100%', background: 'rgba(0,0,0,0.6)', color: 'white', textAlign: 'center', fontSize: '0.7rem', padding: '4px' }}>BACK</div>
+                    </>
+                  ) : (
+                    <div style={{ padding: '20px', textAlign: 'center', color: '#ef4444', fontSize: '0.8rem', fontStyle: 'italic' }}>No Back Image</div>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div>
@@ -172,44 +224,112 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
                 <p style={{ color: '#94a3b8', fontSize: '0.9rem', fontStyle: 'italic' }}>No Proof of Residency Uploaded</p>
               )}
             </div>
-          </div>
 
+            {/* --- Display the Liveness Check Selfie --- */}
+            <div>
+              <label style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#c2410c', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <UserCheck size={16} /> Liveness Check (Selfie holding ID)
+              </label>
+              {resident.liveness_image_url ? (
+                <div style={{ position: 'relative', marginTop: '5px', borderRadius: '8px', overflow: 'hidden', border: '1px solid #fdba74', background: '#000' }}>
+                  <img src={resident.liveness_image_url} alt="Liveness Selfie" style={{ width: '100%', maxHeight: '250px', objectFit: 'contain', display: 'block' }} />
+                  <Watermark />
+                </div>
+              ) : (
+                <p style={{ color: '#ef4444', fontSize: '0.9rem', fontStyle: 'italic' }}>No Liveness Check Uploaded</p>
+              )}
+            </div>
+
+          </div>
         </div>
 
         {/* FOOTER ACTIONS */}
         {userRole !== 'view_only' && (
-          <div style={{ padding: '20px', borderTop: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
+          <div style={{ padding: '20px', borderTop: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '15px', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
             
-            {!isPending ? (
-               <button onClick={onEdit} className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }}><Edit2 size={18} /> Edit Resident Profile</button>
-            ) : (
-              rejectMode ? (
-                <div style={{ width: '100%', display: 'flex', gap: '10px', alignItems: 'center' }}>
-                  <select 
-                    value={rejectReason} 
-                    onChange={(e) => setRejectReason(e.target.value)}
-                    style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #ef4444' }}
-                  >
-                    <option value="">-- Select Reason for Rejection --</option>
-                    <option value="Valid ID is blurred or unreadable.">Valid ID is blurred or unreadable.</option>
-                    <option value="Name on ID does not match registered name.">Name on ID does not match registered name.</option>
-                    <option value="Address on Proof of Residency is not in Barangay Dos.">Address on Proof of Residency is not in Barangay Dos.</option>
-                    <option value="Missing required documents.">Missing required documents.</option>
-                    <option value="Suspected duplicate or fake account.">Suspected duplicate or fake account.</option>
-                  </select>
-                  <button onClick={handleConfirmReject} className="btn" style={{ background: '#ef4444', color: 'white', border: 'none' }}>Confirm Reject</button>
-                  <button onClick={() => setRejectMode(false)} className="btn btn-secondary">Cancel</button>
+            {/* --- STRICT VERIFICATION CHECKLIST (Only visible when pending) --- */}
+            {isPending && !rejectMode && (
+              <div style={{ background: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid #cbd5e1', width: '100%', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+                <h4 style={{ margin: '0 0 5px 0', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ShieldCheck size={18} color="var(--primary-600)" /> Security Verification Checklist
+                </h4>
+                <p style={{ margin: '0 0 15px 0', fontSize: '0.85rem', color: '#64748b' }}>Staff must manually verify all criteria before this account can be approved.</p>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', fontSize: '0.9rem', color: '#334155' }}>
+                    <input type="checkbox" checked={verificationChecklist.idMatchesName} onChange={() => handleChecklistChange('idMatchesName')} style={{ width: '18px', height: '18px', cursor: 'pointer', marginTop: '2px' }} />
+                    <span style={{ flex: 1 }}>Name on Valid ID exactly matches the registered form name.</span>
+                  </label>
+                  
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', fontSize: '0.9rem', color: '#334155' }}>
+                    <input type="checkbox" checked={verificationChecklist.addressMatchesProof} onChange={() => handleChecklistChange('addressMatchesProof')} style={{ width: '18px', height: '18px', cursor: 'pointer', marginTop: '2px' }} />
+                    <span style={{ flex: 1 }}>Address on Proof of Residency matches the registered Barangay Dos address.</span>
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', fontSize: '0.9rem', color: '#334155' }}>
+                    <input type="checkbox" checked={verificationChecklist.selfieMatchesId} onChange={() => handleChecklistChange('selfieMatchesId')} style={{ width: '18px', height: '18px', cursor: 'pointer', marginTop: '2px' }} />
+                    <span style={{ flex: 1 }}>The face in the <strong>Liveness Check Selfie</strong> clearly matches the face on the Valid ID, and they are physically holding the card.</span>
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', fontSize: '0.9rem', color: '#334155' }}>
+                    <input type="checkbox" checked={verificationChecklist.idIsValid} onChange={() => handleChecklistChange('idIsValid')} style={{ width: '18px', height: '18px', cursor: 'pointer', marginTop: '2px' }} />
+                    <span style={{ flex: 1 }}>Valid ID is clear, readable, and not expired.</span>
+                  </label>
                 </div>
-              ) : (
-                <>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <button onClick={() => setRejectMode(true)} className="btn" style={{ background: '#fee2e2', color: '#ef4444', border: '1px solid #fca5a5' }}><XCircle size={18} /> Reject</button>
-                    <button onClick={onEdit} className="btn btn-secondary" title="Fix typos before approving"><Edit2 size={18} /> Edit Typos</button>
-                  </div>
-                  <button onClick={() => onApprove(resident)} className="btn" style={{ background: '#10b981', color: 'white', border: 'none', padding: '10px 20px', fontSize: '1rem' }}><CheckCircle size={20} /> Verify & Approve</button>
-                </>
-              )
+              </div>
             )}
+
+            {/* BUTTON ROW */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+              {!isPending ? (
+                 <button onClick={onEdit} className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }}><Edit2 size={18} /> Edit Resident Profile</button>
+              ) : (
+                rejectMode ? (
+                  <div style={{ width: '100%', display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <select 
+                      value={rejectReason} 
+                      onChange={(e) => setRejectReason(e.target.value)}
+                      style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #ef4444' }}
+                    >
+                      <option value="">-- Select Reason for Rejection --</option>
+                      <option value="Valid ID is blurred or unreadable.">Valid ID is blurred or unreadable.</option>
+                      <option value="Name on ID does not match registered name.">Name on ID does not match registered name.</option>
+                      <option value="Address on Proof of Residency is not in Barangay Dos.">Address on Proof of Residency is not in Barangay Dos.</option>
+                      <option value="Liveness check failed (Selfie holding ID is unclear or missing).">Liveness check failed (Selfie holding ID is unclear or missing).</option>
+                      <option value="Missing required documents.">Missing required documents.</option>
+                      <option value="Suspected duplicate or fake account.">Suspected duplicate or fake account.</option>
+                    </select>
+                    <button onClick={handleConfirmReject} className="btn" style={{ background: '#ef4444', color: 'white', border: 'none' }}>Confirm Reject</button>
+                    <button onClick={() => setRejectMode(false)} className="btn btn-secondary">Cancel</button>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button onClick={() => setRejectMode(true)} className="btn" style={{ background: '#fee2e2', color: '#ef4444', border: '1px solid #fca5a5' }}><XCircle size={18} /> Reject</button>
+                      <button onClick={onEdit} className="btn btn-secondary" title="Fix typos before approving"><Edit2 size={18} /> Edit Typos</button>
+                    </div>
+                    
+                    {/* DISABLED UNTIL ALL CHECKLIST ITEMS ARE TRUE */}
+                    <button 
+                      onClick={() => onApprove(resident)} 
+                      disabled={!isAllChecked}
+                      className="btn" 
+                      style={{ 
+                        background: isAllChecked ? '#10b981' : '#e2e8f0', 
+                        color: isAllChecked ? 'white' : '#94a3b8', 
+                        border: 'none', 
+                        padding: '10px 20px', 
+                        fontSize: '1rem',
+                        cursor: isAllChecked ? 'pointer' : 'not-allowed',
+                        transition: 'all 0.3s'
+                      }}
+                    >
+                      <CheckCircle size={20} /> Verify & Approve
+                    </button>
+                  </>
+                )
+              )}
+            </div>
           </div>
         )}
       </div>

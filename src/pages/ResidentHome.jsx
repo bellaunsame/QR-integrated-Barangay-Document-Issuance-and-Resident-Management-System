@@ -418,6 +418,20 @@ const ResidentHome = () => {
 
   if (!user) return null; 
 
+  // --- ADDED RESTRICTED VIEW COMPONENT ---
+  const RestrictedView = ({ featureName }) => (
+    <div className="animation-fade-in" style={{ background: '#fff', padding: '3rem 2rem', borderRadius: '12px', textAlign: 'center', minHeight: '60vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '1px solid #e2e8f0' }}>
+      <AlertTriangle size={60} color="#f59e0b" style={{ marginBottom: '20px', opacity: 0.8 }} />
+      <h2 style={{ color: '#1e293b', marginBottom: '10px' }}>Access Restricted</h2>
+      <p style={{ color: '#64748b', maxWidth: '400px', lineHeight: '1.5' }}>
+        Your account must be <strong>verified</strong> by the Barangay Staff to access the {featureName} feature. Please wait for the staff to review your registration.
+      </p>
+      <button onClick={() => setActiveTab('home')} className="btn btn-primary" style={{ marginTop: '20px' }}>
+        Return to Home
+      </button>
+    </div>
+  );
+
   return (
     <div className="resident-layout">
       
@@ -505,7 +519,7 @@ const ResidentHome = () => {
               )}
             </div>
 
-            {/* PROFILE BUTTON */}
+            {/* PROFILE BUTTON - UPDATED WITH DYNAMIC VERIFICATION */}
             <div 
               className="desktop-tabs" 
               onClick={() => setActiveTab('profile')} 
@@ -513,7 +527,12 @@ const ResidentHome = () => {
             >
               <div>
                 <p style={{ margin: 0, fontWeight: 'bold', fontSize: '0.9rem', color: '#1e293b' }}>{user?.first_name}</p>
-                <p style={{ margin: 0, fontSize: '0.7rem', color: '#10b981', fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '3px' }}><CheckCircle size={10} /> Verified</p>
+                {/* DYNAMIC VERIFIED BADGE */}
+                {user?.is_verified ? (
+                  <p style={{ margin: 0, fontSize: '0.7rem', color: '#10b981', fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '3px' }}><CheckCircle size={10} /> Verified</p>
+                ) : (
+                  <p style={{ margin: 0, fontSize: '0.7rem', color: '#f59e0b', fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '3px' }}><Clock size={10} /> Unverified</p>
+                )}
               </div>
               <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary-100) 0%, var(--primary-200) 100%)', color: 'var(--primary-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.2rem', border: '2px solid #fff', boxShadow: '0 2px 5px rgba(0,0,0,0.1)' }}>
                 {user?.first_name?.charAt(0) || 'R'}
@@ -545,6 +564,14 @@ const ResidentHome = () => {
           <span>Report</span>
         </button>
       </div>
+
+      {/* GLOBAL UNVERIFIED BANNER - ADDED */}
+      {!user?.is_verified && (
+        <div style={{ background: '#fef3c7', color: '#b45309', padding: '12px 20px', textAlign: 'center', fontSize: '0.9rem', fontWeight: 'bold', borderBottom: '1px solid #fde68a' }}>
+          <AlertTriangle size={16} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: '6px' }} />
+          Your account is currently unverified. Some features are restricted until Barangay Staff approves your account.
+        </div>
+      )}
 
       <div className="main-content">
         {/* HOME TAB */}
@@ -614,171 +641,183 @@ const ResidentHome = () => {
           <ResidentProfileTab user={user} setUser={setUser} />
         )}
 
-        {/* DOCUMENTS TAB */}
+        {/* DOCUMENTS TAB - WITH RESTRICTION */}
         {activeTab === 'documents' && (
-          <div className="animation-fade-in" style={{ background: '#fff', padding: '2rem', borderRadius: '12px', minHeight: '60vh' }}>
-            {!isCreatingRequest ? (
-              <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                  <h2>My Document Requests</h2>
-                  <button onClick={handleOpenForm} className="btn btn-primary"><Plus size={18} /> New Request</button>
-                </div>
-                {loadingRequests ? <div style={{ textAlign: 'center', padding: '3rem' }}><div className="spinner"></div></div> : myRequests.length === 0 ? (
-                   <div style={{ background: '#f8fafc', padding: '60px 20px', borderRadius: '12px', textAlign: 'center', border: '2px dashed #cbd5e1' }}>
-                     <FileText size={48} color="#94a3b8" style={{ marginBottom: '15px', opacity: 0.5 }} />
-                     <h3 style={{ color: '#475569' }}>No Requests Found</h3>
-                   </div>
-                ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
-                    {myRequests.map((req) => (
-                      <div key={req.id} style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '20px', background: 'var(--surface)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
-                          <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--primary-800)' }}>{req.template?.template_name}</h3>
-                          <span className={`badge ${req.status === 'completed' || req.status === 'released' ? 'badge-success' : req.status === 'rejected' ? 'badge-danger' : 'badge-warning'}`}>
-                            {req.status ? req.status.toUpperCase() : 'PENDING'}
-                          </span>
-                        </div>
-                        <p style={{ margin: '0 0 5px 0', fontSize: '0.9rem' }}><strong>Tracking No:</strong> {req.tracking_code}</p>
-                        <p style={{ margin: 0, fontSize: '0.9rem' }}><strong>Purpose:</strong> {req.purpose}</p>
+          !user?.is_verified ? (
+            <RestrictedView featureName="Document Requests" />
+          ) : (
+            <div className="animation-fade-in" style={{ background: '#fff', padding: '2rem', borderRadius: '12px', minHeight: '60vh' }}>
+              {!isCreatingRequest ? (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                    <h2>My Document Requests</h2>
+                    <button onClick={handleOpenForm} className="btn btn-primary"><Plus size={18} /> New Request</button>
+                  </div>
+                  {loadingRequests ? <div style={{ textAlign: 'center', padding: '3rem' }}><div className="spinner"></div></div> : myRequests.length === 0 ? (
+                      <div style={{ background: '#f8fafc', padding: '60px 20px', borderRadius: '12px', textAlign: 'center', border: '2px dashed #cbd5e1' }}>
+                        <FileText size={48} color="#94a3b8" style={{ marginBottom: '15px', opacity: 0.5 }} />
+                        <h3 style={{ color: '#475569' }}>No Requests Found</h3>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                <button onClick={handleOpenList} className="btn btn-secondary" style={{ marginBottom: '20px', background: 'transparent', border: 'none' }}><ChevronLeft size={18} /> Back</button>
-                <DocumentRequestForm residentData={user} templates={templates} onCancel={handleOpenList} onSubmit={async (payload) => {
-                    try {
-                      const cleanPayload = { ...payload, status: 'pending' };
-                      delete cleanPayload.notarizedDocFile;
-                      await supabase.from('document_requests').insert([cleanPayload]);
-                      setIsCreatingRequest(false);
-                      fetchMyRequests(); 
-                      toast.success("Request submitted!");
-                    } catch (err) { toast.error("Failed: " + err.message); }
-                }} />
-              </>
-            )}
-          </div>
-        )}
-
-        {/* EQUIPMENT TAB */}
-        {activeTab === 'equipment' && (
-          <div className="animation-fade-in" style={{ background: '#fff', padding: '2rem', borderRadius: '12px', minHeight: '60vh' }}>
-            {!isCreatingEqReq ? (
-              <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
-                  <div>
-                    <h2 style={{ color: '#1e293b', margin: '0 0 5px 0' }}>Equipment Requests</h2>
-                    <p style={{ color: '#64748b', margin: 0, fontSize: '0.95rem' }}>Borrow chairs, tables, and other barangay property.</p>
-                  </div>
-                  <button onClick={() => { setIsCreatingEqReq(true); setIsEqAgreed(false); }} className="btn btn-primary">
-                    <Plus size={18} /> Borrow Equipment
-                  </button>
-                </div>
-                
-                {loadingEquipment ? (
-                   <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}><div className="spinner" style={{ margin: '0 auto 10px auto' }}></div>Loading history...</div>
-                ) : myEquipmentReqs.length === 0 ? (
-                   <div style={{ background: '#f8fafc', padding: '60px 20px', borderRadius: '12px', textAlign: 'center', border: '2px dashed #cbd5e1' }}>
-                     <Package size={48} color="#94a3b8" style={{ marginBottom: '15px', opacity: 0.5 }} />
-                     <h3 style={{ color: '#475569', margin: '0 0 10px 0' }}>No Borrowing History</h3>
-                     <button onClick={() => { setIsCreatingEqReq(true); setIsEqAgreed(false); }} className="btn btn-secondary">Borrow an item now</button>
-                   </div>
-                ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
-                    {myEquipmentReqs.map((req) => (
-                      <div key={req.id} style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '20px', background: 'var(--surface)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '15px' }}>
-                          <div>
-                            <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--primary-800)' }}>{req.quantity}x {req.equipment_inventory?.item_name}</h3>
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>Needed: {new Date(req.borrow_date).toLocaleDateString()}</span>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
+                      {myRequests.map((req) => (
+                        <div key={req.id} style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '20px', background: 'var(--surface)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+                            <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--primary-800)' }}>{req.template?.template_name}</h3>
+                            <span className={`badge ${req.status === 'completed' || req.status === 'released' ? 'badge-success' : req.status === 'rejected' ? 'badge-danger' : 'badge-warning'}`}>
+                              {req.status ? req.status.toUpperCase() : 'PENDING'}
+                            </span>
                           </div>
-                          <span className={`badge ${req.status === 'Released' || req.status === 'Returned' ? 'badge-success' : req.status === 'Rejected' || req.status.includes('Damage') ? 'badge-danger' : 'badge-warning'}`}>
-                            {req.status ? req.status.toUpperCase() : 'PENDING'}
-                          </span>
+                          <p style={{ margin: '0 0 5px 0', fontSize: '0.9rem' }}><strong>Tracking No:</strong> {req.tracking_code}</p>
+                          <p style={{ margin: 0, fontSize: '0.9rem' }}><strong>Purpose:</strong> {req.purpose}</p>
                         </div>
-                        <div style={{ background: 'var(--neutral-50)', padding: '10px', borderRadius: '8px', fontSize: '0.9rem' }}>
-                          <p style={{ margin: '0 0 5px 0' }}><strong>Return By:</strong> {new Date(req.expected_return).toLocaleDateString()}</p>
-                          <p style={{ margin: '0 0 5px 0' }}><strong>Purpose:</strong> {req.purpose || 'Not specified'}</p>
-                          {req.damage_notes && <p style={{ margin: 0, color: '#ef4444' }}><strong>Notes:</strong> {req.damage_notes}</p>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                <button onClick={() => setIsCreatingEqReq(false)} className="btn btn-secondary" style={{ marginBottom: '20px', background: 'transparent', border: 'none', padding: '5px 0', color: '#64748b' }}>
-                  <ChevronLeft size={18} /> Back
-                </button>
-                <div style={{ maxWidth: '600px', margin: '0 auto', background: '#f8fafc', padding: '2rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  <h3 style={{ marginTop: 0, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}><Package size={22} color="var(--primary-600)"/> Request Equipment</h3>
-                  
-                  <form onSubmit={handleEquipmentSubmit}>
-                    <div className="eq-form-group">
-                      <label>Select Item to Borrow *</label>
-                      <select required value={eqForm.equipment_id} onChange={e => setEqForm({...eqForm, equipment_id: e.target.value})}>
-                        <option value="">-- Choose Item --</option>
-                        {equipmentInventory.map(item => (
-                          <option key={item.id} value={item.id} disabled={item.available_quantity === 0}>
-                            {item.item_name} ({item.available_quantity} left)
-                          </option>
-                        ))}
-                      </select>
+                      ))}
                     </div>
-
-                    <div className="eq-form-group">
-                      <label>Quantity Needed *</label>
-                      <input type="number" min="1" required value={eqForm.quantity} onChange={e => setEqForm({...eqForm, quantity: e.target.value})} />
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '15px' }}>
-                      <div className="eq-form-group" style={{ flex: 1 }}>
-                        <label>Date Needed *</label>
-                        <input type="datetime-local" required value={eqForm.borrow_date} onChange={e => setEqForm({...eqForm, borrow_date: e.target.value})} />
-                      </div>
-                      <div className="eq-form-group" style={{ flex: 1 }}>
-                        <label>Expected Return *</label>
-                        <input type="datetime-local" required value={eqForm.expected_return} onChange={e => setEqForm({...eqForm, expected_return: e.target.value})} />
-                      </div>
-                    </div>
-
-                    <div className="eq-form-group">
-                      <label>Purpose / Event *</label>
-                      <textarea rows="3" placeholder="e.g., Birthday Party, Wake, Meeting" required value={eqForm.purpose} onChange={e => setEqForm({...eqForm, purpose: e.target.value})}></textarea>
-                    </div>
-
-                    {/* AGREEMENT CHECKBOX */}
-                    <div className="eq-form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
-                      <input 
-                        type="checkbox" 
-                        id="eqAgree" 
-                        checked={isEqAgreed} 
-                        onChange={(e) => setIsEqAgreed(e.target.checked)} 
-                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                      />
-                      <label htmlFor="eqAgree" style={{ fontSize: '0.85rem', fontWeight: 'normal', cursor: 'pointer', margin: 0, color: '#475569' }}>
-                        I agree that all the details provided are correct before submitting this request.
-                      </label>
-                    </div>
-
-                    <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
-                       <button type="button" onClick={() => setIsCreatingEqReq(false)} className="btn btn-secondary" style={{ flex: 1 }}>Cancel</button>
-                       <button type="submit" disabled={!isEqAgreed} className="btn btn-primary" style={{ flex: 1, opacity: isEqAgreed ? 1 : 0.6, cursor: isEqAgreed ? 'pointer' : 'not-allowed' }}>Submit Request</button>
-                    </div>
-                  </form>
-                </div>
-              </>
-            )}
-          </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <button onClick={handleOpenList} className="btn btn-secondary" style={{ marginBottom: '20px', background: 'transparent', border: 'none' }}><ChevronLeft size={18} /> Back</button>
+                  <DocumentRequestForm residentData={user} templates={templates} onCancel={handleOpenList} onSubmit={async (payload) => {
+                      try {
+                        const cleanPayload = { ...payload, status: 'pending' };
+                        delete cleanPayload.notarizedDocFile;
+                        await supabase.from('document_requests').insert([cleanPayload]);
+                        setIsCreatingRequest(false);
+                        fetchMyRequests(); 
+                        toast.success("Request submitted!");
+                      } catch (err) { toast.error("Failed: " + err.message); }
+                  }} />
+                </>
+              )}
+            </div>
+          )
         )}
 
-        {/* REPORT/BLOTTER TAB */}
+        {/* EQUIPMENT TAB - WITH RESTRICTION */}
+        {activeTab === 'equipment' && (
+          !user?.is_verified ? (
+            <RestrictedView featureName="Equipment Borrowing" />
+          ) : (
+            <div className="animation-fade-in" style={{ background: '#fff', padding: '2rem', borderRadius: '12px', minHeight: '60vh' }}>
+              {!isCreatingEqReq ? (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+                    <div>
+                      <h2 style={{ color: '#1e293b', margin: '0 0 5px 0' }}>Equipment Requests</h2>
+                      <p style={{ color: '#64748b', margin: 0, fontSize: '0.95rem' }}>Borrow chairs, tables, and other barangay property.</p>
+                    </div>
+                    <button onClick={() => { setIsCreatingEqReq(true); setIsEqAgreed(false); }} className="btn btn-primary">
+                      <Plus size={18} /> Borrow Equipment
+                    </button>
+                  </div>
+                  
+                  {loadingEquipment ? (
+                      <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}><div className="spinner" style={{ margin: '0 auto 10px auto' }}></div>Loading history...</div>
+                  ) : myEquipmentReqs.length === 0 ? (
+                      <div style={{ background: '#f8fafc', padding: '60px 20px', borderRadius: '12px', textAlign: 'center', border: '2px dashed #cbd5e1' }}>
+                        <Package size={48} color="#94a3b8" style={{ marginBottom: '15px', opacity: 0.5 }} />
+                        <h3 style={{ color: '#475569', margin: '0 0 10px 0' }}>No Borrowing History</h3>
+                        <button onClick={() => { setIsCreatingEqReq(true); setIsEqAgreed(false); }} className="btn btn-secondary">Borrow an item now</button>
+                      </div>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
+                      {myEquipmentReqs.map((req) => (
+                        <div key={req.id} style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '20px', background: 'var(--surface)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '15px' }}>
+                            <div>
+                              <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--primary-800)' }}>{req.quantity}x {req.equipment_inventory?.item_name}</h3>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>Needed: {new Date(req.borrow_date).toLocaleDateString()}</span>
+                            </div>
+                            <span className={`badge ${req.status === 'Released' || req.status === 'Returned' ? 'badge-success' : req.status === 'Rejected' || req.status.includes('Damage') ? 'badge-danger' : 'badge-warning'}`}>
+                              {req.status ? req.status.toUpperCase() : 'PENDING'}
+                            </span>
+                          </div>
+                          <div style={{ background: 'var(--neutral-50)', padding: '10px', borderRadius: '8px', fontSize: '0.9rem' }}>
+                            <p style={{ margin: '0 0 5px 0' }}><strong>Return By:</strong> {new Date(req.expected_return).toLocaleDateString()}</p>
+                            <p style={{ margin: '0 0 5px 0' }}><strong>Purpose:</strong> {req.purpose || 'Not specified'}</p>
+                            {req.damage_notes && <p style={{ margin: 0, color: '#ef4444' }}><strong>Notes:</strong> {req.damage_notes}</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <button onClick={() => setIsCreatingEqReq(false)} className="btn btn-secondary" style={{ marginBottom: '20px', background: 'transparent', border: 'none', padding: '5px 0', color: '#64748b' }}>
+                    <ChevronLeft size={18} /> Back
+                  </button>
+                  <div style={{ maxWidth: '600px', margin: '0 auto', background: '#f8fafc', padding: '2rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                    <h3 style={{ marginTop: 0, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}><Package size={22} color="var(--primary-600)"/> Request Equipment</h3>
+                    
+                    <form onSubmit={handleEquipmentSubmit}>
+                      <div className="eq-form-group">
+                        <label>Select Item to Borrow *</label>
+                        <select required value={eqForm.equipment_id} onChange={e => setEqForm({...eqForm, equipment_id: e.target.value})}>
+                          <option value="">-- Choose Item --</option>
+                          {equipmentInventory.map(item => (
+                            <option key={item.id} value={item.id} disabled={item.available_quantity === 0}>
+                              {item.item_name} ({item.available_quantity} left)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="eq-form-group">
+                        <label>Quantity Needed *</label>
+                        <input type="number" min="1" required value={eqForm.quantity} onChange={e => setEqForm({...eqForm, quantity: e.target.value})} />
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '15px' }}>
+                        <div className="eq-form-group" style={{ flex: 1 }}>
+                          <label>Date Needed *</label>
+                          <input type="datetime-local" required value={eqForm.borrow_date} onChange={e => setEqForm({...eqForm, borrow_date: e.target.value})} />
+                        </div>
+                        <div className="eq-form-group" style={{ flex: 1 }}>
+                          <label>Expected Return *</label>
+                          <input type="datetime-local" required value={eqForm.expected_return} onChange={e => setEqForm({...eqForm, expected_return: e.target.value})} />
+                        </div>
+                      </div>
+
+                      <div className="eq-form-group">
+                        <label>Purpose / Event *</label>
+                        <textarea rows="3" placeholder="e.g., Birthday Party, Wake, Meeting" required value={eqForm.purpose} onChange={e => setEqForm({...eqForm, purpose: e.target.value})}></textarea>
+                      </div>
+
+                      {/* AGREEMENT CHECKBOX */}
+                      <div className="eq-form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
+                        <input 
+                          type="checkbox" 
+                          id="eqAgree" 
+                          checked={isEqAgreed} 
+                          onChange={(e) => setIsEqAgreed(e.target.checked)} 
+                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                        />
+                        <label htmlFor="eqAgree" style={{ fontSize: '0.85rem', fontWeight: 'normal', cursor: 'pointer', margin: 0, color: '#475569' }}>
+                          I agree that all the details provided are correct before submitting this request.
+                        </label>
+                      </div>
+
+                      <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
+                         <button type="button" onClick={() => setIsCreatingEqReq(false)} className="btn btn-secondary" style={{ flex: 1 }}>Cancel</button>
+                         <button type="submit" disabled={!isEqAgreed} className="btn btn-primary" style={{ flex: 1, opacity: isEqAgreed ? 1 : 0.6, cursor: isEqAgreed ? 'pointer' : 'not-allowed' }}>Submit Request</button>
+                      </div>
+                    </form>
+                  </div>
+                </>
+              )}
+            </div>
+          )
+        )}
+
+        {/* REPORT/BLOTTER TAB - WITH RESTRICTION */}
         {activeTab === 'report' && (
-           <ResidentBlotterTab user={user} />
+          !user?.is_verified ? (
+            <RestrictedView featureName="Incident Reporting" />
+          ) : (
+            <ResidentBlotterTab user={user} />
+          )
         )} 
       </div>
     </div>

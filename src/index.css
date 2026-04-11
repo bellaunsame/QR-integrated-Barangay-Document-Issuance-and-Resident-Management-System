@@ -126,12 +126,14 @@ img, picture, svg, video {
 #root {
   width: 100%;
   min-height: 100vh;
-  min-height: 100dvh; /* FIX: Prevents mobile Safari bottom bar issues */
-  display: flex;      /* FIX: Allows child layout wrappers to stretch properly */
+  min-height: 100dvh;
+  display: flex;
   flex-direction: column;
   margin: 0;
   padding: 0;
   text-align: left;
+  /* ADD THIS LINE to ensure it covers the full width */
+  overflow-x: hidden; 
 }
 
 /* Typography */
