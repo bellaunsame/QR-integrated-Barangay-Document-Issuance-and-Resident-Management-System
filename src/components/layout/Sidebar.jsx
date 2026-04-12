@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   QrCode,
   LogOut,
   ShieldCheck,
@@ -39,20 +40,14 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
     released: 0,
     new_devices: 0,
     new_blotters: 0,
-    new_equipment: 0,
-    nudges: 0 
+    new_equipment: 0
   });
 
-  // --- REALTIME SYNC ---
+  // --- INTEGRATED REALTIME LOGIC ---
   useEffect(() => {
     fetchCounts();
 
     window.addEventListener('docs_updated', fetchCounts);
-
-    const nudgeChannel = supabase.channel('sidebar-nudges-sync')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: "type=eq.system" }, () => {
-        fetchCounts();
-      }).subscribe();
 
     const residentChannel = supabase.channel('sidebar-residents-sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'residents' }, () => {
@@ -64,39 +59,97 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
         setTimeout(() => fetchCounts(), 500); 
       }).subscribe();
 
+    const auditChannel = supabase.channel('sidebar-audit-sync')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_logs' }, () => {
+        setTimeout(() => fetchCounts(), 500);
+      }).subscribe();
+
+    const blotterChannel = supabase.channel('sidebar-blotter-sync')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'blotter_records' }, () => {
+        setTimeout(() => fetchCounts(), 500);
+      }).subscribe();
+
+    const equipmentChannel = supabase.channel('sidebar-equipment-sync')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'borrowing_records' }, () => {
+        setTimeout(() => fetchCounts(), 500);
+      }).subscribe();
+
     return () => {
       window.removeEventListener('docs_updated', fetchCounts);
       supabase.removeChannel(residentChannel);
       supabase.removeChannel(docsChannel);
-      supabase.removeChannel(nudgeChannel);
+      supabase.removeChannel(auditChannel);
+      supabase.removeChannel(blotterChannel);
+      supabase.removeChannel(equipmentChannel);
     };
   }, []);
 
+  const getSinceTime = (storageKey) => {
+    const yesterday = new Date();
+    yesterday.setHours(yesterday.getHours() - 24);
+    const lastViewedStr = localStorage.getItem(storageKey);
+    
+    if (lastViewedStr) {
+      const lastViewed = new Date(lastViewedStr);
+      if (lastViewed > yesterday) return lastViewed.toISOString();
+    }
+    return yesterday.toISOString();
+  };
+
   const fetchCounts = async () => {
     try {
-      const [resCount, pendingCount, completedCount, releasedCount, nudgeCount] = await Promise.all([
+      const sinceSecurity = getSinceTime('last_viewed_security');
+      const sinceBlotter = getSinceTime('last_viewed_blotter');
+      const sinceEquipment = getSinceTime('last_viewed_equipment');
+
+      const [resCount, pendingCount, completedCount, releasedCount, newDevicesCount, newBlottersCount, newEquipmentCount] = await Promise.all([
         supabase.from('residents').select('*', { count: 'exact', head: true }),
         supabase.from('document_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
         supabase.from('document_requests').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
         supabase.from('document_requests').select('*', { count: 'exact', head: true }).eq('status', 'released'),
-        supabase.from('notifications').select('*', { count: 'exact', head: true })
-          .eq('type', 'system')
-          .ilike('title', '%Nudge%')
+        supabase.from('audit_logs').select('*', { count: 'exact', head: true }).eq('action', 'NEW_DEVICE_VERIFIED').gte('created_at', sinceSecurity),
+        supabase.from('blotter_records').select('*', { count: 'exact', head: true }).gte('created_at', sinceBlotter),
+        supabase.from('borrowing_records').select('*', { count: 'exact', head: true }).gte('created_at', sinceEquipment)
       ]);
 
-      setCounts(prev => ({
-        ...prev,
+      setCounts({
         residents: resCount.count || 0,
         pending: pendingCount.count || 0,
         completed: completedCount.count || 0,
         released: releasedCount.count || 0,
-        nudges: nudgeCount.count || 0
-      }));
+        new_devices: newDevicesCount.count || 0,
+        new_blotters: newBlottersCount.count || 0,
+        new_equipment: newEquipmentCount.count || 0
+      });
     } catch (error) {
       console.error("Error fetching sidebar counts:", error);
     }
   };
 
+  useEffect(() => {
+    if (location.pathname.includes('/documents')) {
+      setIsDocsOpen(true);
+    }
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (location.pathname === '/security') {
+      localStorage.setItem('last_viewed_security', new Date().toISOString());
+      setCounts(prev => ({ ...prev, new_devices: 0 }));
+    }
+    if (location.pathname === '/blotter') {
+      localStorage.setItem('last_viewed_blotter', new Date().toISOString());
+      setCounts(prev => ({ ...prev, new_blotters: 0 }));
+    }
+    if (location.pathname === '/equipment') {
+      localStorage.setItem('last_viewed_equipment', new Date().toISOString());
+      setCounts(prev => ({ ...prev, new_equipment: 0 }));
+    }
+  }, [location.pathname]);
+
+  // ==========================================
+  // EXPLICIT ROLE-BASED MENU ITEMS
+  // ==========================================
   const menuItems = [
     {
       icon: <LayoutDashboard size={20} />,
@@ -109,9 +162,7 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
       label: 'Residents',
       path: '/residents',
       roles: ['admin', 'secretary', 'clerk', 'record_keeper', 'barangay_captain', 'view_only'], 
-      badge: counts.nudges > 0 
-        ? { text: counts.nudges, className: 'badge-pulse-red' } 
-        : (counts.residents > 0 ? { text: counts.residents, color: '#dbeafe', textColor: '#1d4ed8' } : null)
+      badge: counts.residents > 0 ? { text: counts.residents, color: '#dbeafe', textColor: '#1d4ed8' } : null
     },
     {
       icon: <Scale size={20} />,
@@ -149,13 +200,14 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
       icon: <QrCode size={20} />,
       label: 'QR Scanner',
       path: '/scan',
-      roles: ['admin', 'secretary', 'clerk']
+      roles: ['admin', 'secretary', 'clerk'] // Hide from view-only since scanning implies processing
     },
     {
       icon: <ShieldCheck size={20} />,
       label: 'Security Dashboard',
       path: '/security',
-      roles: ['admin']
+      roles: ['admin'],
+      badge: counts.new_devices > 0 ? { text: counts.new_devices, color: '#fef3c7', textColor: '#b45309' } : null 
     },
     {
       icon: <Settings size={20} />,
@@ -170,123 +222,199 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
     navigate('/login');
   };
 
+  // Safe manual check for roles
   const visibleMenuItems = menuItems.filter(item => {
-    return item.roles?.includes(user?.role);
+    if (item.roles && user?.role) {
+      return item.roles.includes(user.role);
+    }
+    if (item.permission) {
+      return user?.role === 'admin' || hasPermission(item.permission);
+    }
+    return true; 
   });
 
+  // Safe manual check for Documents Dropdown
   const canViewDocuments = ['admin', 'secretary', 'clerk', 'record_keeper', 'barangay_captain', 'view_only'].includes(user?.role);
-  const hasHighPriority = counts.nudges > 0;
 
   return (
-    <aside className={`sidebar ${isOpen ? 'open' : ''} ${isCollapsed ? 'collapsed' : ''}`}>
-      <div className="sidebar-header">
-        <div className="sidebar-logo-wrapper">
-          <div className="logo-icon"><img src={logo} alt="Barangay Logo" /></div>
-          {!isCollapsed && (
-            <div className="logo-text">
-              <h1 style={{ fontSize: '1.1rem', marginBottom: '2px' }}>Barangay Dos</h1>
-              <p style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Management System</p>
-            </div>
-          )}
+    <>
+      <style>{`
+        .nav-badge {
+          font-size: 0.75rem;
+          font-weight: 700;
+          padding: 2px 8px;
+          border-radius: 9999px;
+          margin-left: auto;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.3s ease;
+        }
+        .badge-pulse {
+          animation: pulse-orange 2s infinite;
+          background-color: #fef3c7;
+          color: #b45309;
+          box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+        }
+        @keyframes pulse-orange {
+          0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
+          70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+          100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+        }
+      `}</style>
+
+      <aside className={`sidebar ${isOpen ? 'open' : ''} ${isCollapsed ? 'collapsed' : ''}`}>
+        <div className="sidebar-header">
+          <div className="sidebar-logo">
+            <div className="logo-icon"><img src={logo} alt="Barangay Logo" /></div>
+            {!isCollapsed && (
+              <div className="logo-text">
+                <h1 style={{ fontSize: '1.1rem', marginBottom: '2px' }}>Barangay Dos</h1>
+                <p style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'normal', paddingRight: '10px' }}>
+                  Online Document Record & Services Management System
+                </p>
+              </div>
+            )}
+          </div>
+          <button className="sidebar-collapse-btn desktop-only" onClick={onToggleCollapse}>
+            {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+          </button>
         </div>
-        <button className="sidebar-collapse-btn desktop-only" onClick={onToggleCollapse}>
-          {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
-        </button>
-      </div>
 
-      <nav className="sidebar-nav">
-        <div className="nav-section">
-          {!isCollapsed && <div className="nav-section-title">Main Menu</div>}
-          
-          {visibleMenuItems.slice(0, 2).map((item) => (
-            <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onClose}>
-              <span className="nav-icon">{item.icon}</span>
-              {!isCollapsed && (
-                <>
-                  <span className="nav-label">{item.label}</span>
-                  {item.badge && (
-                    <span 
-                      className={`nav-badge ${item.badge.className || ''}`} 
-                      style={{ backgroundColor: item.badge.color, color: item.badge.textColor }}
-                    >
-                      {item.badge.text}
-                    </span>
-                  )}
-                </>
-              )}
-            </NavLink>
-          ))}
-
-          {/* DOCUMENTS DROPDOWN */}
-          {canViewDocuments && (
-            <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
-              <div 
-                onClick={() => { 
-                  if (isCollapsed) onToggleCollapse(); 
-                  setIsDocsOpen(!isDocsOpen); 
-                  // Ensure clicking the parent navigates to the documents page
-                  if (!location.pathname.includes('/documents')) {
-                    navigate('/documents');
-                  }
-                }}
-                className={`nav-item ${location.pathname.includes('/documents') ? 'active' : ''}`}
-              >
-                <span className="nav-icon"><FileText size={20} /></span>
+        <nav className="sidebar-nav">
+          <div className="nav-section">
+            {!isCollapsed && <div className="nav-section-title">Main Menu</div>}
+            
+            {/* FIRST 2 ITEMS (Dashboard & Residents, or Blotter depending on role) */}
+            {visibleMenuItems.slice(0, 2).map((item) => (
+              <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onClose}>
+                <span className="nav-icon">{item.icon}</span>
                 {!isCollapsed && (
                   <>
-                    <span className="nav-label">Documents</span>
-                    {!isDocsOpen && counts.pending > 0 && (
-                      <span className={`nav-badge ${hasHighPriority ? 'badge-pulse-red' : 'badge-pulse-orange'}`}>
-                        {counts.pending}
+                    <span className="nav-label">{item.label}</span>
+                    {item.badge && (
+                      <span className="nav-badge" style={{ backgroundColor: item.badge.color, color: item.badge.textColor }}>
+                        {item.badge.text > 99 ? '99+' : item.badge.text}
                       </span>
                     )}
-                    <span className="dropdown-arrow" style={{ transform: isDocsOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-                      <ChevronDown size={16} />
-                    </span>
                   </>
                 )}
-              </div>
+              </NavLink>
+            ))}
 
-              {/* The Dropdown Menu (No longer conditionally unmounted) */}
-              <div className={`dropdown-menu ${isDocsOpen && !isCollapsed ? 'open' : ''}`}>
-                <NavLink to="/documents?filter=pending" className={({ isActive }) => `dropdown-item ${location.search === '?filter=pending' ? 'active' : ''}`} onClick={onClose}>
-                  <Clock size={16} color="#f59e0b" /> Pending
-                  {counts.pending > 0 && <span className={`nav-badge ${hasHighPriority ? 'badge-pulse-red' : ''}`}>{counts.pending}</span>}
-                </NavLink>
-                <NavLink to="/documents?filter=completed" className={({ isActive }) => `dropdown-item ${location.search === '?filter=completed' ? 'active' : ''}`} onClick={onClose}>
-                  <CheckCircle size={16} color="#10b981" /> Completed
-                </NavLink>
-                <NavLink to="/documents?filter=released" className={({ isActive }) => `dropdown-item ${location.search === '?filter=released' ? 'active' : ''}`} onClick={onClose}>
-                  <Send size={16} color="#3b82f6" /> Released
-                </NavLink>
-                <NavLink to="/documents?filter=archived" className={({ isActive }) => `dropdown-item ${location.search === '?filter=archived' ? 'active' : ''}`} onClick={onClose}>
-                  <Archive size={16} color="#64748b" /> Archive
-                </NavLink>
+            {/* DOCUMENTS DROPDOWN */}
+            {canViewDocuments && (
+              <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+                <div onClick={() => { if (isCollapsed) onToggleCollapse(); setIsDocsOpen(!isDocsOpen); navigate('/documents'); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1.5rem', cursor: 'pointer',
+                    backgroundColor: location.pathname.includes('/documents') ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                    color: location.pathname.includes('/documents') ? 'var(--primary-600)' : 'var(--text-secondary)',
+                    borderLeft: location.pathname.includes('/documents') ? '3px solid var(--primary-600)' : '3px solid transparent',
+                    fontWeight: 500, transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%' }}>
+                    <span className="nav-icon" style={{ display: 'flex' }}><FileText size={20} /></span>
+                    {!isCollapsed && (
+                      <>
+                        <span className="nav-label">Documents</span>
+                        {!isDocsOpen && counts.pending > 0 && <span className="nav-badge badge-pulse">{counts.pending}</span>}
+                      </>
+                    )}
+                  </div>
+                  {!isCollapsed && <span style={{ color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', marginLeft: '8px' }}>{isDocsOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>}
+                </div>
+
+                {!isCollapsed && isDocsOpen && (
+                  <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--neutral-50)', padding: '0.5rem 0', borderBottom: '1px solid var(--border)' }}>
+                    <NavLink to="/documents?filter=pending" onClick={onClose}
+                      style={({isActive}) => ({
+                        padding: '0.6rem 1.5rem 0.6rem 3.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none', fontSize: '0.85rem', 
+                        color: location.search === '?filter=pending' ? 'var(--primary-700)' : 'var(--text-secondary)', fontWeight: location.search === '?filter=pending' ? '600' : '500',
+                        backgroundColor: location.search === '?filter=pending' ? '#e0f2fe' : 'transparent'
+                      })}
+                    >
+                      <Clock size={16} color="#f59e0b" /> Pending
+                      {counts.pending > 0 && <span className="nav-badge badge-pulse">{counts.pending}</span>}
+                    </NavLink>
+
+                    <NavLink to="/documents?filter=completed" onClick={onClose}
+                      style={({isActive}) => ({
+                        padding: '0.6rem 1.5rem 0.6rem 3.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none', fontSize: '0.85rem', 
+                        color: location.search === '?filter=completed' ? 'var(--primary-700)' : 'var(--text-secondary)', fontWeight: location.search === '?filter=completed' ? '600' : '500',
+                        backgroundColor: location.search === '?filter=completed' ? '#e0f2fe' : 'transparent'
+                      })}
+                    >
+                      <CheckCircle size={16} color="#10b981" /> Completed
+                      {counts.completed > 0 && <span className="nav-badge" style={{ backgroundColor: '#d1fae5', color: '#047857' }}>{counts.completed}</span>}
+                    </NavLink>
+
+                    <NavLink to="/documents?filter=released" onClick={onClose}
+                      style={({isActive}) => ({
+                        padding: '0.6rem 1.5rem 0.6rem 3.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none', fontSize: '0.85rem', 
+                        color: location.search === '?filter=released' ? 'var(--primary-700)' : 'var(--text-secondary)', fontWeight: location.search === '?filter=released' ? '600' : '500',
+                        backgroundColor: location.search === '?filter=released' ? '#e0f2fe' : 'transparent'
+                      })}
+                    >
+                      <Send size={16} color="#3b82f6" /> Released
+                      {counts.released > 0 && <span className="nav-badge" style={{ backgroundColor: '#dbeafe', color: '#1d4ed8' }}>{counts.released}</span>}
+                    </NavLink>
+
+                    <NavLink to="/documents?filter=archived" onClick={onClose}
+                      style={({isActive}) => ({
+                        padding: '0.6rem 1.5rem 0.6rem 3.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none', fontSize: '0.85rem', 
+                        color: location.search === '?filter=archived' ? 'var(--primary-700)' : 'var(--text-secondary)', fontWeight: location.search === '?filter=archived' ? '600' : '500',
+                        backgroundColor: location.search === '?filter=archived' ? '#e0f2fe' : 'transparent'
+                      })}
+                    >
+                      <Archive size={16} color="#64748b" /> Archive
+                    </NavLink>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* THE REST OF THE MENU ITEMS */}
+            {visibleMenuItems.slice(2).map((item) => (
+              <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onClose}>
+                <span className="nav-icon">{item.icon}</span>
+                {!isCollapsed && (
+                  <>
+                    <span className="nav-label">{item.label}</span>
+                    {item.badge && (
+                      <span className="nav-badge" style={{ backgroundColor: item.badge.color, color: item.badge.textColor }}>
+                        {item.badge.text > 99 ? '99+' : item.badge.text}
+                      </span>
+                    )}
+                  </>
+                )}
+              </NavLink>
+            ))}
+          </div>
+        </nav>
+
+        <div className="sidebar-footer">
+          <NavLink to="/profile" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onClose}>
+            <span className="nav-icon"><User size={20} /></span>
+            {!isCollapsed && <span className="nav-label">My Profile</span>}
+          </NavLink>
+          <button className="nav-item logout-btn" onClick={handleLogout}>
+            <span className="nav-icon"><LogOut size={20} /></span>
+            {!isCollapsed && <span className="nav-label">Logout</span>}
+          </button>
+          {!isCollapsed && user && (
+            <div className="sidebar-user">
+              <div className="user-avatar-small">{user.full_name?.charAt(0) || 'U'}</div>
+              <div className="user-details">
+                <div className="user-name-small">{user.full_name}</div>
+                <div className="user-role-small">{user.role?.replace('_', ' ')}</div>
               </div>
             </div>
           )}
-
-          {visibleMenuItems.slice(2).map((item) => (
-            <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onClose}>
-              <span className="nav-icon">{item.icon}</span>
-              {!isCollapsed && (
-                <>
-                  <span className="nav-label">{item.label}</span>
-                  {item.badge && <span className="nav-badge" style={{ backgroundColor: item.badge.color, color: item.badge.textColor }}>{item.badge.text}</span>}
-                </>
-              )}
-            </NavLink>
-          ))}
         </div>
-      </nav>
-
-      <div className="sidebar-footer">
-        <button className="logout-btn" onClick={handleLogout}>
-          <span className="nav-icon"><LogOut size={20} /></span>
-          {!isCollapsed && <span className="nav-label">Logout</span>}
-        </button>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 };
 

@@ -12,6 +12,8 @@ node_modules
 
 # Environment variables
 .env
+.env.old
+.env.new
 .env.local
 .env.development.local
 .env.test.local
@@ -37,3 +39,8 @@ lerna-debug.log*
 # Temporary files
 *.tmp
 *.temp
+
+# SQL Backup
+
+data.sql
+schema.sql
