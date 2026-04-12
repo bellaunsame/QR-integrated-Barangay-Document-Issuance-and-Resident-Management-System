@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabaseClient'; // Ensure this import exists
-import { Users, Shield, FileText, ArrowRight, X, Lock, Loader2 } from 'lucide-react';
+import { Users, Shield, FileText, ArrowRight, X, Lock, Loader2, AlertCircle } from 'lucide-react';
 
 // Images and CSS
 import logo from '../assets/brgy.2-icon.png';
