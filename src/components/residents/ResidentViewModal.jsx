@@ -1,5 +1,9 @@
-import React, { useState } from 'react';
-import { X, Edit2, CheckCircle, XCircle, AlertTriangle, User, Calendar, MapPin, Phone, ShieldCheck, Mail, FileText } from 'lucide-react'; 
+import React, { useState, useEffect } from 'react';
+import { 
+  X, Edit2, CheckCircle, XCircle, AlertTriangle, User, 
+  Calendar, MapPin, Phone, ShieldCheck, Mail, FileText, 
+  Scale, ShieldAlert, UserCheck, Star, Send 
+} from 'lucide-react'; 
 import { calculateAge } from '../../utils/residentUtils';
 import { supabase } from '../../services/supabaseClient';
 import toast from 'react-hot-toast';
@@ -7,29 +11,73 @@ import toast from 'react-hot-toast';
 const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, userRole }) => {
   const [rejectMode, setRejectMode] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [customRejectNote, setCustomRejectNote] = useState(''); // NEW: Custom note for rejection email
+
+  // --- RESTORED: Missing states to prevent reference errors ---
+  const [loadingHits, setLoadingHits] = useState(false);
+  const [blotterHits, setBlotterHits] = useState([]);
+  const [activeHits, setActiveHits] = useState([]);
+  
+  const [verificationChecklist, setVerificationChecklist] = useState({
+    idMatchesName: false,
+    addressMatchesProof: false,
+    selfieMatchesId: false,
+    idIsValid: false
+  });
+
+  // --- RESTORED: Fetch Background/Blotter Data ---
+  useEffect(() => {
+    if (!resident) return;
+
+    const fetchBackgroundData = async () => {
+      setLoadingHits(true);
+      try {
+        const { data, error } = await supabase
+          .from('blotter_records')
+          .select('*')
+          .eq('resident_id', resident.id); // Assuming linked by ID
+
+        if (!error && data) {
+          setBlotterHits(data);
+          setActiveHits(data.filter(hit => hit.status === 'Active'));
+        }
+      } catch (err) {
+        console.error("Failed to load background check", err);
+      } finally {
+        setLoadingHits(false);
+      }
+    };
+
+    fetchBackgroundData();
+  }, [resident]);
 
   if (!resident) return null;
 
   const isPending = resident.account_status === 'Pending';
   const age = resident.date_of_birth ? calculateAge(resident.date_of_birth) : 'N/A';
 
+  // Checklist Handlers
+  const handleChecklistChange = (field) => {
+    setVerificationChecklist(prev => ({ ...prev, [field]: !prev[field] }));
+  };
+  const isAllChecked = Object.values(verificationChecklist).every(Boolean);
+
   const handleConfirmReject = () => {
     if (!rejectReason) {
-      toast.error("Please select a reason for rejection.");
+      toast.error("Please select a primary reason for rejection.");
       return;
     }
-    onReject(resident, rejectReason);
+    // Pass the resident, the primary reason, AND the custom note to the parent component
+    onReject(resident, rejectReason, customRejectNote);
     setRejectMode(false);
   };
 
-  // --- NEW: Copy to Clipboard Helper ---
   const handleCopy = (text, label) => {
     if (!text || text === 'N/A') return;
     navigator.clipboard.writeText(text);
     toast.success(`${label} copied to clipboard!`, { icon: '📋' });
   };
 
-  // SECURITY: Un-clickable CSS Watermark Overlay
   const Watermark = () => (
     <div style={{
       position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
@@ -46,11 +94,14 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
     </div>
   );
 
+  // Determine if we need to show the special classifications box
+  const hasSpecialClass = resident.voter_status || resident.senior_citizen || resident.pwd_status;
+
   return (
     <div className="modal-overlay" onClick={onClose} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', zIndex: 1000 }}>
       <div className="modal-content animation-fade-in" onClick={e => e.stopPropagation()} style={{ 
         background: '#fff', borderRadius: '12px', width: '100%', 
-        maxWidth: '1000px', // FIX: Always 1000px wide so documents fit perfectly next to text
+        maxWidth: '1000px',
         maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' 
       }}>
         
@@ -68,13 +119,12 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
         {/* BODY */}
         <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '30px' }}>
           
-          {/* LEFT SIDE: Text Details & Background Check */}
+          {/* LEFT SIDE */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
             
-            {/* Resident Name & Photo */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '5px' }}>
               {resident.photo_url ? (
-                <img src={resident.photo_url} alt="Profile Avatar" style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #e2e8f0' }} />
+                <img src={resident.photo_url} alt="Profile" style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #e2e8f0' }} />
               ) : (
                 <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><User size={40} color="#94a3b8"/></div>
               )}
@@ -100,7 +150,21 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
               </div>
             </div>
 
-            {/* --- BACKGROUND / BLOTTER CHECK UI --- */}
+            {/* --- PROMINENT SPECIAL CLASSIFICATIONS BOX --- */}
+            {hasSpecialClass && (
+              <div style={{ background: '#f0fdf4', padding: '12px 15px', borderRadius: '8px', border: '1px solid #bbf7d0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <h4 style={{ margin: 0, fontSize: '0.9rem', color: '#166534', display: 'flex', alignItems: 'center', gap: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  <Star size={16} /> Special Classifications
+                </h4>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  {resident.voter_status && <span className="badge" style={{ background: '#10b981', color: 'white' }}>✓ Registered Voter</span>}
+                  {resident.senior_citizen && <span className="badge" style={{ background: '#f59e0b', color: 'white' }}>★ Senior Citizen</span>}
+                  {resident.pwd_status && <span className="badge" style={{ background: '#ef4444', color: 'white' }}>♿ PWD</span>}
+                </div>
+              </div>
+            )}
+
+            {/* BACKGROUND / BLOTTER CHECK */}
             <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <h4 style={{ margin: '0 0 10px 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px', color: '#334155' }}>
                 <Scale size={18} color="var(--primary-600)"/> Background Check
@@ -108,7 +172,8 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
               
               {loadingHits ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', fontSize: '0.9rem' }}>
-                  <Loader2 size={16} className="animate-spin" /> Scanning barangay records...
+                  <div className="spinner" style={{ width: '16px', height: '16px', border: '2px solid #cbd5e1', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                  Scanning barangay records...
                 </div>
               ) : blotterHits.length === 0 ? (
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', color: '#059669', background: '#ecfdf5', padding: '10px', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
@@ -146,36 +211,20 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
                 <MapPin size={16} color="#64748b" style={{ marginTop: '3px' }}/> 
                 <span><strong>Address:</strong> {[resident.full_address, resident.purok, resident.barangay].filter(Boolean).join(', ')}</span>
               </p>
-              
               <p style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Calendar size={16} color="#64748b"/> 
                 <strong>Date of Birth:</strong> {resident.date_of_birth ? new Date(resident.date_of_birth).toLocaleDateString() : 'N/A'} ({age !== 'Invalid' ? age : 'N/A'} yrs)
               </p>
-              
-              <p 
-                style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-                onClick={() => handleCopy(resident.mobile_number || resident.contact_number, 'Phone Number')}
-                title="Click to copy"
-              >
+              <p style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => handleCopy(resident.mobile_number || resident.contact_number, 'Phone Number')} title="Click to copy">
                 <Phone size={16} color="#64748b"/> 
                 <strong>Contact:</strong> 
-                <span style={{ color: 'var(--primary-600)', textDecoration: 'underline' }}>
-                  {resident.mobile_number || resident.contact_number || 'N/A'}
-                </span>
+                <span style={{ color: 'var(--primary-600)', textDecoration: 'underline' }}>{resident.mobile_number || resident.contact_number || 'N/A'}</span>
               </p>
-              
-              <p 
-                style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-                onClick={() => handleCopy(resident.email, 'Email Address')}
-                title="Click to copy"
-              >
+              <p style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => handleCopy(resident.email, 'Email Address')} title="Click to copy">
                 <Mail size={16} color="#64748b"/> 
                 <strong>Email:</strong> 
-                <span style={{ color: 'var(--primary-600)', textDecoration: 'underline' }}>
-                  {resident.email || 'N/A'}
-                </span>
+                <span style={{ color: 'var(--primary-600)', textDecoration: 'underline' }}>{resident.email || 'N/A'}</span>
               </p>
-              
               <p style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <User size={16} color="#64748b"/> 
                 <strong>Gender / Civil Status:</strong> {[resident.gender, resident.civil_status].filter(Boolean).join(' / ') || 'N/A'}
@@ -183,12 +232,6 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
               <p style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <strong style={{ marginLeft: '24px' }}>Occupation:</strong> {resident.occupation || 'N/A'}
               </p>
-            </div>
-            
-            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              {resident.voter_status && <span className="badge badge-success">Registered Voter</span>}
-              {resident.senior_citizen && <span className="badge badge-warning">Senior Citizen</span>}
-              {resident.pwd_status && <span className="badge badge-danger">PWD</span>}
             </div>
           </div>
 
@@ -199,7 +242,7 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
               Identity Verification
             </h3>
             
-            {/* --- UPDATED: Valid ID (Front and Back) --- */}
+            {/* Valid ID (Front and Back) */}
             <div>
               <label style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#475569', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 Valid ID 
@@ -207,7 +250,6 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
               </label>
               
               <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
-                {/* Front Image */}
                 <div style={{ flex: 1, position: 'relative', borderRadius: '8px', overflow: 'hidden', border: '1px solid #cbd5e1', background: '#000', minHeight: '120px' }}>
                   {resident.id_image_url ? (
                     <>
@@ -220,7 +262,6 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
                   )}
                 </div>
 
-                {/* Back Image */}
                 <div style={{ flex: 1, position: 'relative', borderRadius: '8px', overflow: 'hidden', border: '1px solid #cbd5e1', background: '#000', minHeight: '120px' }}>
                   {resident.id_image_back_url ? (
                     <>
@@ -253,7 +294,7 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
               )}
             </div>
 
-            {/* --- Display the Liveness Check Selfie --- */}
+            {/* Liveness Check Selfie */}
             <div>
               <label style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#c2410c', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <UserCheck size={16} /> Liveness Check (Selfie holding ID)
@@ -275,7 +316,7 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
         {userRole !== 'view_only' && (
           <div style={{ padding: '20px', borderTop: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '15px', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
             
-            {/* --- STRICT VERIFICATION CHECKLIST (Only visible when pending) --- */}
+            {/* STRICT VERIFICATION CHECKLIST */}
             {isPending && !rejectMode && (
               <div style={{ background: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid #cbd5e1', width: '100%', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
                 <h4 style={{ margin: '0 0 5px 0', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -307,19 +348,24 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
               </div>
             )}
 
-            {/* BUTTON ROW */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            {/* BUTTON ROW / REJECTION PANEL */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
               {!isPending ? (
                  <button onClick={onEdit} className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }}><Edit2 size={18} /> Edit Resident Profile</button>
               ) : (
                 rejectMode ? (
-                  <div style={{ width: '100%', display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  /* --- ENHANCED REJECTION UI --- */
+                  <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '12px', background: '#fef2f2', padding: '15px', borderRadius: '8px', border: '1px solid #fca5a5' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#b91c1c', fontWeight: 'bold' }}>
+                      <AlertTriangle size={18} /> Require Re-submission (Reject)
+                    </div>
+                    
                     <select 
                       value={rejectReason} 
                       onChange={(e) => setRejectReason(e.target.value)}
-                      style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #ef4444' }}
+                      style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #ef4444', background: '#fff' }}
                     >
-                      <option value="">-- Select Reason for Rejection --</option>
+                      <option value="">-- Select Primary Reason for Rejection --</option>
                       <option value="Valid ID is blurred or unreadable.">Valid ID is blurred or unreadable.</option>
                       <option value="Name on ID does not match registered name.">Name on ID does not match registered name.</option>
                       <option value="Address on Proof of Residency is not in Barangay Dos.">Address on Proof of Residency is not in Barangay Dos.</option>
@@ -327,17 +373,28 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
                       <option value="Missing required documents.">Missing required documents.</option>
                       <option value="Suspected duplicate or fake account.">Suspected duplicate or fake account.</option>
                     </select>
-                    <button onClick={handleConfirmReject} className="btn" style={{ background: '#ef4444', color: 'white', border: 'none' }}>Confirm Reject</button>
-                    <button onClick={() => setRejectMode(false)} className="btn btn-secondary">Cancel</button>
+
+                    <textarea
+                      placeholder="Add specific instructions for the resident (e.g., 'Please re-upload your ID in a well-lit room'). This note will be included in the email."
+                      value={customRejectNote}
+                      onChange={(e) => setCustomRejectNote(e.target.value)}
+                      style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', minHeight: '80px', fontFamily: 'inherit', resize: 'vertical' }}
+                    />
+
+                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '5px' }}>
+                      <button onClick={() => setRejectMode(false)} className="btn btn-secondary" style={{ background: '#fff' }}>Cancel</button>
+                      <button onClick={handleConfirmReject} className="btn" style={{ background: '#ef4444', color: 'white', border: 'none' }}>
+                        <Send size={16} /> Send Email & Reject
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <>
                     <div style={{ display: 'flex', gap: '10px' }}>
-                      <button onClick={() => setRejectMode(true)} className="btn" style={{ background: '#fee2e2', color: '#ef4444', border: '1px solid #fca5a5' }}><XCircle size={18} /> Reject</button>
+                      <button onClick={() => setRejectMode(true)} className="btn" style={{ background: '#fee2e2', color: '#ef4444', border: '1px solid #fca5a5' }}><XCircle size={18} /> Reject / Request Change</button>
                       <button onClick={onEdit} className="btn btn-secondary" title="Fix typos before approving"><Edit2 size={18} /> Edit Typos</button>
                     </div>
                     
-                    {/* DISABLED UNTIL ALL CHECKLIST ITEMS ARE TRUE */}
                     <button 
                       onClick={() => onApprove(resident)} 
                       disabled={!isAllChecked}

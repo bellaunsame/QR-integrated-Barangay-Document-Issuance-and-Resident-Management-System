@@ -22,7 +22,7 @@ import ResidentFormModal from '../components/residents/ResidentFormModal';
 import CameraCaptureModal from '../components/residents/CameraCaptureModal';
 
 // Icons 
-import { Users, Plus, Search, Edit2, Archive, QrCode, Mail, Download, Eye, User, RefreshCw, Home, Clock, Check, X, ChevronLeft, ChevronRight, FileDown } from 'lucide-react';
+import { Users, Plus, Search, Edit2, Archive, QrCode, Mail, Download, Eye, User, RefreshCw, Home, Clock, Check, X, XCircle, ChevronLeft, ChevronRight, FileDown } from 'lucide-react';
 import './ResidentsPage.css';
 
 // --- HELPER: GENERATE RANDOM TEMPORARY PASSWORD ---
@@ -48,7 +48,7 @@ const ResidentsPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   
-  // VIEW MODE STATE: active, pending, or archived
+  // VIEW MODE STATE: active, pending, rejected, or archived
   const [viewMode, setViewMode] = useState('active'); 
 
   // ==========================================
@@ -91,26 +91,60 @@ const ResidentsPage = () => {
   const currentResidentAge = calculateAge(formData.date_of_birth);
   const isUnderage = currentResidentAge !== 'N/A' && currentResidentAge !== 'Invalid' && currentResidentAge < 16;
 
-  useEffect(() => { loadResidents(); }, []);
+  // ==========================================
+  // REALTIME SYNC & DATA LOADING
+  // ==========================================
+  useEffect(() => {
+    loadResidents();
+
+    // Subscribe to real-time changes
+    const residentChannel = supabase.channel('realtime-residents-page')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'residents' },
+        (payload) => {
+          console.log('Realtime change detected!', payload);
+          
+          // Show a tiny toast notification if a NEW registration comes in
+          if (payload.eventType === 'INSERT') {
+            toast.success("New resident registration received!", { icon: '🔔' });
+          }
+
+          // Fetch the fresh data silently in the background
+          loadResidents(true); 
+        }
+      )
+      .subscribe();
+
+    // Cleanup connection
+    return () => {
+      supabase.removeChannel(residentChannel);
+    };
+  }, []);
+
   useEffect(() => { filterResidents(); }, [searchTerm, allResidents, viewMode]);
 
-  const loadResidents = async () => {
+  // Updated to accept 'isBackground' to prevent spinner flashing
+  const loadResidents = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const data = await db.residents.getAll();
       setAllResidents(data); 
     } catch (error) {
-      toast.error('Failed to load residents');
+      if (!isBackground) toast.error('Failed to load residents');
+      console.error(error);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   const filterResidents = () => {
     let filtered = allResidents.filter(res => {
       if (viewMode === 'archived') return res.status === 'archived';
+      if (viewMode === 'rejected') return res.account_status === 'Rejected' && res.status !== 'archived';
       if (viewMode === 'pending') return res.account_status === 'Pending' && res.status !== 'archived';
-      return res.account_status !== 'Pending' && res.status !== 'archived';
+      // Active strictly means Approved
+      return res.account_status === 'Approved' && res.status !== 'archived';
     });
 
     if (searchTerm) {
@@ -287,7 +321,7 @@ const ResidentsPage = () => {
         
         const tempPassword = generateTempPassword();
         payload.password = tempPassword;
-        payload.needs_password_change = true;
+        payload.needs_password_change = false;
 
         res = await db.residents.create(payload);
         await logDataModification(user.id, 'residents', res.id, ACTIONS.RESIDENT_CREATED, null, payload);
@@ -405,14 +439,13 @@ const ResidentsPage = () => {
       
       const tempPassword = generateTempPassword();
 
-      // Include is_verified in the payload
       const { error } = await supabase
         .from('residents')
         .update({ 
           account_status: 'Approved',
           is_verified: true,
           password: tempPassword,
-          needs_password_change: true 
+          needs_password_change: false 
         })
         .eq('id', resident.id);
         
@@ -444,20 +477,73 @@ const ResidentsPage = () => {
     finally { setLoading(false); }
   };
 
-  const handleReject = async (resident, reason = "Registration declined by Barangay Staff.") => {
+  const handleReject = async (resident, reason = "Registration declined by Barangay Staff.", customNote = "") => {
     if (!canEdit) return;
     try {
       setLoading(true);
-      const { error } = await supabase.from('residents').delete().eq('id', resident.id);
+
+      if (resident.email) {
+        const emailMessage = `Your registration for the Barangay Dos Management System was not approved.\n\nReason: ${reason}\n\nNotes from Admin: ${customNote || 'Please review your documents and submit a new registration.'}`;
+        
+        try {
+          await emailjs.send(
+            'service_178ko1n',     
+            'template_qzkqkvf', 
+            {
+              to_email: resident.email,
+              to_name: resident.first_name,
+              barangay_name: "Dos, Calamba",
+              email_subject_message: emailMessage,
+              otp_code: "N/A - Account Rejected" 
+            },
+            'pfTdQReY0nVV3CjnY'    
+          );
+          toast.success("Rejection email sent.");
+        } catch (emailErr) {
+          console.error("Failed to send rejection email:", emailErr);
+          toast.error("Failed to send rejection email, but proceeding with rejection.");
+        }
+      } else {
+        toast.error("Resident has no email on file, updating record only.");
+      }
+
+      const { error } = await supabase
+        .from('residents')
+        .update({ 
+          account_status: 'Rejected',
+          is_verified: false
+        })
+        .eq('id', resident.id);
+        
       if (error) throw error;
       
-      toast.success(`Rejected. Reason recorded: ${reason}`);
+      toast.success(`Resident marked as Rejected and removed from pending list.`);
       await loadResidents();
       setViewingResident(null); 
     } catch (e) { 
       toast.error('Failed to reject resident'); 
+      console.error(e);
     } finally { 
       setLoading(false); 
+    }
+  };
+
+  const handleMoveToPending = async (resident) => {
+    if (!canEdit) return;
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from('residents')
+        .update({ account_status: 'Pending' })
+        .eq('id', resident.id);
+      
+      if (error) throw error;
+      toast.success(`${resident.first_name} moved back to Pending Review.`);
+      await loadResidents();
+    } catch (e) {
+      toast.error(`Failed to move to pending: ${e.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -566,6 +652,10 @@ const ResidentsPage = () => {
                 </span>
               )}
             </button>
+            {/* REJECTED TAB */}
+            <button className={viewMode === 'rejected' ? 'active-tab' : ''} onClick={() => { setViewMode('rejected'); goToPage(1); }}>
+              <XCircle size={16} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'text-bottom' }} /> Rejected
+            </button>
             <button className={viewMode === 'archived' ? 'active-tab' : ''} onClick={() => { setViewMode('archived'); goToPage(1); }}>
               <Archive size={16} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'text-bottom' }} /> Archived
             </button>
@@ -597,9 +687,10 @@ const ResidentsPage = () => {
                       <tr>
                         <td colSpan="8" className="empty-row" style={{ textAlign: 'center', padding: '3rem' }}>
                           {viewMode === 'archived' ? <Archive size={40} style={{ color: 'var(--neutral-400)', marginBottom: '1rem' }} /> : 
+                           viewMode === 'rejected' ? <XCircle size={40} style={{ color: 'var(--neutral-400)', marginBottom: '1rem' }} /> : 
                            viewMode === 'pending' ? <Clock size={40} style={{ color: 'var(--neutral-400)', marginBottom: '1rem' }} /> : 
                            <Users size={40} style={{ color: 'var(--neutral-400)', marginBottom: '1rem' }} />}
-                          <p>{viewMode === 'archived' ? 'No archived residents found.' : viewMode === 'pending' ? 'No pending registrations.' : 'No active residents found.'}</p>
+                          <p>{viewMode === 'archived' ? 'No archived residents found.' : viewMode === 'rejected' ? 'No rejected registrations.' : viewMode === 'pending' ? 'No pending registrations.' : 'No active residents found.'}</p>
                         </td>
                       </tr>
                     ) : (
@@ -624,10 +715,14 @@ const ResidentsPage = () => {
                           <td style={{ textAlign: 'center' }}><span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--primary-600)' }}>{r.document_requests?.length || 0}</span></td>
                           <td>{calculateAge(r.date_of_birth)} yrs / {r.gender}</td>
                           
-                          {/* UPDATED VERIFICATION COLUMN */}
+                          {/* VERIFICATION COLUMN */}
                           <td>
                             {r.account_status === 'Pending' ? (
                               <span className="badge badge-warning">Pending Review</span>
+                            ) : r.account_status === 'Rejected' ? (
+                              <span className="badge badge-danger" style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fca5a5' }}>
+                                <X size={12} style={{ marginRight: '4px', display: 'inline' }}/> Rejected
+                              </span>
                             ) : r.is_verified ? (
                               <span className="badge badge-success" style={{ background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' }}>
                                 <Check size={12} style={{ marginRight: '4px', display: 'inline' }}/> Verified
@@ -649,7 +744,15 @@ const ResidentsPage = () => {
                                   {viewMode === 'pending' ? (
                                     <>
                                       <button className="btn-icon" style={{color: '#10b981', background: '#d1fae5'}} onClick={() => handleApprove(r)} title="Verify & Approve Resident"><Check size={18} /></button>
-                                      <button className="btn-icon" style={{color: '#ef4444', background: '#fee2e2'}} onClick={() => handleReject(r)} title="Reject & Delete"><X size={18} /></button>
+                                      <button className="btn-icon" style={{color: '#ef4444', background: '#fee2e2'}} onClick={() => handleReject(r)} title="Reject"><X size={18} /></button>
+                                    </>
+                                  ) : viewMode === 'rejected' ? (
+                                    <>
+                                      <button className="btn-icon" style={{color: '#f59e0b', background: '#fef3c7'}} onClick={() => handleMoveToPending(r)} title="Move back to Pending"><Clock size={18} /></button>
+                                      <button className="btn-icon" style={{color: '#10b981', background: '#d1fae5'}} onClick={() => handleApprove(r)} title="Verify & Approve Resident"><Check size={18} /></button>
+                                      {user?.role === 'admin' && (
+                                        <button className="btn-icon btn-danger" onClick={() => handleArchiveResident(r)} title="Archive Resident"><Archive size={18} /></button>
+                                      )}
                                     </>
                                   ) : viewMode === 'active' ? (
                                     <>
@@ -682,7 +785,7 @@ const ResidentsPage = () => {
             {/* MOBILE VIEW */}
             <div className="mobile-cards-container">
               {currentResidents.length === 0 ? (
-                <div className="empty-row" style={{ textAlign: 'center', padding: '20px', background: '#fff', borderRadius: '8px', border: '1px solid var(--border)' }}>{viewMode === 'archived' ? 'No archived residents.' : viewMode === 'pending' ? 'No pending registrations.' : 'No active residents.'}</div>
+                <div className="empty-row" style={{ textAlign: 'center', padding: '20px', background: '#fff', borderRadius: '8px', border: '1px solid var(--border)' }}>{viewMode === 'archived' ? 'No archived residents.' : viewMode === 'rejected' ? 'No rejected registrations.' : viewMode === 'pending' ? 'No pending registrations.' : 'No active residents.'}</div>
               ) : (
                 currentResidents.map((r) => (
                   <div key={r.id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '8px', padding: '15px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', opacity: viewMode === 'archived' ? 0.8 : 1 }}>
@@ -709,11 +812,10 @@ const ResidentsPage = () => {
                       <strong>Email:</strong> {r.email || 'N/A'}
                     </div>
                     
-                    {/* UPDATED VERIFICATION MOBILE */}
                     <div style={{ marginBottom: '12px', fontSize: '0.9rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                        <span><strong>Docs:</strong> <span style={{color:'var(--primary-600)', fontWeight:'bold'}}>{r.document_requests?.length || 0}</span></span>
                        
-                       <span><strong>Status:</strong> {r.account_status === 'Pending' ? <span className="badge badge-warning" style={{fontSize:'0.7rem'}}>Pending Review</span> : r.is_verified ? <span className="badge badge-success" style={{fontSize:'0.7rem', background: '#dcfce7', color: '#166534'}}><Check size={12}/> Verified</span> : <span className="badge badge-secondary" style={{fontSize:'0.7rem', background: '#e2e8f0', color: '#475569'}}>Unverified</span>}</span>
+                       <span><strong>Status:</strong> {r.account_status === 'Pending' ? <span className="badge badge-warning" style={{fontSize:'0.7rem'}}>Pending Review</span> : r.account_status === 'Rejected' ? <span className="badge badge-danger" style={{fontSize:'0.7rem', background: '#fef2f2', color: '#b91c1c'}}><X size={12}/> Rejected</span> : r.is_verified ? <span className="badge badge-success" style={{fontSize:'0.7rem', background: '#dcfce7', color: '#166534'}}><Check size={12}/> Verified</span> : <span className="badge badge-secondary" style={{fontSize:'0.7rem', background: '#e2e8f0', color: '#475569'}}>Unverified</span>}</span>
                     </div>
 
                     <div className="action-buttons" style={{ borderTop: '1px solid var(--border)', paddingTop: '12px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
@@ -726,6 +828,14 @@ const ResidentsPage = () => {
                             <>
                               <button className="btn-icon" style={{color: '#10b981', background: '#d1fae5'}} onClick={() => handleApprove(r)} title="Verify & Approve"><Check size={18} /></button>
                               <button className="btn-icon" style={{color: '#ef4444', background: '#fee2e2'}} onClick={() => handleReject(r)} title="Reject"><X size={18} /></button>
+                            </>
+                          ) : viewMode === 'rejected' ? (
+                            <>
+                              <button className="btn-icon" style={{color: '#f59e0b', background: '#fef3c7'}} onClick={() => handleMoveToPending(r)} title="Move back to Pending"><Clock size={18} /></button>
+                              <button className="btn-icon" style={{color: '#10b981', background: '#d1fae5'}} onClick={() => handleApprove(r)} title="Verify & Approve"><Check size={18} /></button>
+                              {user?.role === 'admin' && (
+                                <button className="btn-icon btn-danger" onClick={() => handleArchiveResident(r)} title="Archive Resident"><Archive size={18} /></button>
+                              )}
                             </>
                           ) : viewMode === 'active' ? (
                             <>
