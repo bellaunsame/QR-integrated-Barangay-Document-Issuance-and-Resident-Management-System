@@ -2,11 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   X, Edit2, CheckCircle, XCircle, AlertTriangle, User, 
   Calendar, MapPin, Phone, ShieldCheck, Mail, FileText, 
-<<<<<<< HEAD
   Scale, ShieldAlert, UserCheck, Star, Send 
-=======
-  Scale, Loader2, ShieldAlert, UserCheck, Star, Send
->>>>>>> 8c953672306afb5b045dd09ae84256afca6b9602
 } from 'lucide-react'; 
 import { calculateAge } from '../../utils/residentUtils';
 import { supabase } from '../../services/supabaseClient';
@@ -15,7 +11,6 @@ import toast from 'react-hot-toast';
 const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, userRole }) => {
   const [rejectMode, setRejectMode] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
-<<<<<<< HEAD
   const [customRejectNote, setCustomRejectNote] = useState(''); // NEW: Custom note for rejection email
 
   // --- RESTORED: Missing states to prevent reference errors ---
@@ -23,14 +18,6 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
   const [blotterHits, setBlotterHits] = useState([]);
   const [activeHits, setActiveHits] = useState([]);
   
-=======
-  const [customRejectNote, setCustomRejectNote] = useState(''); 
-
-  // Background Check & Checklist States
-  const [loadingHits, setLoadingHits] = useState(false);
-  const [blotterHits, setBlotterHits] = useState([]);
-  const [activeHits, setActiveHits] = useState([]);
->>>>>>> 8c953672306afb5b045dd09ae84256afca6b9602
   const [verificationChecklist, setVerificationChecklist] = useState({
     idMatchesName: false,
     addressMatchesProof: false,
@@ -38,11 +25,7 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
     idIsValid: false
   });
 
-<<<<<<< HEAD
   // --- RESTORED: Fetch Background/Blotter Data ---
-=======
-  // --- FIXED: Fetch Background Data Logic ---
->>>>>>> 8c953672306afb5b045dd09ae84256afca6b9602
   useEffect(() => {
     if (!resident) return;
 
@@ -52,31 +35,14 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
         const { data, error } = await supabase
           .from('blotter_records')
           .select('*')
-<<<<<<< HEAD
           .eq('resident_id', resident.id); // Assuming linked by ID
 
         if (!error && data) {
-=======
-          // 👇 THIS IS THE FIX: Changed 'resident_id' to 'complainant_id'
-          .eq('complainant_id', resident.id);
-
-        if (error) {
-          console.warn("⚠️ Blotter check skipped: 'blotter_records' table or 'complainant_id' column may not exist yet.");
-          setBlotterHits([]);
-          setActiveHits([]);
-        } else if (data) {
->>>>>>> 8c953672306afb5b045dd09ae84256afca6b9602
           setBlotterHits(data);
           setActiveHits(data.filter(hit => hit.status === 'Active'));
         }
       } catch (err) {
-<<<<<<< HEAD
         console.error("Failed to load background check", err);
-=======
-        console.warn("⚠️ Failed to load background check safely:", err.message);
-        setBlotterHits([]);
-        setActiveHits([]);
->>>>>>> 8c953672306afb5b045dd09ae84256afca6b9602
       } finally {
         setLoadingHits(false);
       }
