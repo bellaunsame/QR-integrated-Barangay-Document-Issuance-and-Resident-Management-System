@@ -67,10 +67,7 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
       toast.error("Please select a primary reason for rejection.");
       return;
     }
-<<<<<<< HEAD
     // Pass the resident, the primary reason, AND the custom note to the parent component
-=======
->>>>>>> 8c953672306afb5b045dd09ae84256afca6b9602
     onReject(resident, rejectReason, customRejectNote);
     setRejectMode(false);
   };
@@ -97,10 +94,7 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
     </div>
   );
 
-<<<<<<< HEAD
   // Determine if we need to show the special classifications box
-=======
->>>>>>> 8c953672306afb5b045dd09ae84256afca6b9602
   const hasSpecialClass = resident.voter_status || resident.senior_citizen || resident.pwd_status;
 
   return (
@@ -156,10 +150,7 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
               </div>
             </div>
 
-<<<<<<< HEAD
             {/* --- PROMINENT SPECIAL CLASSIFICATIONS BOX --- */}
-=======
->>>>>>> 8c953672306afb5b045dd09ae84256afca6b9602
             {hasSpecialClass && (
               <div style={{ background: '#f0fdf4', padding: '12px 15px', borderRadius: '8px', border: '1px solid #bbf7d0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <h4 style={{ margin: 0, fontSize: '0.9rem', color: '#166534', display: 'flex', alignItems: 'center', gap: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -173,11 +164,7 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
               </div>
             )}
 
-<<<<<<< HEAD
             {/* BACKGROUND / BLOTTER CHECK */}
-=======
-            {/* BACKGROUND / BLOTTER CHECK UI */}
->>>>>>> 8c953672306afb5b045dd09ae84256afca6b9602
             <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <h4 style={{ margin: '0 0 10px 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px', color: '#334155' }}>
                 <Scale size={18} color="var(--primary-600)"/> Background Check
@@ -367,10 +354,7 @@ const ResidentViewModal = ({ resident, onClose, onEdit, onApprove, onReject, use
                  <button onClick={onEdit} className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }}><Edit2 size={18} /> Edit Resident Profile</button>
               ) : (
                 rejectMode ? (
-<<<<<<< HEAD
                   /* --- ENHANCED REJECTION UI --- */
-=======
->>>>>>> 8c953672306afb5b045dd09ae84256afca6b9602
                   <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '12px', background: '#fef2f2', padding: '15px', borderRadius: '8px', border: '1px solid #fca5a5' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#b91c1c', fontWeight: 'bold' }}>
                       <AlertTriangle size={18} /> Require Re-submission (Reject)
