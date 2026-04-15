@@ -560,6 +560,16 @@ const ResidentHome = () => {
               </div>
             </div>
 
+            {/* MOBILE ONLY PROFILE BUTTON */}
+            <button 
+              className="mobile-profile-btn" 
+              onClick={() => setActiveTab('profile')} 
+              title="Profile Info" 
+              style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '8px', borderRadius: '50%', cursor: 'pointer', color: '#2563eb' }}
+            >
+              <User size={20} />
+            </button>
+
             <button onClick={handleLogout} title="Log Out" style={{ background: '#fef2f2', border: '1px solid #fee2e2', padding: '8px', borderRadius: '8px', cursor: 'pointer', color: '#ef4444' }}>
               <LogOut size={20} />
             </button>
@@ -666,8 +676,8 @@ const ResidentHome = () => {
             <div className="animation-fade-in" style={{ background: '#fff', padding: '2rem', borderRadius: '12px', minHeight: '60vh' }}>
               {!isCreatingRequest ? (
                 <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                    <h2>My Document Requests</h2>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+                    <h2 style={{ margin: 0 }}>My Document Requests</h2>
                     <button onClick={handleOpenForm} className="btn btn-primary"><Plus size={18} /> New Request</button>
                   </div>
                   {loadingRequests ? <div style={{ textAlign: 'center', padding: '3rem' }}><div className="spinner"></div></div> : myRequests.length === 0 ? (

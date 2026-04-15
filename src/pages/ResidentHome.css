@@ -114,3 +114,12 @@
   .mobile-tab.active { color: var(--primary-700); }
   .mobile-tab.active-report { color: #ef4444; }
 }
+.mobile-profile-btn {
+  display: none !important;
+}
+
+@media (max-width: 768px) {
+  .mobile-profile-btn {
+    display: flex !important;
+  }
+}

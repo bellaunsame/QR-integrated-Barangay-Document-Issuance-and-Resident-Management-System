@@ -108,7 +108,7 @@ const BarangayInfoSettings = () => {
 
   return (
     <form onSubmit={handleSubmit} className="settings-form">
-      
+      <div className="settings-2-cols">
       {/* SECTION 1: General Location Info */}
       <div className="settings-section">
         <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: 'var(--primary-700)' }}>
@@ -162,10 +162,6 @@ const BarangayInfoSettings = () => {
           </div>
         </div>
       </div>
-
-      <hr style={{ margin: '24px 0', borderColor: 'var(--border)' }} />
-
-      {/* SECTION 2: Barangay Officials */}
       <div className="settings-section">
         <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: 'var(--primary-700)' }}>
           <Users size={20} /> Barangay Officials
@@ -226,7 +222,9 @@ const BarangayInfoSettings = () => {
         </div>
       </div>
 
-      <div className="form-actions" style={{ marginTop: '30px', display: 'flex', justifyContent: 'flex-end' }}>
+      </div>
+
+      <div className="form-actions" style={{ marginTop: '30px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: '20px' }}>
         <button type="submit" className="btn btn-primary" disabled={loading} style={{ padding: '10px 24px' }}>
           {loading ? <div className="spinner-small"></div> : <Save size={18} style={{ marginRight: '8px' }} />}
           {loading ? 'Saving...' : 'Save Barangay Info'}

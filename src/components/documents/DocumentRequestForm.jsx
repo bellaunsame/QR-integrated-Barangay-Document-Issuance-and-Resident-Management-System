@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { validateField } from '../../services/security/inputSanitizer';
 import { Save, X, FileText, User, AlignLeft, AlertTriangle, Upload, Camera, Search, ChevronDown, CheckCircle } from 'lucide-react';
 import Webcam from 'react-webcam';
+import { useSettings } from '../../context/SettingsContext';
 
 // 1. Import your official logos
 import calambaSeal from '../../assets/Calamba,_Laguna_Seal.svg.png';
@@ -127,6 +128,8 @@ const DocumentRequestForm = ({
     notarizedDocFile: null,
     isAgreed: false // <--- NEW: Agreement State
   });
+
+  const { settings } = useSettings();
 
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
@@ -318,7 +321,22 @@ const DocumentRequestForm = ({
 
   const renderPreview = (content) => {
     if (!content) return '';
-    let html = content.replace(/\n/g, '<br>');
+    let html = content;
+    // Only replace literal newlines with breaks if the content isn't already HTML-formatted
+    if (!html.includes('<p>') && !html.includes('<div>')) {
+      html = html.replace(/\n/g, '<br>');
+    }
+    
+    // Determine active resident
+    let activeResident = residentData;
+    if (!activeResident && resident) activeResident = resident;
+    if (!activeResident && formData.resident_id && residents) {
+      activeResident = residents.find(r => r.id === formData.resident_id);
+    }
+    
+    // Determine purpose and date
+    const finalPurpose = formData.purpose === 'Other' ? formData.custom_purpose : formData.purpose;
+    
     const thumbprintHTML = `
       <div style="float: right; display: flex; gap: 20px; margin-top: -65px;">
         <div style="display: flex; flex-direction: column; align-items: center;">
@@ -333,7 +351,46 @@ const DocumentRequestForm = ({
       <div style="clear: both; margin-bottom: 20px;"></div>
     `;
     html = html.replace(/\{\{thumbprint_boxes\}\}/g, thumbprintHTML);
-    html = html.replace(/\{\{(\w+)\}\}/g, '<span style="border-bottom: 1px dashed currentColor; padding: 0 4px; font-weight: 600;">{{$1}}</span>');
+
+    const getAge = (dob) => {
+      if (!dob) return '';
+      const diff = Date.now() - new Date(dob).getTime();
+      return Math.abs(new Date(diff).getUTCFullYear() - 1970);
+    };
+
+    const residentDict = activeResident ? {
+      first_name: activeResident.first_name,
+      last_name: activeResident.last_name,
+      middle_name: activeResident.middle_name || '',
+      full_name: `${activeResident.first_name} ${activeResident.middle_name ? activeResident.middle_name.charAt(0) + '. ' : ''}${activeResident.last_name} ${activeResident.suffix || ''}`.trim(),
+      date_of_birth: activeResident.date_of_birth ? new Date(activeResident.date_of_birth).toLocaleDateString() : '',
+      age: getAge(activeResident.date_of_birth),
+      civil_status: activeResident.civil_status,
+      address: activeResident.full_address || `${activeResident.street}, ${activeResident.purok}, Barangay Dos`,
+      purok: activeResident.purok,
+    } : {};
+
+    const dict = {
+      ...residentDict,
+      ...settings,
+      punong_barangay: settings?.barangay_chairman || '',
+      barangay_captain: settings?.barangay_chairman || '',
+      barangay: settings?.barangay_name || 'Barangay Dos',
+      purpose: finalPurpose,
+      current_date: new Date().toLocaleDateString(),
+      date_issued: new Date().toLocaleDateString(),
+      day: new Date().getDate(),
+      month: new Date().toLocaleString('default', { month: 'long' }),
+      year: new Date().getFullYear(),
+    };
+
+    html = html.replace(/\{\{(\w+)\}\}/g, (match, p1) => {
+      if (dict[p1] !== undefined && dict[p1] !== '' && dict[p1] !== null) {
+        return `<span style="font-weight: 700; text-transform: uppercase;">${dict[p1]}</span>`;
+      }
+      return `<span style="border-bottom: 1px dashed currentColor; padding: 0 4px; font-weight: 600;">${match}</span>`;
+    });
+    
     return html;
   };
 
@@ -376,7 +433,7 @@ const DocumentRequestForm = ({
           {/* ========================================= */}
           {/* LEFT COLUMN: FORM INPUTS & CONTROLS         */}
           {/* ========================================= */}
-          <div style={{ flex: '1 1 400px', display: 'flex', flexDirection: 'column', gap: '1.5rem', minWidth: '350px' }}>
+          <div style={{ flex: '1 1 400px', display: 'flex', flexDirection: 'column', gap: '1.5rem', minWidth: '280px', maxWidth: '100%' }}>
             
             {/* --- SMART RESIDENT DISPLAY --- */}
             {residentData ? (
@@ -552,7 +609,9 @@ const DocumentRequestForm = ({
             display: 'flex', 
             flexDirection: 'column', 
             alignItems: 'center',
-            border: '1px solid var(--border)'
+            border: '1px solid var(--border)',
+            maxWidth: '100%',
+            overflowX: 'auto'
           }}>
             <div style={{ width: '100%', marginBottom: '15px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', paddingBottom: '10px', borderBottom: '1px solid var(--border)' }}>
               <FileText size={18} />
@@ -561,8 +620,8 @@ const DocumentRequestForm = ({
             
             {formData.template_id ? (
               <div style={{ 
-                width: '100%', 
-                maxWidth: '210mm', 
+                width: '210mm', 
+                minWidth: '210mm', 
                 minHeight: '297mm', 
                 padding: '20mm', 
                 backgroundColor: 'var(--surface)', 
@@ -622,7 +681,7 @@ const DocumentRequestForm = ({
                 name="isAgreed" 
                 checked={formData.isAgreed} 
                 onChange={handleChange} 
-                style={{ marginTop: '3px', transform: 'scale(1.2)', cursor: 'pointer', accentColor: 'var(--primary-600)' }} 
+                style={{ marginTop: '3px', width: 'auto', flexShrink: 0, transform: 'scale(1.2)', cursor: 'pointer', accentColor: 'var(--primary-600)' }} 
               />
               <label htmlFor="isAgreed" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', cursor: 'pointer', lineHeight: '1.4', margin: 0 }}>
                 I hereby declare that all information provided in this request is true, correct, and complete to the best of my knowledge. I understand that submitting false or misleading information may result in the rejection of this request.

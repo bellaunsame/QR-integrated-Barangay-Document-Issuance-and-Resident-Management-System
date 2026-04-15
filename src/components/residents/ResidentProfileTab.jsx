@@ -218,9 +218,9 @@ const ResidentProfileTab = ({ user, setUser }) => {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
           {profileData.photo_url ? (
-            <img src={profileData.photo_url} alt="Profile" style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '3px solid #fff', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }} />
+            <img src={profileData.photo_url} alt="Profile" style={{ flexShrink: 0, width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '3px solid #fff', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }} />
           ) : (
-            <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary-100) 0%, var(--primary-200) 100%)', color: 'var(--primary-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', fontWeight: 'bold', border: '3px solid #fff', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}>
+            <div style={{ flexShrink: 0, width: '80px', height: '80px', borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary-100) 0%, var(--primary-200) 100%)', color: 'var(--primary-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', fontWeight: 'bold', border: '3px solid #fff', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}>
               {user?.first_name?.charAt(0) || 'R'}
             </div>
           )}

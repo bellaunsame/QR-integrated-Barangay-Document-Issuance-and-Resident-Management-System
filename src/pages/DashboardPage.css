@@ -216,6 +216,9 @@
   .stats-grid { grid-template-columns: 1fr; }
   .requests-card-grid { grid-template-columns: 1fr; }
   .action-cards { grid-template-columns: repeat(2, 1fr); }
+  
+  /* OVERRIDES FOR INLINE GRIDS */
+  .responsive-inline-grid { grid-template-columns: 1fr !important; }
 }
 
 @media (max-width: 480px) {

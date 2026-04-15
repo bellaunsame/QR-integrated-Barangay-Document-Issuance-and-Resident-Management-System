@@ -46,8 +46,8 @@
 }
 
 .logo-icon img {
-  width: 100%;
-  height: 100%;
+  width: 75%;
+  height: 75%;
   object-fit: contain;
 }
 
@@ -324,5 +324,8 @@
   }
   .sidebar.open {
     transform: translateX(0);
+  }
+  .desktop-only {
+    display: none !important;
   }
 }

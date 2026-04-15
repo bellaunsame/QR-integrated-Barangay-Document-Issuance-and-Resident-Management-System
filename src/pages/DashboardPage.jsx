@@ -303,7 +303,7 @@ const DashboardPage = () => {
 
       {/* DYNAMIC CHART SECTION 2: BLOTTER & EQUIPMENT */}
       {(showBlotter || showEquipment) && (
-        <div style={{ 
+        <div className="responsive-inline-grid" style={{ 
           display: 'grid', 
           gridTemplateColumns: showBlotter && showEquipment ? 'repeat(auto-fit, minmax(400px, 1fr))' : '1fr', 
           gap: '24px', 
@@ -415,7 +415,7 @@ const DashboardPage = () => {
               <p>No active announcements from the Barangay.</p>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+            <div className="responsive-inline-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
               {announcements.map(news => (
                 <div key={news.id} style={{ 
                   display: 'flex', flexDirection: 'column', padding: '16px', 

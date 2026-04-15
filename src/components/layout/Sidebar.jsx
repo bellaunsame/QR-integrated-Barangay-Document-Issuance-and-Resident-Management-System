@@ -32,6 +32,16 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 1024);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 1024);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const effectiveCollapsed = isMobile ? false : isCollapsed;
+
   const [isDocsOpen, setIsDocsOpen] = useState(false);
   const [counts, setCounts] = useState({
     residents: 0,
@@ -280,11 +290,11 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
         }
       `}</style>
 
-      <aside className={`sidebar ${isOpen ? 'open' : ''} ${isCollapsed ? 'collapsed' : ''}`}>
+      <aside className={`sidebar ${isOpen ? 'open' : ''} ${effectiveCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
-          <div className="sidebar-logo">
+          <div className="sidebar-logo-wrapper">
             <div className="logo-icon"><img src={logo} alt="Barangay Logo" /></div>
-            {!isCollapsed && (
+            {!effectiveCollapsed && (
               <div className="logo-text">
                 <h1 style={{ fontSize: '1.1rem', marginBottom: '2px' }}>Barangay Dos</h1>
                 <p style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'normal', paddingRight: '10px' }}>
@@ -294,19 +304,19 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
             )}
           </div>
           <button className="sidebar-collapse-btn desktop-only" onClick={onToggleCollapse}>
-            {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+            {effectiveCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
           </button>
         </div>
 
         <nav className="sidebar-nav">
           <div className="nav-section">
-            {!isCollapsed && <div className="nav-section-title">Main Menu</div>}
+            {!effectiveCollapsed && <div className="nav-section-title">Main Menu</div>}
             
             {/* FIRST 2 ITEMS (Dashboard & Residents, or Blotter depending on role) */}
             {visibleMenuItems.slice(0, 2).map((item) => (
               <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onClose}>
                 <span className="nav-icon">{item.icon}</span>
-                {!isCollapsed && (
+                {!effectiveCollapsed && (
                   <>
                     <span className="nav-label">{item.label}</span>
                     {item.badge && (
@@ -322,7 +332,7 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
             {/* DOCUMENTS DROPDOWN */}
             {canViewDocuments && (
               <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
-                <div onClick={() => { if (isCollapsed) onToggleCollapse(); setIsDocsOpen(!isDocsOpen); navigate('/documents'); }}
+                <div onClick={() => { if (effectiveCollapsed) onToggleCollapse(); setIsDocsOpen(!isDocsOpen); navigate('/documents'); }}
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1.5rem', cursor: 'pointer',
                     backgroundColor: location.pathname.includes('/documents') ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
@@ -333,17 +343,17 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%' }}>
                     <span className="nav-icon" style={{ display: 'flex' }}><FileText size={20} /></span>
-                    {!isCollapsed && (
+                    {!effectiveCollapsed && (
                       <>
                         <span className="nav-label">Documents</span>
                         {!isDocsOpen && counts.pending > 0 && <span className="nav-badge badge-pulse">{counts.pending}</span>}
                       </>
                     )}
                   </div>
-                  {!isCollapsed && <span style={{ color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', marginLeft: '8px' }}>{isDocsOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>}
+                  {!effectiveCollapsed && <span style={{ color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', marginLeft: '8px' }}>{isDocsOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>}
                 </div>
 
-                {!isCollapsed && isDocsOpen && (
+                {!effectiveCollapsed && isDocsOpen && (
                   <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--neutral-50)', padding: '0.5rem 0', borderBottom: '1px solid var(--border)' }}>
                     <NavLink to="/documents?filter=pending" onClick={onClose}
                       style={({isActive}) => ({
@@ -396,7 +406,7 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
             {visibleMenuItems.slice(2).map((item) => (
               <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onClose}>
                 <span className="nav-icon">{item.icon}</span>
-                {!isCollapsed && (
+                {!effectiveCollapsed && (
                   <>
                     <span className="nav-label">{item.label}</span>
                     {item.badge && (
@@ -418,21 +428,21 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
           <NavLink 
             to="/profile" 
             onClick={onClose} 
-            style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: '500', marginBottom: '10px', borderRadius: '8px', transition: 'all 0.2s', justifyContent: isCollapsed ? 'center' : 'flex-start' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: '500', marginBottom: '10px', borderRadius: '8px', transition: 'all 0.2s', justifyContent: effectiveCollapsed ? 'center' : 'flex-start' }}
           >
-            <User size={18} /> {!isCollapsed && 'My Profile'}
+            <User size={18} /> {!effectiveCollapsed && 'My Profile'}
           </NavLink>
 
           {/* Logout Button */}
           <button 
             onClick={handleLogout} 
-            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', background: '#fef2f2', color: '#ef4444', border: '1px solid #fecaca', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', marginBottom: '15px', justifyContent: isCollapsed ? 'center' : 'flex-start' }}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', background: '#fef2f2', color: '#ef4444', border: '1px solid #fecaca', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', marginBottom: '15px', justifyContent: effectiveCollapsed ? 'center' : 'flex-start' }}
           >
-            <LogOut size={18} /> {!isCollapsed && 'Logout'}
+            <LogOut size={18} /> {!effectiveCollapsed && 'Logout'}
           </button>
 
           {/* User Details block */}
-          {!isCollapsed && user && (
+          {!effectiveCollapsed && user && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--primary-100)', color: 'var(--primary-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.2rem', flexShrink: 0 }}>
                 {user?.full_name?.charAt(0) || 'U'}

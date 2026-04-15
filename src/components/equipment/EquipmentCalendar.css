@@ -1,0 +1,247 @@
+.equipment-calendar {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  font-family: inherit;
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.calendar-header h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: bold;
+  color: var(--text-primary);
+}
+
+.cal-btn {
+  background: var(--neutral-100);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  color: var(--text-secondary);
+}
+
+.cal-btn:hover {
+  background: var(--primary-100);
+  color: var(--primary-600);
+}
+
+.cal-days-row {
+  display: flex;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.cal-col-title {
+  flex: 1;
+  text-align: center;
+  font-weight: bold;
+  color: var(--text-tertiary);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+}
+
+.cal-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.cal-row {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  min-height: 110px; 
+}
+
+.cal-row:last-child {
+  border-bottom: none;
+}
+
+.cal-cell {
+  flex: 1;
+  border-right: 1px solid var(--border);
+  padding: 0.5rem;
+  position: relative;
+  transition: background 0.2s;
+}
+
+.cal-cell:last-child {
+  border-right: none;
+}
+
+.cal-disabled {
+  background-color: var(--neutral-50);
+  color: var(--text-tertiary);
+  opacity: 0.6;
+}
+
+.cal-today .cal-number {
+  background: var(--primary-600);
+  color: white;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cal-number {
+  font-weight: 600;
+  font-size: 0.95rem;
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--text-secondary);
+}
+
+.cal-today .cal-number {
+  color: white; /* ensuring contrast with primary-600 */
+}
+
+/* Event Indicator */
+.cal-event-indicator {
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: bold;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  margin-top: auto;
+  transition: transform 0.2s;
+}
+
+.cal-event-indicator:hover {
+  transform: translateY(-2px);
+}
+
+.cal-events {
+  position: relative;
+  height: 100%; 
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+/* Tooltip container logic */
+.cal-tooltip {
+  position: absolute;
+  top: 100%; /* Default opens below */
+  left: 50%;
+  transform: translateX(-50%);
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+  padding: 1rem;
+  width: 260px;
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease-in-out;
+  pointer-events: none; /* Let hover remain on the cell */
+}
+
+/* Move tooltip up if it's rendered in the last row to prevent cutoff */
+.cal-row:nth-last-child(-n+2) .cal-tooltip {
+  top: auto;
+  bottom: 100%;
+}
+
+.cal-cell:hover .cal-tooltip {
+  opacity: 1;
+  visibility: visible;
+  /* slight translation happens automatically */
+}
+
+.cal-tooltip-title {
+  font-weight: bold;
+  font-size: 0.95rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.cal-tooltip-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 0.75rem;
+}
+
+.cal-tooltip-item:last-child {
+  margin-bottom: 0;
+}
+
+.cal-tooltip-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.1);
+}
+
+.cal-tooltip-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.cal-tooltip-info strong {
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.cal-tooltip-info span {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.cal-tooltip-status {
+  font-weight: bold;
+  font-size: 0.7rem !important;
+  text-transform: uppercase;
+  margin-top: 3px;
+}
+
+/* Legend */
+.cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  justify-content: center;
+}
+
+.cal-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.cal-legend-item span {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}

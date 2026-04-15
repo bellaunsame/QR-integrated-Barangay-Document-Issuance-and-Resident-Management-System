@@ -340,6 +340,13 @@
   }
 }
 
+@media (max-width: 768px) {
+  /* Hide the navbar menu button since the .mobile-topbar has its own hamburger */
+  .navbar-menu-btn {
+    display: none !important; 
+  }
+}
+
 @media (max-width: 640px) {
   .navbar-search {
     display: none;

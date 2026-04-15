@@ -8,6 +8,7 @@ import { Plus, Search, Package, CheckCircle, AlertTriangle, Edit2, Filter, Wrenc
 import { useAuth } from '../context/AuthContext';
 import { Pagination } from '../components/common'; 
 import { usePagination } from '../hooks';
+import EquipmentCalendar from '../components/equipment/EquipmentCalendar';
 
 const EquipmentPage = () => {
   const { user } = useAuth(); 
@@ -29,6 +30,7 @@ const EquipmentPage = () => {
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [isResolveDamageModalOpen, setIsResolveDamageModalOpen] = useState(false); 
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false); 
+  const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
   
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -44,6 +46,7 @@ const EquipmentPage = () => {
   const [adjustForm, setAdjustForm] = useState({ new_total: 0 });
   const [resolveForm, setResolveForm] = useState({ repair_qty: 0, dispose_qty: 0 }); 
   const [rejectReason, setRejectReason] = useState(''); 
+  const [addItemForm, setAddItemForm] = useState({ item_name: '', total_quantity: 1, category: '' });
 
   useEffect(() => {
     fetchData();
@@ -393,6 +396,37 @@ const EquipmentPage = () => {
     }
   }
 
+  const handleAddItemSubmit = async (e) => {
+    e.preventDefault();
+    if (!canEdit || isProcessing) return;
+    
+    if (!addItemForm.item_name.trim()) return toast.error("Please provide an item name.");
+    if (addItemForm.total_quantity < 1) return toast.error("Quantity must be at least 1.");
+
+    setIsProcessing(true);
+    try {
+      const newItem = {
+        item_name: addItemForm.item_name,
+        category: addItemForm.category || 'General',
+        total_quantity: parseInt(addItemForm.total_quantity),
+        available_quantity: parseInt(addItemForm.total_quantity),
+        damaged_quantity: 0
+      };
+
+      const { data, error } = await supabase.from('equipment_inventory').insert([newItem]).select();
+      if (error) throw new Error(error.message);
+      
+      toast.success('New equipment added to inventory!');
+      setIsAddItemModalOpen(false);
+      setAddItemForm({ item_name: '', total_quantity: 1, category: '' });
+      fetchData();
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   // Filtering & Pagination
   const pendingCount = records.filter(r => r.display_status === 'Pending').length;
 
@@ -436,15 +470,25 @@ const EquipmentPage = () => {
         
         {/* HIDE DISPATCH BUTTON IF VIEW ONLY */}
         {canEdit && (
-          <button 
-            onClick={() => {
-              setFormData({ borrower_name: '', equipment_id: '', quantity: 1, borrow_date: '', expected_return: '', purpose: '', status: 'Released' });
-              setIsDispatchModalOpen(true);
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--primary-600)', color: 'white', padding: '0.75rem 1.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
-          >
-            <Plus size={20} /> Direct Dispatch
-          </button>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            {activeTab === 'inventory' && (
+              <button 
+                onClick={() => setIsAddItemModalOpen(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--neutral-100)', color: 'var(--text-primary)', padding: '0.75rem 1.5rem', borderRadius: '8px', border: '1px solid var(--border)', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                <Plus size={20} /> Add New Item
+              </button>
+            )}
+            <button 
+              onClick={() => {
+                setFormData({ borrower_name: '', equipment_id: '', quantity: 1, borrow_date: '', expected_return: '', purpose: '', status: 'Released' });
+                setIsDispatchModalOpen(true);
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--primary-600)', color: 'white', padding: '0.75rem 1.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              <Package size={20} /> Direct Dispatch
+            </button>
+          </div>
         )}
       </div>
 
@@ -460,6 +504,9 @@ const EquipmentPage = () => {
         </button>
         <button onClick={() => { setActiveTab('inventory'); setSearchTerm(''); }} style={{ padding: '0.75rem 1.5rem', background: 'none', border: 'none', borderBottom: activeTab === 'inventory' ? '3px solid var(--primary-600)' : '3px solid transparent', color: activeTab === 'inventory' ? 'var(--primary-600)' : 'var(--text-secondary)', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem' }}>
           Inventory Stock
+        </button>
+        <button onClick={() => { setActiveTab('calendar'); setSearchTerm(''); }} style={{ padding: '0.75rem 1.5rem', background: 'none', border: 'none', borderBottom: activeTab === 'calendar' ? '3px solid var(--primary-600)' : '3px solid transparent', color: activeTab === 'calendar' ? 'var(--primary-600)' : 'var(--text-secondary)', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem' }}>
+          Calendar View
         </button>
       </div>
 
@@ -487,6 +534,10 @@ const EquipmentPage = () => {
 
         {loading ? <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}><Loader2 className="animate-spin" size={32} color="var(--primary-600)" /></div> : (
           <>
+            {/* CALENDAR TAB */}
+            {activeTab === 'calendar' && (
+              <EquipmentCalendar records={records} />
+            )}
             {/* INVENTORY TAB */}
             {activeTab === 'inventory' && (
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -789,6 +840,35 @@ const EquipmentPage = () => {
                 <button type="button" onClick={() => setIsResolveDamageModalOpen(false)} style={{ flex: 1, padding: '0.75rem', border: '1px solid #ccc', borderRadius: '6px', background: 'transparent', cursor: 'pointer', fontWeight: 'bold' }}>Cancel</button>
                 <button type="submit" disabled={isProcessing} style={{ flex: 1, padding: '0.75rem', border: 'none', borderRadius: '6px', background: '#b91c1c', color: 'white', cursor: isProcessing ? 'not-allowed' : 'pointer', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                   {isProcessing ? <Loader2 size={18} className="animate-spin" /> : 'Confirm Action'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isAddItemModalOpen && canEdit && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', width: '400px', maxWidth: '90%' }}>
+            <h2 style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}><Package size={24} color="var(--primary-600)" /> Add Inventory Item</h2>
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>Add a fully new item to your barangay's physical equipment stockpile.</p>
+            <form onSubmit={handleAddItemSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Item Name *</label>
+                <input type="text" value={addItemForm.item_name} onChange={(e) => setAddItemForm({...addItemForm, item_name: e.target.value})} placeholder="e.g. Canvas Tent (3x3)" required style={{ width: '100%', boxSizing: 'border-box', padding: '0.75rem', borderRadius: '6px', border: '1px solid #d1d5db', fontWeight: 'bold' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Category</label>
+                <input type="text" value={addItemForm.category} onChange={(e) => setAddItemForm({...addItemForm, category: e.target.value})} placeholder="e.g. Event, Medical, General" style={{ width: '100%', boxSizing: 'border-box', padding: '0.75rem', borderRadius: '6px', border: '1px solid #d1d5db' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Total New Stock *</label>
+                <input type="number" min="1" value={addItemForm.total_quantity} onChange={(e) => setAddItemForm({...addItemForm, total_quantity: e.target.value})} required style={{ width: '100%', boxSizing: 'border-box', padding: '0.75rem', borderRadius: '6px', border: '1px solid #d1d5db', fontWeight: 'bold' }} />
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                <button type="button" onClick={() => setIsAddItemModalOpen(false)} style={{ flex: 1, padding: '0.75rem', border: '1px solid #ccc', borderRadius: '6px', background: 'transparent', cursor: 'pointer', fontWeight: 'bold' }}>Cancel</button>
+                <button type="submit" disabled={isProcessing} style={{ flex: 1, padding: '0.75rem', border: 'none', borderRadius: '6px', background: 'var(--primary-600)', color: 'white', cursor: isProcessing ? 'not-allowed' : 'pointer', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                  {isProcessing ? <Loader2 size={18} className="animate-spin" /> : 'Add to Inventory'}
                 </button>
               </div>
             </form>
