@@ -213,22 +213,40 @@ const ResidentHome = () => {
     fetchData();
   }, [user]); 
 
+  // =======================================================
+  // FIXED: EQUIPMENT FETCHING WITH PROPER ERROR LOGGING
+  // =======================================================
   const fetchEquipmentData = async () => {
     if (!user) return;
     setLoadingEquipment(true);
     try {
-      const { data: inv } = await supabase.from('equipment_inventory').select('*');
-      if (inv) setEquipmentInventory(inv);
+      // 1. Fetch Inventory
+      const { data: inv, error: invError } = await supabase
+        .from('equipment_inventory')
+        .select('*');
+        
+      if (invError) {
+        console.error("Inventory Fetch Error:", invError);
+        toast.error("Failed to load equipment items.");
+      } else {
+        setEquipmentInventory(inv || []);
+      }
 
-      const { data: myBorrows } = await supabase
+      // 2. Fetch Borrowing History
+      const { data: myBorrows, error: borrowError } = await supabase
         .from('borrowing_records')
         .select(`*, equipment_inventory(item_name)`)
         .eq('borrower_name', `${user.first_name} ${user.last_name}`) 
         .order('borrow_date', { ascending: false });
       
-      if (myBorrows) setMyEquipmentReqs(myBorrows);
+      if (borrowError) {
+        console.error("Borrow History Error:", borrowError);
+      } else {
+        setMyEquipmentReqs(myBorrows || []);
+      }
+      
     } catch (err) {
-      console.error(err);
+      console.error("Unexpected error fetching equipment:", err);
     } finally {
       setLoadingEquipment(false);
     }
@@ -324,6 +342,9 @@ const ResidentHome = () => {
     }
   };
 
+  // =======================================================
+  // FIXED: ADDED BORROWER NAME AND EQUIPMENT ID
+  // =======================================================
   const handleEquipmentSubmit = async (e) => {
     e.preventDefault();
     if (!isEqAgreed) {
@@ -334,8 +355,8 @@ const ResidentHome = () => {
     const toastId = toast.loading("Submitting equipment request...");
     try {
       const { error } = await supabase.from('borrowing_records').insert([{
-        borrower_name: `${user.first_name} ${user.last_name}`,
-        equipment_id: eqForm.equipment_id,
+        borrower_name: `${user.first_name} ${user.last_name}`, // FIXED
+        equipment_id: eqForm.equipment_id,                     // FIXED
         quantity: parseInt(eqForm.quantity),
         borrow_date: eqForm.borrow_date,
         expected_return: eqForm.expected_return,

@@ -62,7 +62,6 @@ const ResidentProfileTab = ({ user, setUser }) => {
     confirm_password: ''
   });
 
-  // ---> THE MISSING FUNCTION IS HERE <---
   const handlePasswordChange = (e) => {
     setPasswords({ ...passwords, [e.target.name]: e.target.value });
   };
@@ -430,16 +429,29 @@ const ResidentProfileTab = ({ user, setUser }) => {
                   <option value="Other">Other</option>
                 </select>
 
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <label className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center', padding: '8px', cursor: 'pointer', background: '#fff', fontSize: '0.8rem' }}>
-                    <Upload size={14} /> {profileData.id_image_url ? 'Replace Front' : 'Front of ID'}
-                    <input type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'id_image_url')} style={{ display: 'none' }} />
-                  </label>
+                <div style={{ display: 'flex', gap: '10px', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <label className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center', padding: '8px', cursor: 'pointer', background: '#fff', fontSize: '0.8rem' }}>
+                      <Upload size={14} /> {profileData.id_image_url ? 'Replace Front' : 'Front of ID'}
+                      <input type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'id_image_url')} style={{ display: 'none' }} />
+                    </label>
+                    <label className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center', padding: '8px', cursor: 'pointer', background: '#fff', fontSize: '0.8rem' }}>
+                      <Upload size={14} /> {profileData.id_image_back_url ? 'Replace Back' : 'Back of ID'}
+                      <input type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'id_image_back_url')} style={{ display: 'none' }} />
+                    </label>
+                  </div>
                   
-                  <label className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center', padding: '8px', cursor: 'pointer', background: '#fff', fontSize: '0.8rem' }}>
-                    <Upload size={14} /> {profileData.id_image_back_url ? 'Replace Back' : 'Back of ID'}
-                    <input type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'id_image_back_url')} style={{ display: 'none' }} />
-                  </label>
+                  {/* --- NEW: Image Previews for Valid ID --- */}
+                  {(profileData.id_image_url || profileData.id_image_back_url) && (
+                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginTop: '10px' }}>
+                      {profileData.id_image_url && (
+                        <img src={profileData.id_image_url} alt="ID Front" style={{ height: '70px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                      )}
+                      {profileData.id_image_back_url && (
+                        <img src={profileData.id_image_back_url} alt="ID Back" style={{ height: '70px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -456,6 +468,17 @@ const ResidentProfileTab = ({ user, setUser }) => {
                   <Upload size={16} /> {hasProof ? 'Replace Document' : 'Upload Proof'}
                   <input type="file" accept="image/*,.pdf" onChange={(e) => handleFileUpload(e, 'proof_of_residency_url')} style={{ display: 'none' }} />
                 </label>
+
+                {/* --- NEW: Image Preview for Proof of Residency --- */}
+                {profileData.proof_of_residency_url && (
+                  <div style={{ marginTop: '10px', textAlign: 'center' }}>
+                    {profileData.proof_of_residency_url.includes('.pdf') ? (
+                      <a href={profileData.proof_of_residency_url} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: 'var(--primary-600)', textDecoration: 'underline' }}>📄 View Attached PDF</a>
+                    ) : (
+                      <img src={profileData.proof_of_residency_url} alt="Proof of Residency" style={{ maxHeight: '90px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Liveness Check (Selfie holding ID) */}
@@ -471,6 +494,13 @@ const ResidentProfileTab = ({ user, setUser }) => {
                   <Camera size={16} /> {hasLiveness ? 'Retake Selfie' : 'Upload Selfie with ID'}
                   <input type="file" accept="image/*" capture="user" onChange={(e) => handleFileUpload(e, 'liveness_image_url')} style={{ display: 'none' }} />
                 </label>
+
+                {/* --- NEW: Image Preview for Liveness Check --- */}
+                {profileData.liveness_image_url && (
+                  <div style={{ marginTop: '10px', textAlign: 'center' }}>
+                    <img src={profileData.liveness_image_url} alt="Liveness Selfie" style={{ maxHeight: '100px', borderRadius: '4px', border: '1px solid #fdba74' }} />
+                  </div>
+                )}
               </div>
 
             </div>

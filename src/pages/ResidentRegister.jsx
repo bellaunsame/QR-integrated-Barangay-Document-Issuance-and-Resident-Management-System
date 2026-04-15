@@ -155,7 +155,8 @@ const ResidentRegister = () => {
         account_status: 'Approved', 
         is_verified: false, 
         password: tempPassword,
-        needs_password_change: true
+        // 👇 FIXED: This stops the infinite password reset loop
+        needs_password_change: false 
       };
 
       // Save to Database
@@ -171,7 +172,8 @@ const ResidentRegister = () => {
             to_email: dbPayload.email,
             to_name: dbPayload.first_name,
             barangay_name: "Dos, Calamba",
-            email_subject_message: `Your account has been created! Please log in using your email and the temporary password below. Once logged in, you will be required to change your password and complete your identity verification. Login here: ${window.location.origin}/resident-login`,
+            // 👇 FIXED: Updated the email text so it makes sense now
+            email_subject_message: `Your account has been created! Please log in using your email and the temporary password below. We highly recommend changing this password in your Profile settings once logged in. Login here: ${window.location.origin}/resident-login`,
             otp_code: tempPassword 
           },
           'pfTdQReY0nVV3CjnY'    

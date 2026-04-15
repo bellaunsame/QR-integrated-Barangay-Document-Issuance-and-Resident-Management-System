@@ -50,7 +50,6 @@ const ResidentLogin = () => {
   }, [navigate]);
 
   useEffect(() => {
-    // If the user navigates away from the QR mode, ensure the camera shuts off!
     if (loginMode !== 'qrcode') {
       stopScanner();
       setScanning(false);
@@ -108,11 +107,8 @@ const ResidentLogin = () => {
         return;
       }
 
-      if (resident.account_status === 'Pending') {
-        toast.error('Account pending approval. Please wait for the admin to review your registration.', { duration: 6000, icon: '⏳' });
-        setLoading(false);
-        return;
-      }
+      // 👇 FIXED: Removed the block that stops "Pending" users from logging in!
+      // Now they can log in to check their status or upload missing documents.
 
       processSuccessfulLogin(resident);
 
@@ -125,7 +121,7 @@ const ResidentLogin = () => {
   };
 
   // ==========================================
-  // YOUR JSQR & HTML5 QR SCANNER LOGIC
+  // QR SCANNER LOGIC
   // ==========================================
   const stopScanner = async () => {
     if (scannerRef.current) {
@@ -183,7 +179,6 @@ const ResidentLogin = () => {
 
     const toastId = toast.loading("Analyzing image file...");
 
-    // Stop live camera if running
     if (scannerRef.current) {
       await stopScanner();
       setScanning(false);
@@ -221,7 +216,7 @@ const ResidentLogin = () => {
     };
 
     img.src = url;
-    e.target.value = ''; // Reset input
+    e.target.value = ''; 
   };
 
   const onScanSuccess = async (decodedText) => {
@@ -232,16 +227,13 @@ const ResidentLogin = () => {
         setScanning(false);
       }
 
-      // --- BULLETPROOF QR PARSER ---
       let residentId = null;
 
-      // 1. Try parsing with your custom qrCodeService
       try {
         const data = parseQRData(decodedText);
         if (data && data.id) residentId = data.id;
       } catch (e) {}
 
-      // 2. Fallback: Try standard JSON parsing
       if (!residentId) {
         try {
           const parsedJSON = JSON.parse(decodedText);
@@ -249,14 +241,11 @@ const ResidentLogin = () => {
         } catch (e) {}
       }
 
-      // 3. Fallback: If the QR code is literally just the raw ID string
       if (!residentId && typeof decodedText === 'string' && decodedText.trim().length > 15) {
         residentId = decodedText.trim();
       }
 
-      // --- VERIFY THE EXTRACTED ID ---
       if (residentId) {
-        // Fetch resident using the parsed QR ID
         const { data: resData, error } = await supabase
           .from('residents')
           .select('*')
@@ -271,13 +260,8 @@ const ResidentLogin = () => {
           return;
         }
 
-        if (resident.account_status === 'Pending') {
-          toast.error('This account is still pending approval.');
-          setLoading(false);
-          return;
-        }
+        // 👇 FIXED: Removed the block that stops "Pending" users from logging in here as well!
 
-        // Successfully found and active!
         toast.success('QR Code verified!');
         processSuccessfulLogin(resident);
 
@@ -460,7 +444,7 @@ const ResidentLogin = () => {
 
         ) : loginMode === 'qrcode' ? (
 
-          /* 2. QR CODE SCANNER VIEW (Using your exact jsQR & Html5 logic) */
+          /* 2. QR CODE SCANNER VIEW */
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             
             {loading ? (
@@ -587,7 +571,8 @@ const ResidentLogin = () => {
             </button>
             
             <div style={{ textAlign: 'center', marginTop: '0.5rem', fontSize: '0.9rem', color: '#64748b' }}>
-              Don't have an account? <span onClick={() => navigate('/register')} style={{ color: 'var(--primary-600)', fontWeight: 'bold', cursor: 'pointer', textDecoration: 'underline' }}>Register here</span>
+              {/* 👇 FIXED: Changed /register to /resident-register */}
+              Don't have an account? <span onClick={() => navigate('/resident-register')} style={{ color: 'var(--primary-600)', fontWeight: 'bold', cursor: 'pointer', textDecoration: 'underline' }}>Register here</span>
             </div>
           </form>
 
