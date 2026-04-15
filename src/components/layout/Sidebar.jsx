@@ -261,6 +261,23 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
           70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
           100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
         }
+
+        /* 👇 FIX: Ensures the sidebar never expands past the screen 👇 */
+        .sidebar {
+          display: flex;
+          flex-direction: column;
+          height: 100vh;
+          overflow: hidden; 
+          box-sizing: border-box;
+        }
+        .sidebar-header {
+          flex-shrink: 0; /* Protect header from shrinking */
+        }
+        .sidebar-nav {
+          flex: 1 1 auto;
+          overflow-y: auto;
+          min-height: 0; /* Crucial for flexbox scrolling */
+        }
       `}</style>
 
       <aside className={`sidebar ${isOpen ? 'open' : ''} ${isCollapsed ? 'collapsed' : ''}`}>
@@ -394,25 +411,44 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
           </div>
         </nav>
 
-        <div className="sidebar-footer">
-          <NavLink to="/profile" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onClose}>
-            <span className="nav-icon"><User size={20} /></span>
-            {!isCollapsed && <span className="nav-label">My Profile</span>}
+        {/* 👇 FIX: Added flexShrink: 0 so the footer never gets pushed off screen 👇 */}
+        <div style={{ marginTop: 'auto', flexShrink: 0, padding: '20px', borderTop: '1px solid #e2e8f0', background: '#f8fafc', paddingBottom: '30px' }}>
+          
+          {/* Profile Nav Link */}
+          <NavLink 
+            to="/profile" 
+            onClick={onClose} 
+            style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: '500', marginBottom: '10px', borderRadius: '8px', transition: 'all 0.2s', justifyContent: isCollapsed ? 'center' : 'flex-start' }}
+          >
+            <User size={18} /> {!isCollapsed && 'My Profile'}
           </NavLink>
-          <button className="nav-item logout-btn" onClick={handleLogout}>
-            <span className="nav-icon"><LogOut size={20} /></span>
-            {!isCollapsed && <span className="nav-label">Logout</span>}
+
+          {/* Logout Button */}
+          <button 
+            onClick={handleLogout} 
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', background: '#fef2f2', color: '#ef4444', border: '1px solid #fecaca', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', marginBottom: '15px', justifyContent: isCollapsed ? 'center' : 'flex-start' }}
+          >
+            <LogOut size={18} /> {!isCollapsed && 'Logout'}
           </button>
+
+          {/* User Details block */}
           {!isCollapsed && user && (
-            <div className="sidebar-user">
-              <div className="user-avatar-small">{user.full_name?.charAt(0) || 'U'}</div>
-              <div className="user-details">
-                <div className="user-name-small">{user.full_name}</div>
-                <div className="user-role-small">{user.role?.replace('_', ' ')}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--primary-100)', color: 'var(--primary-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.2rem', flexShrink: 0 }}>
+                {user?.full_name?.charAt(0) || 'U'}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {user?.full_name || 'Barangay User'}
+                </span>
+                <span style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'capitalize' }}>
+                  {user?.role?.replace('_', ' ') || 'Admin'}
+                </span>
               </div>
             </div>
           )}
         </div>
+
       </aside>
     </>
   );

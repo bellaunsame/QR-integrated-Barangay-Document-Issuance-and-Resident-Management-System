@@ -43,7 +43,7 @@ const DocumentTemplatesPage = () => {
       await loadTemplates();
       closeModal();
     } catch (error) {
-      if (error.message.includes('duplicate key') || error.code === '23505') {
+      if (error.message?.includes('duplicate key') || error.code === '23505') {
         toast.error('Template code already exists. Please use a different code.');
       } else {
         toast.error('Failed to save template: ' + error.message);
@@ -65,7 +65,6 @@ const DocumentTemplatesPage = () => {
       const isForeignKeyError = errorString.includes('foreign key') || error.code === '23503';
 
       if (isForeignKeyError) {
-        // Delay the confirm slightly so the user can read the first error toast if they want
         setTimeout(async () => {
           const confirmDeactivate = window.confirm(
             `"${template.template_name}" cannot be deleted because it has existing document requests tied to it.\n\nWould you like to DEACTIVATE it instead so it stops showing up in forms?`
@@ -110,31 +109,47 @@ const DocumentTemplatesPage = () => {
 
   return (
     <div className="templates-page">
-      <div className="page-header">
+      
+      {/* HEADER SECTION */}
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
-          <h1>Document Templates</h1>
-          <p>Manage and design customizable document templates</p>
+          <h1 style={{ margin: '0 0 5px 0' }}>Document Templates</h1>
+          <p style={{ margin: 0, color: 'var(--text-secondary)' }}>Manage and design customizable document templates</p>
         </div>
-        <button className="btn btn-primary" onClick={openAddModal}>
+        <button 
+          className="btn btn-primary" 
+          onClick={openAddModal}
+          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+        >
           <Plus size={20} /> Add New Template
         </button>
       </div>
 
+      {/* CONTENT SECTION */}
       {loading ? (
         <div className="loading-state">
           <div className="spinner"></div>
           <p>Loading templates...</p>
         </div>
       ) : templates.length === 0 ? (
-        // FIXED: Empty state is now correctly placed outside the grid layout
-        <div className="empty-state-full">
-          <FileText size={64} style={{ color: 'var(--text-tertiary)', marginBottom: '16px' }} />
-          <h3>No templates yet</h3>
-          <p>Create your first document template to get started</p>
-          <button className="btn btn-primary" onClick={openAddModal} style={{ marginTop: '16px' }}>
+        
+        <div style={{ 
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          padding: '4rem 2rem', background: 'white', borderRadius: '12px', marginTop: '2rem',
+          border: '2px dashed #cbd5e1', textAlign: 'center'
+        }}>
+          <FileText size={64} style={{ color: '#94a3b8', marginBottom: '16px', opacity: 0.5 }} />
+          <h3 style={{ color: '#334155', margin: '0 0 10px 0' }}>No templates yet</h3>
+          <p style={{ color: '#64748b', marginBottom: '20px' }}>Create your first document template to get started.</p>
+          <button 
+            onClick={openAddModal} 
+            className="btn btn-primary" 
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '10px 20px' }}
+          >
             <Plus size={20} /> Create Template
           </button>
         </div>
+
       ) : (
         <div className="templates-grid">
           {templates.map((template) => (
@@ -171,10 +186,32 @@ const DocumentTemplatesPage = () => {
         </div>
       )}
 
-      {/* Modal Wrapper */}
+      {/* MODAL WRAPPER */}
       {showModal && (
-        <div className="modal-overlay workspace-overlay" onClick={closeModal}>
-          <div className="workspace-modal" onClick={(e) => e.stopPropagation()}>
+        <div 
+          className="modal-overlay workspace-overlay" 
+          onClick={closeModal}
+          style={{ 
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
+            background: 'rgba(0,0,0,0.6)', 
+            zIndex: 2147483647, /* The absolute maximum z-index allowed by browsers. Guaranteed to cover sidebar. */
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '20px' 
+          }}
+        >
+          <div 
+            className="workspace-modal" 
+            onClick={(e) => e.stopPropagation()}
+            style={{ 
+              width: '100%', 
+              maxWidth: '850px', 
+              maxHeight: 'calc(100vh - 40px)', 
+              overflowY: 'auto',
+              background: '#fff',
+              borderRadius: '12px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+            }}
+          >
             <TemplateForm 
               template={editingTemplate} 
               onSubmit={handleSaveTemplate} 

@@ -10,8 +10,8 @@ import { Pagination } from '../components/common';
 import { usePagination } from '../hooks';
 
 const EquipmentPage = () => {
-  const { user } = useAuth(); // Get Current User
-  const canEdit = !['view_only', 'barangay_captain'].includes(user?.role); // Security Check
+  const { user } = useAuth(); 
+  const canEdit = !['view_only', 'barangay_captain'].includes(user?.role); 
 
   const [activeTab, setActiveTab] = useState('records'); 
   const [inventory, setInventory] = useState([]);
@@ -83,7 +83,9 @@ const EquipmentPage = () => {
     return resident ? { email: resident.email, first_name: resident.first_name } : null;
   };
 
-  // --- ACTIONS (Only execute if canEdit is true) ---
+  // ==========================================
+  // BULLETPROOF ACTIONS (Checks for Silent Failures)
+  // ==========================================
   const handleApproveRequest = async (record) => {
     if (!canEdit || isProcessing) return;
     setIsProcessing(true);
@@ -95,13 +97,28 @@ const EquipmentPage = () => {
         throw new Error(`Insufficient stock. Only ${item?.available_quantity || 0} left.`);
       }
 
-      // Deduct from inventory since it's reserved for them now
-      const newQty = item.available_quantity - record.quantity;
-      await supabase.from('equipment_inventory').update({ available_quantity: newQty }).eq('id', record.equipment_id);
-      
-      // Update status to Ready to Pickup
-      await supabase.from('borrowing_records').update({ status: 'Ready to Pickup' }).eq('id', record.id);
+      // 1. UPDATE STATUS FIRST (with .select() to catch silent RLS failures)
+      const { data: recData, error: recError } = await supabase
+        .from('borrowing_records')
+        .update({ status: 'Ready to Pickup' })
+        .eq('id', record.id)
+        .select(); // <-- Forces Supabase to return the row it updated
+        
+      if (recError) throw new Error("Status Update Failed: " + recError.message); 
+      if (!recData || recData.length === 0) throw new Error("Supabase blocked the update! Please 'Disable RLS' on the borrowing_records table.");
 
+      // 2. THEN DEDUCT INVENTORY
+      const newQty = item.available_quantity - record.quantity;
+      const { data: invData, error: invError } = await supabase
+        .from('equipment_inventory')
+        .update({ available_quantity: newQty })
+        .eq('id', record.equipment_id)
+        .select();
+        
+      if (invError) throw new Error("Inventory Update Failed: " + invError.message); 
+      if (!invData || invData.length === 0) throw new Error("Supabase blocked the inventory update! Please 'Disable RLS'.");
+      
+      // 3. SEND EMAIL
       const contactInfo = getResidentEmail(record.borrower_name);
       if (contactInfo && contactInfo.email) {
         await emailjs.send(
@@ -115,28 +132,33 @@ const EquipmentPage = () => {
           },
           'pfTdQReY0nVV3CjnY'    
         );
-        toast.success('Approved! Set to Ready for Pickup.', { id: toastId });
+        toast.success('Approved! Moved to Active Borrows.', { id: toastId });
       } else {
-        toast.success('Approved! Set to Ready for Pickup. (No email found)', { id: toastId });
+        toast.success('Approved! Moved to Active Borrows. (No email found)', { id: toastId });
       }
 
       fetchData();
-    } catch (error) { toast.error(error.message, { id: toastId }); } 
-    finally { setIsProcessing(false); }
+    } catch (error) { 
+      toast.error(error.message, { id: toastId, duration: 6000 }); 
+    } finally { 
+      setIsProcessing(false); 
+    }
   };
 
-  // NEW: RELEASE EQUIPMENT (When resident actually takes it from Barangay Hall)
   const handleReleaseEquipment = async (record) => {
     if (!canEdit || isProcessing) return;
     setIsProcessing(true);
     const toastId = toast.loading('Marking as Released...');
 
     try {
-      await supabase.from('borrowing_records').update({ status: 'Released' }).eq('id', record.id);
+      const { data, error } = await supabase.from('borrowing_records').update({ status: 'Released' }).eq('id', record.id).select();
+      if (error) throw new Error(error.message); 
+      if (!data || data.length === 0) throw new Error("Supabase blocked the update! Please 'Disable RLS'.");
+
       toast.success('Equipment physically released to resident!', { id: toastId });
       fetchData();
     } catch (error) {
-      toast.error('Failed to mark as released.', { id: toastId });
+      toast.error(error.message, { id: toastId });
     } finally {
       setIsProcessing(false);
     }
@@ -154,9 +176,12 @@ const EquipmentPage = () => {
     const toastId = toast.loading('Rejecting & sending email...');
 
     try {
-      await supabase.from('borrowing_records').update({ 
+      const { data, error: rejError } = await supabase.from('borrowing_records').update({ 
         status: 'Rejected', damage_notes: `Rejected Reason: ${rejectReason}` 
-      }).eq('id', selectedRecord.id);
+      }).eq('id', selectedRecord.id).select();
+      
+      if (rejError) throw new Error(rejError.message); 
+      if (!data || data.length === 0) throw new Error("Supabase blocked the update! Please 'Disable RLS'.");
 
       const contactInfo = getResidentEmail(selectedRecord.borrower_name);
       if (contactInfo && contactInfo.email) {
@@ -176,8 +201,11 @@ const EquipmentPage = () => {
       }
 
       setIsRejectModalOpen(false); fetchData();
-    } catch (error) { toast.error('Failed to reject request.', { id: toastId }); } 
-    finally { setIsProcessing(false); }
+    } catch (error) { 
+      toast.error(error.message, { id: toastId }); 
+    } finally { 
+      setIsProcessing(false); 
+    }
   };
 
   const handleSendOverdueEmail = async (record) => {
@@ -224,17 +252,20 @@ const EquipmentPage = () => {
         setIsProcessing(false); return;
       }
 
-      // Direct dispatch assumes they are physically taking it right now (Released)
       const { error: insertError } = await supabase.from('borrowing_records').insert([formData]);
-      if (insertError) throw insertError;
+      if (insertError) throw new Error(insertError.message);
 
       const newQty = item.available_quantity - formData.quantity;
-      await supabase.from('equipment_inventory').update({ available_quantity: newQty }).eq('id', formData.equipment_id);
+      const { error: updateError } = await supabase.from('equipment_inventory').update({ available_quantity: newQty }).eq('id', formData.equipment_id);
+      if (updateError) throw new Error(updateError.message);
       
       toast.success('Equipment dispatched successfully!');
       setIsDispatchModalOpen(false); fetchData();
-    } catch (error) { toast.error(error.message); } 
-    finally { setIsProcessing(false); }
+    } catch (error) { 
+      toast.error(error.message); 
+    } finally { 
+      setIsProcessing(false); 
+    }
   };
 
   const openReturnModal = (record) => {
@@ -263,24 +294,31 @@ const EquipmentPage = () => {
     try {
       const finalStatus = damagedQty > 0 ? (goodQty === 0 ? 'Damaged' : 'Returned w/ Damage') : 'Returned';
       
-      await supabase.from('borrowing_records').update({ 
+      const { data, error: retError } = await supabase.from('borrowing_records').update({ 
           status: finalStatus, actual_return: new Date().toISOString(), damage_notes: returnForm.damage_notes
-      }).eq('id', selectedRecord.id);
+      }).eq('id', selectedRecord.id).select();
+      
+      if (retError) throw new Error(retError.message);
+      if (!data || data.length === 0) throw new Error("Supabase blocked the update! Please 'Disable RLS'.");
 
       const item = inventory.find(i => i.id === selectedRecord.equipment_id);
       if (item) {
         let newAvailable = item.available_quantity + goodQty;
         if (newAvailable > item.total_quantity) newAvailable = item.total_quantity;
 
-        await supabase.from('equipment_inventory').update({ 
+        const { error: invError } = await supabase.from('equipment_inventory').update({ 
             available_quantity: newAvailable, damaged_quantity: (item.damaged_quantity || 0) + damagedQty
         }).eq('id', selectedRecord.equipment_id);
+        if (invError) throw new Error(invError.message);
       }
 
       toast.success(`Return processed! ${damagedQty > 0 ? 'Damaged items moved to maintenance.' : ''}`);
       setIsReturnModalOpen(false); fetchData();
-    } catch (error) { toast.error('Failed to process return.'); } 
-    finally { setIsProcessing(false); }
+    } catch (error) { 
+      toast.error(error.message); 
+    } finally { 
+      setIsProcessing(false); 
+    }
   };
 
   const openAdjustModal = (item) => {
@@ -305,11 +343,17 @@ const EquipmentPage = () => {
     }
 
     try {
-      await supabase.from('equipment_inventory').update({ total_quantity: newTotal, available_quantity: newAvailable }).eq('id', selectedItem.id);
+      const { data, error } = await supabase.from('equipment_inventory').update({ total_quantity: newTotal, available_quantity: newAvailable }).eq('id', selectedItem.id).select();
+      if (error) throw new Error(error.message);
+      if (!data || data.length === 0) throw new Error("Supabase blocked the update! Please 'Disable RLS'.");
+      
       toast.success('Inventory stock adjusted & verified!');
       setIsAdjustModalOpen(false); fetchData();
-    } catch (error) { toast.error('Failed to adjust stock.'); } 
-    finally { setIsProcessing(false); }
+    } catch (error) { 
+      toast.error(error.message); 
+    } finally { 
+      setIsProcessing(false); 
+    }
   };
 
   const openResolveModal = (item) => {
@@ -336,11 +380,17 @@ const EquipmentPage = () => {
 
       if (newAvailable > newTotal) newAvailable = newTotal;
 
-      await supabase.from('equipment_inventory').update({ damaged_quantity: newDamaged, available_quantity: newAvailable, total_quantity: newTotal }).eq('id', selectedItem.id);
+      const { data, error } = await supabase.from('equipment_inventory').update({ damaged_quantity: newDamaged, available_quantity: newAvailable, total_quantity: newTotal }).eq('id', selectedItem.id).select();
+      if (error) throw new Error(error.message);
+      if (!data || data.length === 0) throw new Error("Supabase blocked the update! Please 'Disable RLS'.");
+
       toast.success(`Successfully resolved ${repair + dispose} damaged items.`);
       setIsResolveDamageModalOpen(false); fetchData();
-    } catch (error) { toast.error("Failed to resolve damaged items."); } 
-    finally { setIsProcessing(false); }
+    } catch (error) { 
+      toast.error(error.message); 
+    } finally { 
+      setIsProcessing(false); 
+    }
   }
 
   // Filtering & Pagination
