@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { toast } from 'react-hot-toast';
 import emailjs from '@emailjs/browser'; 
-import { Plus, Search, Package, CheckCircle, AlertTriangle, Edit2, Filter, Wrench, Trash2, AlertOctagon, Loader2, Bell, XCircle, Mail, PackageCheck } from 'lucide-react';
+import { Plus, Search, Package, CheckCircle, AlertTriangle, Edit2, Filter, Wrench, Trash2, AlertOctagon, Loader2, Bell, XCircle, Mail, PackageCheck, Calendar as CalendarIcon, BarChart3 } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // --- IMPORT AUTH & PAGINATION ---
 import { useAuth } from '../context/AuthContext';
@@ -48,9 +49,50 @@ const EquipmentPage = () => {
   const [rejectReason, setRejectReason] = useState(''); 
   const [addItemForm, setAddItemForm] = useState({ item_name: '', total_quantity: 1, category: '' });
 
+  const [analyticFilter, setAnalyticFilter] = useState('month');
+  const [analyticData, setAnalyticData] = useState([]);
+
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Process analytics whenever data or filter changes
+  useEffect(() => {
+    if (inventory.length > 0 || records.length > 0) {
+      const now = new Date();
+      let cutoff = new Date();
+      if (analyticFilter === 'week') cutoff.setDate(now.getDate() - 7);
+      else if (analyticFilter === 'month') cutoff.setMonth(now.getMonth() - 1);
+      else if (analyticFilter === 'year') cutoff.setFullYear(now.getFullYear() - 1);
+      else if (analyticFilter === 'all') cutoff = new Date(0);
+
+      const grouped = {};
+
+      inventory.forEach(item => {
+        if (!item.created_at) return;
+        const d = new Date(item.created_at);
+        if (d >= cutoff) {
+          const dateStr = d.toLocaleDateString();
+          if (!grouped[dateStr]) grouped[dateStr] = { date: dateStr, added: 0, damaged: 0 };
+          grouped[dateStr].added += item.total_quantity || 1;
+        }
+      });
+
+      records.forEach(rec => {
+        if (rec.status?.includes('Damage') && rec.actual_return) {
+          const d = new Date(rec.actual_return);
+          if (d >= cutoff) {
+            const dateStr = d.toLocaleDateString();
+            if (!grouped[dateStr]) grouped[dateStr] = { date: dateStr, added: 0, damaged: 0 };
+            grouped[dateStr].damaged += rec.quantity || 1; 
+          }
+        }
+      });
+
+      const sortedData = Object.values(grouped).sort((a,b) => new Date(a.date) - new Date(b.date));
+      setAnalyticData(sortedData);
+    }
+  }, [inventory, records, analyticFilter]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -457,10 +499,10 @@ const EquipmentPage = () => {
   useEffect(() => { goToPage(1); }, [searchTerm, statusFilter, activeTab, goToPage]);
 
   return (
-    <div className="page-container" style={{ padding: '2rem' }}>
+    <div className="page-container page-container-eq">
       <datalist id="resident-list">{residentNames.map((name, idx) => <option key={idx} value={name} />)}</datalist>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem' }}>
         <div>
           <h1 style={{ fontSize: '1.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Package size={28} color="var(--primary-600)" /> Equipment Inventory
@@ -492,7 +534,7 @@ const EquipmentPage = () => {
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', borderBottom: '2px solid var(--border)' }}>
+      <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', borderBottom: '2px solid var(--border)', overflowX: 'auto', whiteSpace: 'nowrap', paddingBottom: '0.5rem' }}>
         <button onClick={() => { setActiveTab('records'); setSearchTerm(''); setStatusFilter('All'); }} style={{ padding: '0.75rem 1.5rem', background: 'none', border: 'none', borderBottom: activeTab === 'records' ? '3px solid var(--primary-600)' : '3px solid transparent', color: activeTab === 'records' ? 'var(--primary-600)' : 'var(--text-secondary)', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem' }}>
           Active Borrows & History
         </button>
@@ -505,12 +547,9 @@ const EquipmentPage = () => {
         <button onClick={() => { setActiveTab('inventory'); setSearchTerm(''); }} style={{ padding: '0.75rem 1.5rem', background: 'none', border: 'none', borderBottom: activeTab === 'inventory' ? '3px solid var(--primary-600)' : '3px solid transparent', color: activeTab === 'inventory' ? 'var(--primary-600)' : 'var(--text-secondary)', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem' }}>
           Inventory Stock
         </button>
-        <button onClick={() => { setActiveTab('calendar'); setSearchTerm(''); }} style={{ padding: '0.75rem 1.5rem', background: 'none', border: 'none', borderBottom: activeTab === 'calendar' ? '3px solid var(--primary-600)' : '3px solid transparent', color: activeTab === 'calendar' ? 'var(--primary-600)' : 'var(--text-secondary)', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem' }}>
-          Calendar View
-        </button>
       </div>
 
-      <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
+      <div className="eq-main-card">
         <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', background: 'var(--neutral-100)', padding: '0.5rem 1rem', borderRadius: '8px', flex: 2, minWidth: '250px' }}>
             <Search size={20} color="var(--text-tertiary)" style={{ marginRight: '0.5rem' }} />
@@ -534,13 +573,11 @@ const EquipmentPage = () => {
 
         {loading ? <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}><Loader2 className="animate-spin" size={32} color="var(--primary-600)" /></div> : (
           <>
-            {/* CALENDAR TAB */}
-            {activeTab === 'calendar' && (
-              <EquipmentCalendar records={records} />
-            )}
+
             {/* INVENTORY TAB */}
             {activeTab === 'inventory' && (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <div style={{ overflowX: 'auto', width: '100%' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '600px' }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--border)', textAlign: 'left', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '1rem' }}>Item Name</th>
@@ -578,11 +615,13 @@ const EquipmentPage = () => {
                   )}
                 </tbody>
               </table>
+              </div>
             )}
 
             {/* PENDING REQUESTS TAB */}
             {activeTab === 'requests' && (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <div style={{ overflowX: 'auto', width: '100%' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--border)', textAlign: 'left', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '1rem' }}>Resident Name</th>
@@ -620,11 +659,13 @@ const EquipmentPage = () => {
                   )}
                 </tbody>
               </table>
+              </div>
             )}
 
             {/* RECORDS & HISTORY TAB */}
             {activeTab === 'records' && (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <div style={{ overflowX: 'auto', width: '100%' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '800px' }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--border)', textAlign: 'left', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '1rem' }}>Borrower</th>
@@ -689,6 +730,7 @@ const EquipmentPage = () => {
                   )}
                 </tbody>
               </table>
+              </div>
             )}
 
             {totalPages > 1 && (
@@ -699,6 +741,56 @@ const EquipmentPage = () => {
           </>
         )}
       </div>
+
+      {/* EQUIPMENT WIDGETS SECTION (Calendar & Graph) */}
+      {!loading && (
+        <div className="eq-widgets-grid">
+          
+          {/* Calendar Widget */}
+          <div className="eq-main-card" style={{ border: '1px solid var(--border)' }}>
+            <h2 style={{ fontSize: '1.25rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-primary)' }}>
+              <CalendarIcon size={22} color="var(--primary-600)" /> Borrowing Schedule
+            </h2>
+            <EquipmentCalendar records={records} />
+          </div>
+
+          {/* Analytics Graph Widget */}
+          <div className="eq-main-card" style={{ border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '10px' }}>
+              <h2 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, color: 'var(--text-primary)' }}>
+                <BarChart3 size={22} color="var(--primary-600)" /> Added vs Damaged Stock
+              </h2>
+              <select value={analyticFilter} onChange={(e) => setAnalyticFilter(e.target.value)} style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border)', outline: 'none', cursor: 'pointer', fontWeight: 'bold' }}>
+                <option value="week">Past Week</option>
+                <option value="month">Past Month</option>
+                <option value="year">Past Year</option>
+                <option value="all">All Time</option>
+              </select>
+            </div>
+            
+            {analyticData.length === 0 ? (
+              <div style={{ height: '300px', display: 'flex', justifyContent: 'center', alignItems: 'center', color: 'var(--text-tertiary)' }}>
+                No analytic data available for this period.
+              </div>
+            ) : (
+              <div style={{ height: '300px', width: '100%' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={analyticData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                    <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <Tooltip cursor={{ fill: 'var(--background)' }} contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0' }} />
+                    <Legend wrapperStyle={{ paddingTop: '10px' }} />
+                    <Bar dataKey="added" name="Added Equipment" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                    <Bar dataKey="damaged" name="Damaged Items" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
 
       {/* MODALS */}
       {isRejectModalOpen && selectedRecord && canEdit && (

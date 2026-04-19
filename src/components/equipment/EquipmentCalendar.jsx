@@ -58,7 +58,7 @@ const EquipmentCalendar = ({ records }) => {
     const days = [];
     let date = startOfWeek(currentDate);
     for (let i = 0; i < 7; i++) {
-      days.push(<div className="cal-col cal-col-title" key={i}>{format(date, 'EEEE')}</div>);
+      days.push(<div className="cal-col cal-col-title" key={i}>{format(date, 'EEE')}</div>);
       date = addDays(date, 1);
     }
     return <div className="cal-days-row">{days}</div>;
@@ -96,7 +96,7 @@ const EquipmentCalendar = ({ records }) => {
             {dayRecords.length > 0 && (
               <div className="cal-events">
                 <div className="cal-event-indicator" style={{ backgroundColor: bgColor }}>
-                  {dayRecords.length} Active {dayRecords.length === 1 ? 'Request' : 'Requests'}
+                  {dayRecords.length} {dayRecords.length === 1 ? 'item' : 'items'}
                 </div>
                 
                 <div className="cal-tooltip">

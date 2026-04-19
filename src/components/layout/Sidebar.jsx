@@ -33,6 +33,7 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
   const location = useLocation();
 
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 1024);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 1024);
@@ -435,7 +436,7 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
 
           {/* Logout Button */}
           <button 
-            onClick={handleLogout} 
+            onClick={() => setShowLogoutConfirm(true)} 
             style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', background: '#fef2f2', color: '#ef4444', border: '1px solid #fecaca', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', marginBottom: '15px', justifyContent: effectiveCollapsed ? 'center' : 'flex-start' }}
           >
             <LogOut size={18} /> {!effectiveCollapsed && 'Logout'}
@@ -458,8 +459,50 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
             </div>
           )}
         </div>
-
       </aside>
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(15,23,42,0.55)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 10000,
+          }}
+          onClick={() => setShowLogoutConfirm(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'white', borderRadius: '16px',
+              padding: '2rem', width: '85%', maxWidth: '360px',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)', textAlign: 'center',
+            }}
+          >
+            <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+              <LogOut size={24} color="#ef4444" />
+            </div>
+            <h3 style={{ margin: '0 0 0.5rem', fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>Confirm Logout</h3>
+            <p style={{ margin: '0 0 1.5rem', color: '#64748b', fontSize: '0.875rem' }}>Are you sure you want to logout from your account?</p>
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                style={{ flex: 1, padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', color: '#374151', fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleLogout}
+                style={{ flex: 1, padding: '0.65rem 1rem', borderRadius: '8px', border: 'none', background: '#ef4444', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}
+              >
+                Yes, Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

@@ -517,6 +517,20 @@ tr:last-child td {
   display: none;
 }
 
+/* Announcements: desktop shows table, mobile shows cards */
+.announcements-mobile-cards {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .announcements-desktop-table {
+    display: none !important;
+  }
+  .announcements-mobile-cards {
+    display: block;
+  }
+}
+
 .sidebar-overlay {
   position: fixed;
   top: 0;

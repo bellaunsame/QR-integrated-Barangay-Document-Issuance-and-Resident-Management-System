@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase, db } from '../services/supabaseClient';
 import { Link } from 'react-router-dom';
+import EquipmentCalendar from '../components/equipment/EquipmentCalendar';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList 
 } from 'recharts';
@@ -48,6 +49,8 @@ const DashboardPage = () => {
   // --- CHART & CARD DATA STATES ---
   const [docChartData, setDocChartData] = useState([]);
   const [blotterChartData, setBlotterChartData] = useState([]);
+  const [incidentChartData, setIncidentChartData] = useState([]);
+
   const [activeBorrows, setActiveBorrows] = useState([]); 
   
   const [timeFilter, setTimeFilter] = useState('month'); 
@@ -152,9 +155,20 @@ const DashboardPage = () => {
     });
     setDocChartData(Object.keys(docCounts).map(key => ({ name: key, count: docCounts[key] })).sort((a, b) => b.count - a.count));
 
-    const filteredBlotters = filterByDate(allRawBlotters, 'incident_date');
-    const blotterCounts = { 'Active': 0, 'Settled': 0, 'Escalated': 0, 'Dismissed': 0 };
-    filteredBlotters.forEach(b => {
+    const filteredAllBlotters = filterByDate(allRawBlotters, 'incident_date');
+    
+    const filteredIncidents = filteredAllBlotters.filter(b => b.report_type === 'Incident' || !b.report_type);
+    const filteredOnlyBlotters = filteredAllBlotters.filter(b => b.report_type === 'Blotter');
+
+    const incidentCounts = { 'Pending': 0, 'Active': 0, 'Settled': 0, 'Escalated': 0, 'Dismissed': 0 };
+    filteredIncidents.forEach(b => {
+      const status = b.status || 'Active';
+      incidentCounts[status] = (incidentCounts[status] || 0) + 1;
+    });
+    setIncidentChartData(Object.keys(incidentCounts).filter(k => incidentCounts[k] > 0).map(key => ({ name: key, count: incidentCounts[key] })));
+
+    const blotterCounts = { 'Pending': 0, 'Active': 0, 'Settled': 0, 'Escalated': 0, 'Dismissed': 0 };
+    filteredOnlyBlotters.forEach(b => {
       const status = b.status || 'Active';
       blotterCounts[status] = (blotterCounts[status] || 0) + 1;
     });
@@ -310,6 +324,45 @@ const DashboardPage = () => {
           marginBottom: '24px' 
         }}>
           
+          {/* INCIDENT CHART */}
+          {showBlotter && (
+            <div className="card" style={{ padding: '20px', backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)', height: '400px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+                <AlertCircle size={22} color="#f59e0b" />
+                <h2 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-primary)' }}>Incident Reports by Status</h2>
+              </div>
+
+              {incidentChartData.length === 0 ? (
+                <div style={{ height: '250px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)' }}>
+                  <AlertCircle size={48} opacity={0.2} style={{ marginBottom: '10px' }} />
+                  <p>No incident reports found for this period.</p>
+                </div>
+              ) : (
+                <div style={{ width: '100%', height: '300px' }}>
+                  <ResponsiveContainer width="99%" height={300}>
+                    <BarChart data={incidentChartData} margin={{ top: 35, right: 30, left: 20, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                      <XAxis dataKey="name" tick={{ fill: '#334155', fontSize: 14, fontWeight: 600 }} tickLine={false} axisLine={{ stroke: 'var(--border)' }} />
+                      <YAxis allowDecimals={false} tick={{ fill: '#334155', fontSize: 14, fontWeight: 600 }} tickLine={false} axisLine={false} label={{ value: 'Total Incidents', angle: -90, position: 'insideLeft', offset: -10, fill: '#64748b', fontWeight: 'bold', fontSize: 14 }} />
+                      <Tooltip content={<CustomTooltip color="#f59e0b" />} cursor={{ fill: 'var(--background)', opacity: 0.4 }} />
+                      <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={60}>
+                        {incidentChartData.map((entry, index) => {
+                          let color = '#3b82f6'; // Active
+                          if (entry.name === 'Pending') color = '#f59e0b';
+                          if (entry.name.includes('Settled')) color = '#10b981'; 
+                          if (entry.name.includes('Escalated')) color = '#ef4444'; 
+                          if (entry.name.includes('Dismissed')) color = '#64748b'; 
+                          return <Cell key={`cell-${index}`} fill={color} />;
+                        })}
+                        <LabelList dataKey="count" position="top" style={{ fill: '#1e293b', fontSize: 16, fontWeight: 'bold' }} formatter={(val) => `${val} cases`} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* BLOTTER CHART */}
           {showBlotter && (
             <div className="card" style={{ padding: '20px', backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)', height: '400px' }}>
@@ -393,6 +446,27 @@ const DashboardPage = () => {
             </div>
           )}
 
+        </div>
+      )}
+
+      {/* DYNAMIC CALENDAR WIDGET: EQUIPMENT */}
+      {showEquipment && (
+        <div className="card" style={{ padding: '20px', marginBottom: '24px', backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Calendar size={22} color="var(--primary-600)" />
+              <h2 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-primary)' }}>Equipment Borrowing Schedule</h2>
+            </div>
+            <Link to="/equipment" style={{ fontSize: '0.85rem', color: 'var(--primary-600)', textDecoration: 'none', fontWeight: 'bold' }}>Manage Calendar</Link>
+          </div>
+          
+          <EquipmentCalendar records={allRawBorrows.map(record => {
+            let displayStatus = record.status;
+            if (record.status === 'Released' && record.expected_return && new Date(record.expected_return) < new Date()) {
+              displayStatus = 'Overdue';
+            }
+            return { ...record, display_status: displayStatus };
+          })} />
         </div>
       )}
 

@@ -341,8 +341,8 @@
 }
 
 @media (max-width: 768px) {
-  /* Hide the navbar menu button since the .mobile-topbar has its own hamburger */
-  .navbar-menu-btn {
+  /* Hide the entire desktop navbar since the .mobile-topbar is used instead */
+  .navbar {
     display: none !important; 
   }
 }

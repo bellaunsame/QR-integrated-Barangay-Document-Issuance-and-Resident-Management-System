@@ -172,5 +172,11 @@
 
   .action-buttons {
     flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .action-buttons .btn-icon {
+    width: auto !important;
+    flex: 0 0 auto;
   }
 }

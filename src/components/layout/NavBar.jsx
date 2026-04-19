@@ -13,11 +13,16 @@ const Navbar = ({ onMenuClick }) => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   // Removed showNotifications state
 
   const handleLogout = async () => {
     await logout();
     navigate('/login');
+  };
+
+  const handleAvatarClick = () => {
+    navigate('/profile');
   };
 
   return (
@@ -39,7 +44,9 @@ const Navbar = ({ onMenuClick }) => {
             className="navbar-user-btn"
             onClick={() => setShowUserMenu(!showUserMenu)}
           >
-            <UserAvatar user={user} size="sm" />
+            <div onClick={(e) => { e.stopPropagation(); handleAvatarClick(); }} style={{ cursor: 'pointer' }}>
+              <UserAvatar user={user} size="sm" />
+            </div>
             <div className="user-info">
               <span className="user-name">{user?.full_name}</span>
               <span className="user-role">{user?.role}</span>
@@ -82,7 +89,7 @@ const Navbar = ({ onMenuClick }) => {
 
               <div className="dropdown-divider" />
 
-              <button className="dropdown-item danger" onClick={handleLogout}>
+              <button className="dropdown-item danger" onClick={() => { setShowUserMenu(false); setShowLogoutConfirm(true); }}>
                 <LogOut size={18} />
                 <span>Logout</span>
               </button>
@@ -91,12 +98,54 @@ const Navbar = ({ onMenuClick }) => {
         </div>
       </div>
 
-      {/* Overlay - Updated to only handle User Menu */}
       {showUserMenu && (
         <div
           className="dropdown-overlay"
           onClick={() => setShowUserMenu(false)}
         />
+      )}
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(15,23,42,0.55)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 9999,
+          }}
+          onClick={() => setShowLogoutConfirm(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--surface)', borderRadius: '16px',
+              padding: '2rem', width: '90%', maxWidth: '380px',
+              boxShadow: 'var(--shadow-xl)', textAlign: 'center',
+            }}
+          >
+            <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+              <LogOut size={24} color="#ef4444" />
+            </div>
+            <h3 style={{ margin: '0 0 0.5rem', fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-primary)' }}>Confirm Logout</h3>
+            <p style={{ margin: '0 0 1.5rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Are you sure you want to logout from your account?</p>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                style={{ flex: 1, padding: '0.625rem 1rem', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-primary)', fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleLogout}
+                style={{ flex: 1, padding: '0.625rem 1rem', borderRadius: '8px', border: 'none', background: '#ef4444', color: 'white', fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem' }}
+              >
+                Yes, Logout
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </nav>
   );

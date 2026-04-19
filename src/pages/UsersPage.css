@@ -39,3 +39,105 @@
     padding: 1rem;
   }
 }
+
+@media (max-width: 768px) {
+  .users-page .page-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 1.5rem;
+  }
+  
+  .users-page .header-right {
+    flex-direction: column;
+    align-items: stretch;
+    align-self: stretch;
+  }
+  
+  .users-page .header-right button {
+    justify-content: center;
+    color: white !important;
+    display: flex !important;
+    align-items: center;
+  }
+  
+  /* Card layout for table rows */
+  .users-page .data-table,
+  .users-page .data-table tbody,
+  .users-page .data-table tr {
+    display: block;
+    width: 100%;
+  }
+
+  .users-page .data-table thead {
+    display: none;
+  }
+
+  .users-page .data-table tr {
+    margin-bottom: 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    padding: 0.75rem;
+  }
+
+  /* Override the global white-space:nowrap on mobile td */
+  .users-page .data-table td {
+    display: block !important;
+    white-space: normal !important;
+    padding: 0.5rem 0 !important;
+    border: none !important;
+    border-bottom: 1px solid var(--neutral-100) !important;
+    text-align: left;
+    overflow: visible !important;
+  }
+  
+  .users-page .data-table td:last-child {
+    border-bottom: none !important;
+    padding-bottom: 0 !important;
+  }
+
+  .users-page .data-table td::before {
+    content: attr(data-label);
+    font-weight: 700;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.5px;
+    display: block;
+    margin-bottom: 0.35rem;
+  }
+
+  /* Ensure td-content is always visible as a block */
+  .users-page .td-content {
+    display: block !important;
+    width: 100% !important;
+    min-height: 20px !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+  
+  /* Explicit action button sizing so they can never collapse */
+  .users-page .data-table td[data-label="ACTIONS"] .td-content {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    min-height: 40px !important;
+    padding-top: 4px !important;
+  }
+
+  .users-page .data-table .btn-icon {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-width: 36px !important;
+    min-height: 36px !important;
+    width: 36px !important;
+    height: 36px !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    flex-shrink: 0 !important;
+  }
+}

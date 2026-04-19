@@ -463,7 +463,7 @@ const DocumentRequestsPage = () => {
           )}
         </>
       ) : (
-        <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic', display: 'flex', alignItems: 'center', marginLeft: '5px' }}>
+        <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic', display: 'flex', alignItems: 'center' }}>
           No Access
         </span>
       )}
@@ -573,8 +573,8 @@ const DocumentRequestsPage = () => {
             {/* MOBILE VIEW */}
             <div className="mobile-cards-container">
               {canEdit && currentRequests.length > 0 && (
-                <div style={{ padding: '12px', background: '#fff', borderRadius: '8px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <input type="checkbox" onChange={toggleSelectAll} checked={currentRequests.length > 0 && selectedRequests.length === currentRequests.length} />
+                <div style={{ padding: '12px', background: '#fff', borderRadius: '8px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                  <input type="checkbox" onChange={toggleSelectAll} checked={currentRequests.length > 0 && selectedRequests.length === currentRequests.length} style={{ margin: 0, width: 'auto' }} />
                   <strong style={{ color: 'var(--text-secondary)' }}>Select All on Page</strong>
                 </div>
               )}

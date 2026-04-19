@@ -341,30 +341,42 @@ const UsersPage = () => {
               <tbody>
                 {filteredUsers.map(user => (
                   <tr key={user.id} className={!user.is_active ? 'row-deactivated' : ''}>
-                    <td>
-                      <div className="user-info">
+                    <td data-label="NAME">
+                      {/* 👇 Wrapped in td-content 👇 */}
+                      <div className="td-content" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <Shield size={16} className="user-icon" />
                         <strong>{user.full_name || 'N/A'}</strong>
                       </div>
                     </td>
-                    <td>{user.email}</td>
-                    <td>
-                      <span className={`badge ${getRoleBadgeClass(user.role)}`}>
-                        {formatRole(user.role)}
-                      </span>
+                    
+                    <td data-label="EMAIL">
+                      <div className="td-content">{user.email}</div>
                     </td>
-                    <td>
-                      <span className={`status-badge ${user.is_active ? 'status-active' : 'status-inactive'}`}>
-                        {user.is_active ? <><UserCheck size={14} /> Active</> : <><UserX size={14} /> Deactivated</>}
-                      </span>
+                    
+                    <td data-label="ROLE">
+                      <div className="td-content">
+                        <span className={`badge ${getRoleBadgeClass(user.role)}`}>
+                          {formatRole(user.role)}
+                        </span>
+                      </div>
                     </td>
-                    <td>
-                      <div className="action-buttons">
+                    
+                    <td data-label="STATUS">
+                      <div className="td-content">
+                        <span className={`status-badge ${user.is_active ? 'status-active' : 'status-inactive'}`}>
+                          {user.is_active ? <><UserCheck size={14} /> Active</> : <><UserX size={14} /> Deactivated</>}
+                        </span>
+                      </div>
+                    </td>
+                    
+                    <td data-label="ACTIONS">
+                      <div className="td-content action-buttons" style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', flexWrap: 'wrap', gap: '8px', width: '100%', marginTop: '8px' }}>
                         {currentUser?.role === 'admin' ? (
                           <>
-                            <button className="btn-icon btn-edit" onClick={() => handleEdit(user)} title="Edit user"><Edit2 size={16} /></button>
+                            <button className="btn-icon btn-edit" style={{ margin: 0 }} onClick={() => handleEdit(user)} title="Edit user"><Edit2 size={16} /></button>
                             <button 
                               className={`btn-icon ${user.is_active ? 'btn-danger' : 'btn-success'}`}
+                              style={{ margin: 0 }}
                               onClick={() => handleToggleStatus(user)}
                               title={user.is_active ? 'Deactivate' : 'Activate'}
                               disabled={currentUser.id === user.id}
@@ -373,7 +385,7 @@ const UsersPage = () => {
                             </button>
                           </>
                         ) : (
-                          <span className="text-muted" style={{ fontSize: '12px', fontStyle: 'italic' }}>Read-Only</span>
+                          <span className="text-muted" style={{ fontSize: '12px', fontStyle: 'italic', margin: 0 }}>Read-Only</span>
                         )}
                       </div>
                     </td>

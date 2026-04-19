@@ -187,82 +187,146 @@ const AnnouncementsPage = () => {
         <button className="btn btn-primary" onClick={() => openModal()}><Plus size={20} /> Post New Update</button>
       </div>
 
-      <div className="card desktop-table-container">
+      <div className="card">
         {loading ? <div style={{padding:'2rem', textAlign:'center'}}>Loading...</div> : (
-          <div className="table-responsive">
-            <table>
-              <thead>
-                <tr>
-                  <th>Status</th>
-                  <th>Title & Content</th>
-                  <th>Reach / Engagement</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {announcements.length === 0 ? (
-                  <tr><td colSpan="4" style={{textAlign:'center', padding:'2rem'}}>No announcements posted yet.</td></tr>
-                ) : (
-                  announcements.map((a) => (
-                    <tr key={a.id} style={{ background: a.is_pinned ? '#fefce8' : 'transparent' }}>
-                      <td>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', alignItems: 'flex-start' }}>
-                          {a.is_pinned && <span className="badge badge-warning" style={{ background: '#f59e0b', color: '#fff' }}><Pin size={12}/> Pinned</span>}
-                          <span className={`badge`} style={{ 
-                            background: a.type === 'Warning' ? '#fee2e2' : a.type === 'Event' ? '#d1fae5' : '#e0e7ff',
-                            color: a.type === 'Warning' ? '#ef4444' : a.type === 'Event' ? '#10b981' : '#3b82f6', border: '1px solid currentColor'
-                          }}>
-                            {a.type === 'Warning' ? <AlertTriangle size={12}/> : a.type === 'Event' ? <Bell size={12}/> : <Info size={12}/>} {a.type}
-                          </span>
-                        </div>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '10px' }}>
-                          {a.image_url && <img src={a.image_url} alt="poster" style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #e2e8f0' }} />}
-                          <div>
-                            <strong>{a.title}</strong>
-                            <p style={{ margin:'5px 0 0 0', fontSize:'0.85rem', color:'#64748b' }}>{a.content.length > 60 ? a.content.substring(0, 60) + '...' : a.content}</p>
+          <>
+            {/* ── DESKTOP TABLE ── */}
+            <div className="announcements-desktop-table table-responsive">
+              <table style={{ minWidth: '600px' }}>
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Title &amp; Content</th>
+                    <th>Reach / Engagement</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {announcements.length === 0 ? (
+                    <tr><td colSpan="4" style={{textAlign:'center', padding:'2rem'}}>No announcements posted yet.</td></tr>
+                  ) : (
+                    announcements.map((a) => (
+                      <tr key={a.id} style={{ background: a.is_pinned ? '#fefce8' : 'transparent' }}>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', alignItems: 'flex-start' }}>
+                            {a.is_pinned && <span className="badge badge-warning" style={{ background: '#f59e0b', color: '#fff' }}><Pin size={12}/> Pinned</span>}
+                            <span className={`badge`} style={{ 
+                              background: a.type === 'Warning' ? '#fee2e2' : a.type === 'Event' ? '#d1fae5' : '#e0e7ff',
+                              color: a.type === 'Warning' ? '#ef4444' : a.type === 'Event' ? '#10b981' : '#3b82f6', border: '1px solid currentColor'
+                            }}>
+                              {a.type === 'Warning' ? <AlertTriangle size={12}/> : a.type === 'Event' ? <Bell size={12}/> : <Info size={12}/>} {a.type}
+                            </span>
                           </div>
-                        </div>
-                      </td>
-                      <td>
-                        <div style={{ fontSize: '0.85rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          
-                          {/* TARGET AUDIENCE */}
-                          <div style={{ display:'flex', alignItems:'center', gap:'4px' }}>
-                            <MapPin size={14}/> <span>{a.target_purok}</span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            {a.image_url && <img src={a.image_url} alt="poster" style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #e2e8f0' }} />}
+                            <div>
+                              <strong>{a.title}</strong>
+                              <p style={{ margin:'5px 0 0 0', fontSize:'0.85rem', color:'#64748b' }}>{a.content.length > 60 ? a.content.substring(0, 60) + '...' : a.content}</p>
+                            </div>
                           </div>
+                        </td>
+                        <td>
+                          <div style={{ fontSize: '0.85rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ display:'flex', alignItems:'center', gap:'4px' }}>
+                              <MapPin size={14}/> <span>{a.target_purok}</span>
+                            </div>
+                            <div 
+                              onClick={() => a.like_count > 0 ? handleViewLikes(a) : null}
+                              style={{ 
+                                display:'inline-flex', alignItems:'center', gap:'6px', padding: '4px 8px', borderRadius: '20px',
+                                background: a.like_count > 0 ? '#ecfdf5' : '#f1f5f9', 
+                                color: a.like_count > 0 ? '#059669' : '#94a3b8', 
+                                border: a.like_count > 0 ? '1px solid #a7f3d0' : '1px solid #e2e8f0',
+                                fontWeight: 'bold', width: 'fit-content', cursor: a.like_count > 0 ? 'pointer' : 'default',
+                                transition: 'all 0.2s'
+                              }}
+                              title={a.like_count > 0 ? "Click to see who acknowledged" : "No acknowledgements yet"}
+                            >
+                              <ThumbsUp size={14}/> {a.like_count} Acknowledged
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="action-buttons">
+                            <button className="btn-icon" onClick={() => openModal(a)}><Edit2 size={18} /></button>
+                            <button className="btn-icon" style={{color:'#ef4444', background:'#fee2e2'}} onClick={() => handleDelete(a.id)}><Trash2 size={18} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-                          {/* NEW: ACKNOWLEDGEMENT BADGE (Clickable) */}
-                          <div 
-                            onClick={() => a.like_count > 0 ? handleViewLikes(a) : null}
-                            style={{ 
-                              display:'inline-flex', alignItems:'center', gap:'6px', padding: '4px 8px', borderRadius: '20px',
-                              background: a.like_count > 0 ? '#ecfdf5' : '#f1f5f9', 
-                              color: a.like_count > 0 ? '#059669' : '#94a3b8', 
-                              border: a.like_count > 0 ? '1px solid #a7f3d0' : '1px solid #e2e8f0',
-                              fontWeight: 'bold', width: 'fit-content', cursor: a.like_count > 0 ? 'pointer' : 'default',
-                              transition: 'all 0.2s'
-                            }}
-                            title={a.like_count > 0 ? "Click to see who acknowledged" : "No acknowledgements yet"}
-                          >
-                            <ThumbsUp size={14}/> {a.like_count} Acknowledged
-                          </div>
+            {/* ── MOBILE CARDS ── */}
+            <div className="announcements-mobile-cards">
+              {announcements.length === 0 ? (
+                <p style={{ textAlign:'center', padding:'2rem', color:'#94a3b8' }}>No announcements posted yet.</p>
+              ) : (
+                announcements.map((a) => (
+                  <div key={a.id} style={{
+                    background: a.is_pinned ? '#fefce8' : 'var(--surface)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '12px',
+                    padding: '1rem',
+                    marginBottom: '1rem',
+                  }}>
+                    {/* Card Header: Badges + Actions */}
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'0.75rem' }}>
+                      <div style={{ display:'flex', gap:'6px', flexWrap:'wrap' }}>
+                        {a.is_pinned && <span className="badge badge-warning" style={{ background:'#f59e0b', color:'#fff', fontSize:'0.7rem' }}><Pin size={10}/> Pinned</span>}
+                        <span className="badge" style={{
+                          background: a.type === 'Warning' ? '#fee2e2' : a.type === 'Event' ? '#d1fae5' : '#e0e7ff',
+                          color: a.type === 'Warning' ? '#ef4444' : a.type === 'Event' ? '#10b981' : '#3b82f6',
+                          border: '1px solid currentColor', fontSize:'0.7rem'
+                        }}>
+                          {a.type === 'Warning' ? <AlertTriangle size={10}/> : a.type === 'Event' ? <Bell size={10}/> : <Info size={10}/>} {a.type}
+                        </span>
+                      </div>
+                      <div style={{ display:'flex', gap:'6px', flexShrink:0 }}>
+                        <button className="btn-icon" style={{ minWidth:'32px', minHeight:'32px', width:'32px', height:'32px' }} onClick={() => openModal(a)}><Edit2 size={15} /></button>
+                        <button className="btn-icon" style={{ minWidth:'32px', minHeight:'32px', width:'32px', height:'32px', color:'#ef4444', background:'#fee2e2' }} onClick={() => handleDelete(a.id)}><Trash2 size={15} /></button>
+                      </div>
+                    </div>
 
-                        </div>
-                      </td>
-                      <td>
-                        <div className="action-buttons">
-                          <button className="btn-icon" onClick={() => openModal(a)}><Edit2 size={18} /></button>
-                          <button className="btn-icon" style={{color:'#ef4444', background:'#fee2e2'}} onClick={() => handleDelete(a.id)}><Trash2 size={18} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                    {/* Card Body: Image + Title + Content */}
+                    <div style={{ display:'flex', gap:'10px', marginBottom:'0.75rem' }}>
+                      {a.image_url && <img src={a.image_url} alt="poster" style={{ width:'56px', height:'56px', objectFit:'cover', borderRadius:'8px', flexShrink:0 }} />}
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <strong style={{ display:'block', marginBottom:'4px', fontSize:'0.95rem' }}>{a.title}</strong>
+                        <p style={{ margin:0, fontSize:'0.82rem', color:'#64748b', lineHeight:1.5 }}>
+                          {a.content.length > 100 ? a.content.substring(0, 100) + '...' : a.content}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Card Footer: Location + Likes */}
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'6px' }}>
+                      <span style={{ display:'flex', alignItems:'center', gap:'4px', fontSize:'0.8rem', color:'#64748b' }}>
+                        <MapPin size={13}/> {a.target_purok}
+                      </span>
+                      <div
+                        onClick={() => a.like_count > 0 ? handleViewLikes(a) : null}
+                        style={{
+                          display:'inline-flex', alignItems:'center', gap:'5px', padding:'3px 8px', borderRadius:'20px',
+                          background: a.like_count > 0 ? '#ecfdf5' : '#f1f5f9',
+                          color: a.like_count > 0 ? '#059669' : '#94a3b8',
+                          border: a.like_count > 0 ? '1px solid #a7f3d0' : '1px solid #e2e8f0',
+                          fontWeight:'bold', fontSize:'0.8rem',
+                          cursor: a.like_count > 0 ? 'pointer' : 'default'
+                        }}
+                      >
+                        <ThumbsUp size={13}/> {a.like_count} Acknowledged
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
         )}
       </div>
 
