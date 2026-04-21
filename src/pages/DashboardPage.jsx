@@ -213,7 +213,7 @@ const DashboardPage = () => {
       {/* HEADER WITH GLOBAL FILTER */}
       <div className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
         <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><BarChart3 size={28} color="var(--primary-600)" /> Analytics Dashboard</h1>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><BarChart3 size={28} color="var(--primary-600)" /> Quick Access Dashboard</h1>
           <p>Welcome back, {user?.full_name}! Here is your personalized overview.</p>
         </div>
         

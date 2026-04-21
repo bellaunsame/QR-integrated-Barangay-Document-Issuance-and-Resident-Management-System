@@ -300,11 +300,11 @@ const ResidentRegister = () => {
           {/* Contact Row */}
           <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
             <div style={{ flex: 1, minWidth: '200px' }}>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#475569', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '5px' }}><Mail size={14}/> Email Address *</label>
+              <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#475569', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '5px' }}><Mail size={14}/> Email Address *</label>
               <input type="email" name="email" value={formData.email} onChange={handleInputChange} required placeholder="juan@gmail.com" style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none' }} />
             </div>
             <div style={{ flex: 1, minWidth: '200px' }}>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#475569', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '5px' }}><Phone size={14}/> Mobile Number *</label>
+              <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#475569', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '5px' }}><Phone size={14}/> Mobile Number *</label>
               <input type="tel" name="mobile_number" value={formData.mobile_number} onChange={handleInputChange} required placeholder="09xxxxxxxxx" style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none' }} />
             </div>
           </div>
@@ -312,7 +312,7 @@ const ResidentRegister = () => {
           {/* Demographics Row */}
           <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
             <div style={{ flex: 1, minWidth: '150px' }}>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#475569', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '5px' }}><Calendar size={14}/> Date of Birth *</label>
+              <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#475569', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '5px' }}><Calendar size={14}/> Date of Birth *</label>
               <input type="date" name="date_of_birth" value={formData.date_of_birth} onChange={handleInputChange} max={today} required style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', background: '#fff' }} />
             </div>
             <div style={{ flex: 1, minWidth: '120px' }}>
@@ -338,7 +338,7 @@ const ResidentRegister = () => {
           {/* Address Row */}
           <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', paddingBottom: '10px', borderBottom: '1px solid #e2e8f0' }}>
             <div style={{ flex: 2, minWidth: '200px' }}>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#475569', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '5px' }}><MapPin size={14}/> House No. / Street *</label>
+              <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#475569', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '5px' }}><MapPin size={14}/> House No. / Street *</label>
               <input type="text" name="full_address" value={formData.full_address} onChange={handleInputChange} required placeholder="House/Block/Lot No., Street" style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none' }} />
             </div>
             <div style={{ flex: 1, minWidth: '150px' }}>
