@@ -1,12 +1,19 @@
-import { Navigate } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import LoadingSpinner from '../common/LoadingSpinner';
+import toast from 'react-hot-toast';
+
+// How often to check the session against the database (ms)
+const SESSION_VALIDATION_INTERVAL = 60 * 1000; // 60 seconds
 
 /**
  * ProtectedRoute Component
  * 
  * Protects routes from unauthorized access
  * Supports role-based access control
+ * Periodically validates the session against the server to detect
+ * when another device has invalidated this session.
  * 
  * @param {ReactNode} children - Components to render if authorized
  * @param {string|string[]} requiredRoles - Required role(s) to access route
@@ -17,7 +24,31 @@ const ProtectedRoute = ({
   requiredRoles = null,
   redirectTo = '/login'
 }) => {
-  const { user, loading, initialized } = useAuth();
+  const { user, loading, initialized, validateCurrentSession } = useAuth();
+  const navigate = useNavigate();
+  const intervalRef = useRef(null);
+
+  // Periodic session validation — detect when another device logs in
+  useEffect(() => {
+    if (!user || !validateCurrentSession) return;
+
+    const checkSession = async () => {
+      const isValid = await validateCurrentSession();
+      if (!isValid) {
+        toast.error('Your session was ended because you logged in on another device.');
+        navigate('/login?reason=session_invalidated', { replace: true });
+      }
+    };
+
+    // Start periodic check
+    intervalRef.current = setInterval(checkSession, SESSION_VALIDATION_INTERVAL);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, [user, validateCurrentSession, navigate]);
 
   // Show loading state while checking authentication
   if (loading || !initialized) {

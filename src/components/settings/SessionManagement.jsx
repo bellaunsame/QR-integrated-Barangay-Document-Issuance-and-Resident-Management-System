@@ -25,8 +25,8 @@ const SessionManagement = () => {
   const [showTerminateModal, setShowTerminateModal] = useState(false);
   const [selectedSession, setSelectedSession] = useState(null);
 
-  // Identify the current session ID from local storage
-  const currentSessionId = localStorage.getItem('current_session_id');
+  // Identify the current session ID from sessionStorage (no longer persisted in localStorage)
+  const currentSessionId = sessionStorage.getItem('current_session_id');
 
   useEffect(() => {
     if (!user) return;

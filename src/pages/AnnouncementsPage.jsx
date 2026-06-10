@@ -220,7 +220,7 @@ const AnnouncementsPage = () => {
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: '10px' }}>
-                            {a.image_url && <img src={a.image_url} alt="poster" style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #e2e8f0' }} />}
+                            {a.image_url && <img src={a.image_url} alt="poster" onError={e => e.target.style.display='none'} style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #e2e8f0' }} />}
                             <div>
                               <strong>{a.title}</strong>
                               <p style={{ margin:'5px 0 0 0', fontSize:'0.85rem', color:'#64748b' }}>{a.content.length > 60 ? a.content.substring(0, 60) + '...' : a.content}</p>
@@ -294,7 +294,7 @@ const AnnouncementsPage = () => {
 
                     {/* Card Body: Image + Title + Content */}
                     <div style={{ display:'flex', gap:'10px', marginBottom:'0.75rem' }}>
-                      {a.image_url && <img src={a.image_url} alt="poster" style={{ width:'56px', height:'56px', objectFit:'cover', borderRadius:'8px', flexShrink:0 }} />}
+                      {a.image_url && <img src={a.image_url} alt="poster" onError={e => e.target.style.display='none'} style={{ width:'56px', height:'56px', objectFit:'cover', borderRadius:'8px', flexShrink:0 }} />}
                       <div style={{ flex:1, minWidth:0 }}>
                         <strong style={{ display:'block', marginBottom:'4px', fontSize:'0.95rem' }}>{a.title}</strong>
                         <p style={{ margin:0, fontSize:'0.82rem', color:'#64748b', lineHeight:1.5 }}>
@@ -427,7 +427,7 @@ const AnnouncementsPage = () => {
                 </label>
                 {imagePreview && (
                   <div style={{ textAlign: 'center', position: 'relative', marginTop: '10px' }}>
-                    <img src={imagePreview} alt="Preview" style={{ maxHeight: '200px', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
+                    <img src={imagePreview} alt="Preview" onError={e => e.target.style.display='none'} style={{ maxHeight: '200px', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
                     <button type="button" onClick={() => { setImagePreview(''); setImageFile(null); setFormData({...formData, image_url: ''}); }} style={{ position: 'absolute', top: '-10px', right: 'calc(50% - 100px)', background: '#ef4444', color: 'white', border: 'none', borderRadius: '50%', width: '24px', height: '24px', cursor: 'pointer' }}>×</button>
                   </div>
                 )}

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, db } from '../services/supabaseClient';
 import toast from 'react-hot-toast';
@@ -21,7 +21,8 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
     try {
-      const storedUser = localStorage.getItem('user');
+      // Use sessionStorage so sessions don't persist across browser restarts
+      const storedUser = sessionStorage.getItem('user');
       return storedUser ? JSON.parse(storedUser) : null;
     } catch {
       return null;
@@ -51,16 +52,37 @@ export const AuthProvider = ({ children }) => {
 
   const checkUser = async () => {
     try {
-      const storedUser = localStorage.getItem('user');
-      const sessionId = localStorage.getItem('current_session_id');
+      const storedUser = sessionStorage.getItem('user');
+      const sessionId = sessionStorage.getItem('current_session_id');
       
       if (storedUser && sessionId) {
-        const parsedUser = JSON.parse(storedUser);
-        setUser(parsedUser);
-        sessionManager.startSession();
-        loadUserData(parsedUser.id);
+        // Validate session still exists in the database (may have been invalidated by another device)
+        const { data: sessionData, error: sessionError } = await supabase
+          .from('user_sessions')
+          .select('id')
+          .eq('id', sessionId)
+          .maybeSingle();
+
+        if (sessionError || !sessionData) {
+          // Session was invalidated (user logged in on another device)
+          console.warn('Session invalidated — forcing logout');
+          setUser(null);
+          sessionStorage.removeItem('user');
+          sessionStorage.removeItem('current_session_id');
+          // Also clean up any leftover localStorage from old versions
+          localStorage.removeItem('user');
+          localStorage.removeItem('current_session_id');
+        } else {
+          const parsedUser = JSON.parse(storedUser);
+          setUser(parsedUser);
+          sessionManager.startSession();
+          loadUserData(parsedUser.id);
+        }
       } else {
         setUser(null);
+        sessionStorage.removeItem('user');
+        sessionStorage.removeItem('current_session_id');
+        // Also clean up any leftover localStorage from old versions
         localStorage.removeItem('user');
         localStorage.removeItem('current_session_id');
       }
@@ -77,7 +99,7 @@ export const AuthProvider = ({ children }) => {
       const userData = await db.users.getById(userId);
       if (userData) {
         setUser(userData);
-        localStorage.setItem('user', JSON.stringify(userData));
+        sessionStorage.setItem('user', JSON.stringify(userData));
       }
     } catch (error) {
       console.error('Error loading user data:', error);
@@ -164,6 +186,19 @@ export const AuthProvider = ({ children }) => {
 
     const deviceName = `${navigator.platform || 'Device'} - ${browserName}`;
 
+    // =====================================================
+    // SECURITY: Invalidate ALL existing sessions for this user
+    // This forces logout on every other device/browser
+    // =====================================================
+    try {
+      await supabase
+        .from('user_sessions')
+        .delete()
+        .eq('user_id', userData.id);
+    } catch (err) {
+      console.warn('Failed to invalidate old sessions:', err);
+    }
+
     const sessionData = {
       user_id: userData.id,
       device_type: deviceType,
@@ -179,11 +214,11 @@ export const AuthProvider = ({ children }) => {
       .single();
 
     if (!sessionError && newSession) {
-      localStorage.setItem('current_session_id', newSession.id);
+      sessionStorage.setItem('current_session_id', newSession.id);
     }
 
     setUser(userData);
-    localStorage.setItem('user', JSON.stringify(userData));
+    sessionStorage.setItem('user', JSON.stringify(userData));
     sessionManager.startSession();
 
     await logAuth(ACTIONS.LOGIN_SUCCESS, userData.id, { email: userData.email, role: userData.role, ip });
@@ -201,7 +236,7 @@ export const AuthProvider = ({ children }) => {
       if (error) throw error;
 
       setUser(data);
-      localStorage.setItem('user', JSON.stringify(data));
+      sessionStorage.setItem('user', JSON.stringify(data));
       await logAuth(ACTIONS.USER_UPDATED || 'USER_UPDATED', user.id, { email: user.email, changes: updatedData });
 
       return data;
@@ -211,26 +246,32 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logout = async () => {
+  const logout = async (silent = false) => {
     try {
       setLoading(true);
       if (user) {
         await logAuth(ACTIONS.LOGOUT, user.id, { email: user.email });
       }
       
-      const sessionId = localStorage.getItem('current_session_id');
+      const sessionId = sessionStorage.getItem('current_session_id');
       if (sessionId) {
         await supabase.from('user_sessions').delete().eq('id', sessionId);
       }
 
       setUser(null);
       setSession(null);
+      // Clear sessionStorage (primary)
+      sessionStorage.removeItem('user');
+      sessionStorage.removeItem('current_session_id');
+      // Also clean up any leftover localStorage from old versions
       localStorage.removeItem('user');
       localStorage.removeItem('current_session_id');
       clearCSRFToken();
       sessionManager.endSession();
       
-      toast.success('Logged out successfully');
+      if (!silent) {
+        toast.success('Logged out successfully');
+      }
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
@@ -297,6 +338,38 @@ export const AuthProvider = ({ children }) => {
     return (permissions[user.role] || []).includes(permission);
   };
 
+  // Validate the current session against the database
+  // Returns true if valid, false if invalidated (triggers auto-logout)
+  const validateCurrentSession = useCallback(async () => {
+    const sessionId = sessionStorage.getItem('current_session_id');
+    if (!sessionId || !user) return false;
+
+    try {
+      const { data, error } = await supabase
+        .from('user_sessions')
+        .select('id')
+        .eq('id', sessionId)
+        .maybeSingle();
+
+      if (error || !data) {
+        // Session was invalidated (another device logged in)
+        await logout(true);
+        return false;
+      }
+
+      // Update last activity
+      await supabase
+        .from('user_sessions')
+        .update({ last_activity: new Date().toISOString() })
+        .eq('id', sessionId);
+
+      return true;
+    } catch (err) {
+      console.error('Session validation error:', err);
+      return true; // Don't kick out on network errors
+    }
+  }, [user]);
+
   const value = {
     user,
     session,
@@ -308,7 +381,8 @@ export const AuthProvider = ({ children }) => {
     hasRole,
     hasPermission,
     startUserSession,
-    updateProfile 
+    updateProfile,
+    validateCurrentSession
   };
 
   return (

@@ -176,7 +176,12 @@ class SessionManager {
   clearSessionData() {
     sessionStorage.removeItem(SESSION_DATA_KEY);
     localStorage.removeItem(LAST_ACTIVITY_KEY);
+    // Clear sessionStorage (primary storage for user/session data)
+    sessionStorage.removeItem('user');
+    sessionStorage.removeItem('current_session_id');
+    // Clean up legacy localStorage references
     localStorage.removeItem('user');
+    localStorage.removeItem('current_session_id');
     localStorage.removeItem('token');
   }
 
