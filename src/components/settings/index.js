@@ -6,3 +6,4 @@
 export { default as BarangayInfoSettings } from './BarangayInfoSettings';
 export { default as SystemSettings } from './SystemSettings';
 export { default as SessionManagement } from './SessionManagement';
+export { default as GallerySettings } from './GallerySettings';

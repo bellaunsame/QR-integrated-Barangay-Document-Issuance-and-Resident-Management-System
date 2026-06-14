@@ -32,7 +32,6 @@ import DocumentRequestsPage from './pages/DocumentRequestsPage';
 import DocumentTemplatesPage from './pages/DocumentTemplatesPage';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
-import QRScanPage from './pages/QRScannerPage';
 import ProfilePage from './pages/ProfilePage';
 import ActivityLogPage from './pages/ActivityLogPage';
 import SecurityDashboard from './pages/SecurityDashboard';
@@ -130,7 +129,6 @@ function App() {
                     <Route path="/resident-setup-password" element={<ResidentSetupPassword />} />
                     
                     <Route path="/verify-otp" element={<VerifyOTP />} /> 
-                    <Route path="/scan" element={<QRScanPage />} />
                     
                     {/* --- 2. FORCED PASSWORD RESET ROUTE (ADMIN) --- */}
                     <Route 

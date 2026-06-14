@@ -16,8 +16,9 @@ import { Modal, Pagination } from '../components/common';
 import { usePagination } from '../hooks'; 
 import DocumentRequestForm from '../components/documents/DocumentRequestForm';
 import DocumentRequestDetails from '../components/documents/DocumentRequestDetails';
+import QRScannerModal from '../components/documents/QRScannerModal';
 import { 
-  Search, Eye, Download, CheckCircle, XCircle, Send, Plus, Archive, CheckSquare, Printer, RefreshCw, Edit, Copy, Ban
+  Search, Eye, Download, CheckCircle, XCircle, Send, Plus, Archive, CheckSquare, Printer, RefreshCw, Edit, Copy, Ban, QrCode
 } from 'lucide-react';
 import './DocumentRequestsPage.css';
 
@@ -42,6 +43,8 @@ const DocumentRequestsPage = () => {
   const [processingRequest, setProcessingRequest] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [viewingRequest, setViewingRequest] = useState(null); 
+  const [showQRScanner, setShowQRScanner] = useState(false);
+  const [scannedResident, setScannedResident] = useState(null);
 
   // Batch Processing State
   const [selectedRequests, setSelectedRequests] = useState([]);
@@ -342,12 +345,19 @@ const DocumentRequestsPage = () => {
       await db.requests.create({ ...payload, supporting_doc_url: supportingDocUrl, status: 'pending', created_by: user.id });
       toast.success('Request Created!');
       setShowForm(false);
+      setScannedResident(null); // Clear scanned resident after successful creation
       await loadData(); 
     } catch (error) {
       toast.error('Create failed');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleResidentScanned = (resident) => {
+    setScannedResident(resident);
+    setShowQRScanner(false);
+    setShowForm(true); // Open the form with the resident pre-filled
   };
 
   const toggleSelectAll = (e) => {
@@ -472,32 +482,20 @@ const DocumentRequestsPage = () => {
 
   return (
     <>
-      <style>{`
-        .desktop-table-container { display: block; }
-        .mobile-cards-container { display: none; }
-        
-        @media (max-width: 768px) {
-          .desktop-table-container { display: none; }
-          .mobile-cards-container { display: flex; flex-direction: column; gap: 1rem; }
-          
-          .document-requests-page .page-header { flex-direction: column !important; align-items: flex-start !important; gap: 1rem; }
-          .document-requests-page .page-header button { width: 100%; justify-content: center; }
-          
-          .batch-actions-bar { flex-direction: column !important; align-items: stretch !important; gap: 1rem; text-align: center; }
-          .batch-actions-bar .batch-buttons { display: flex; flex-direction: column; gap: 0.5rem; width: 100%; }
-          .batch-actions-bar .batch-buttons button { width: 100%; justify-content: center; }
-
-          .pagination-controls { flex-direction: column !important; gap: 1rem; text-align: center; }
-        }
-      `}</style>
-
       <div className="document-requests-page">
         <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div><h1>{getPageTitle()}</h1><p>Process and manage barangay document requests</p></div>
           
           {/* HIDE CREATE BUTTON IF VIEW ONLY */}
           {canEdit && (
-            <button className="btn btn-primary" onClick={() => setShowForm(true)}><Plus size={20} /> New Request</button>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button className="btn btn-secondary" onClick={() => setShowQRScanner(true)}>
+                <QrCode size={20} /> Scan QR
+              </button>
+              <button className="btn btn-primary" onClick={() => { setScannedResident(null); setShowForm(true); }}>
+                <Plus size={20} /> New Request
+              </button>
+            </div>
           )}
         </div>
 
@@ -635,8 +633,14 @@ const DocumentRequestsPage = () => {
         )}
 
         {showForm && canEdit && (
-          <Modal isOpen={showForm} onClose={() => setShowForm(false)} title="Create New Document Request" size="xl">
-            <DocumentRequestForm templates={templates} residents={residents} allRequests={requests} onSubmit={handleCreateRequest} onCancel={() => setShowForm(false)} />
+          <Modal isOpen={showForm} onClose={() => { setShowForm(false); setScannedResident(null); }} title="Create New Document Request" size="xl">
+            <DocumentRequestForm templates={templates} resident={scannedResident} residents={residents} allRequests={requests} onSubmit={handleCreateRequest} onCancel={() => { setShowForm(false); setScannedResident(null); }} />
+          </Modal>
+        )}
+
+        {showQRScanner && canEdit && (
+          <Modal isOpen={showQRScanner} onClose={() => setShowQRScanner(false)} title="Scan Resident QR" size="md">
+            <QRScannerModal onResidentScanned={handleResidentScanned} onClose={() => setShowQRScanner(false)} />
           </Modal>
         )}
       </div>

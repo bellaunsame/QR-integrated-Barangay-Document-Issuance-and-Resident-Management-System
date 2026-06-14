@@ -40,6 +40,32 @@ const LandingPage = () => {
   // ─── NEW STATE ───
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [dynamicGallery, setDynamicGallery] = useState([]);
+
+  // ─── FETCH DYNAMIC GALLERY ───
+  useEffect(() => {
+    const fetchGallery = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('system_configs')
+          .select('value')
+          .eq('key', 'gallery_images')
+          .single();
+          
+        if (error && error.code !== 'PGRST116') throw error;
+        
+        if (data && data.value) {
+          const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setDynamicGallery(parsed);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load dynamic gallery:', err);
+      }
+    };
+    fetchGallery();
+  }, []);
 
   // ─── SCROLL LISTENER (navbar appearance) ───
   useEffect(() => {
@@ -153,13 +179,17 @@ const LandingPage = () => {
   ];
 
   // ─── GALLERY DATA ───
-  const galleryItems = [
+  const defaultGalleryItems = [
     { img: gallery1, label: 'Community Events' },
     { img: gallery2, label: 'Barangay Programs' },
     { img: gallery3, label: 'Youth Development' },
     { img: areaImg, label: 'Barangay Dos Area' },
     { img: gallery4, label: 'Community Outreach' }
   ];
+
+  const galleryItems = dynamicGallery.length > 0 
+    ? dynamicGallery.map(g => ({ img: g.url, label: g.label }))
+    : defaultGalleryItems;
 
   return (
     <div className="landing-page">

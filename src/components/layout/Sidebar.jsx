@@ -208,12 +208,6 @@ const Sidebar = ({ isOpen, isCollapsed, onClose, onToggleCollapse }) => {
       roles: ['admin']
     },
     {
-      icon: <QrCode size={20} />,
-      label: 'QR Scanner',
-      path: '/scan',
-      roles: ['admin', 'secretary', 'clerk'] // Hide from view-only since scanning implies processing
-    },
-    {
       icon: <ShieldCheck size={20} />,
       label: 'Security Dashboard',
       path: '/security',

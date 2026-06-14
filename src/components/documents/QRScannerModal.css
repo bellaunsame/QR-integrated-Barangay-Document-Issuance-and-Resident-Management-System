@@ -1,0 +1,326 @@
+/* ================================================
+   QR SCANNER MODAL STYLES
+   ================================================ */
+
+.qr-scanner-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 0.5rem;
+}
+
+/* --- Start / Idle State --- */
+.qr-modal-start {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.qr-modal-start .start-icon-wrap {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary-600);
+  animation: qr-pulse 2s ease-in-out infinite;
+}
+
+@keyframes qr-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.3); }
+  50% { transform: scale(1.05); box-shadow: 0 0 0 12px rgba(59, 130, 246, 0); }
+}
+
+.qr-modal-start h3 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.qr-modal-start p {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin: 0;
+  max-width: 400px;
+  line-height: 1.5;
+}
+
+.qr-modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.qr-modal-actions .btn {
+  min-width: 180px;
+  justify-content: center;
+}
+
+/* --- Camera / Scanning State --- */
+.qr-scanning-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.qr-scan-instructions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--primary-50);
+  border: 1px solid var(--primary-100);
+  border-radius: 8px;
+  color: var(--primary-700);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.qr-camera-wrapper {
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  min-height: 300px;
+}
+
+.qr-camera-wrapper #qr-reader {
+  width: 100% !important;
+  border: none !important;
+}
+
+.qr-camera-wrapper #qr-reader video {
+  border-radius: 8px;
+}
+
+/* Hide ugly default html5-qrcode UI elements */
+.qr-camera-wrapper #qr-reader__dashboard_section_swaplink,
+.qr-camera-wrapper #qr-reader__header_message {
+  display: none !important;
+}
+
+.qr-scan-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* --- Loading State --- */
+.qr-loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 3rem 1rem;
+}
+
+.qr-loading-state .spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--primary-100);
+  border-top-color: var(--primary-600);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.qr-loading-state p {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* --- Error State --- */
+.qr-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.qr-error-state .error-icon-wrap {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: #fef2f2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ef4444;
+}
+
+.qr-error-state p {
+  color: #ef4444;
+  font-weight: 500;
+  max-width: 360px;
+  line-height: 1.5;
+}
+
+/* --- Verified Resident Card --- */
+.qr-resident-card {
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f0fdf4;
+}
+
+.qr-resident-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: white;
+}
+
+.qr-resident-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.qr-resident-body {
+  padding: 1.25rem;
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.qr-resident-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid #bbf7d0;
+  flex-shrink: 0;
+}
+
+.qr-resident-avatar-placeholder {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: #dcfce7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #16a34a;
+  flex-shrink: 0;
+}
+
+.qr-resident-info {
+  flex: 1;
+  min-width: 200px;
+}
+
+.qr-resident-info .resident-name {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #14532d;
+  margin: 0 0 0.25rem 0;
+}
+
+.qr-resident-info .resident-details {
+  font-size: 0.85rem;
+  color: #166534;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.qr-resident-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  padding: 0 1.25rem 1.25rem;
+}
+
+.qr-resident-grid .info-cell {
+  padding: 0.75rem;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #dcfce7;
+}
+
+.qr-resident-grid .info-cell label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: #16a34a;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.25rem;
+}
+
+.qr-resident-grid .info-cell span {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #14532d;
+}
+
+.qr-resident-actions {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid #dcfce7;
+  flex-wrap: wrap;
+}
+
+/* --- Responsive --- */
+@media (max-width: 768px) {
+  .qr-modal-actions {
+    flex-direction: column;
+  }
+
+  .qr-modal-actions .btn {
+    width: 100%;
+  }
+
+  .qr-resident-body {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .qr-resident-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .qr-scan-actions {
+    flex-direction: column;
+  }
+
+  .qr-scan-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .qr-resident-actions {
+    flex-direction: column;
+  }
+
+  .qr-resident-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1023px) {
+  .qr-camera-wrapper {
+    min-height: 350px;
+  }
+
+  .qr-resident-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

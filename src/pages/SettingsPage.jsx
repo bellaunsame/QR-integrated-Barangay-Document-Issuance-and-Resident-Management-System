@@ -5,9 +5,10 @@ import { supabase } from '../services/supabaseClient';
 import { PageHeader, Breadcrumbs } from '../components/layout';
 import { 
   BarangayInfoSettings, 
-  SystemSettings 
+  SystemSettings,
+  GallerySettings
 } from '../components/settings';
-import { Building2, Settings, ShieldCheck, Lock, Save, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Building2, Settings, ShieldCheck, Lock, Save, Loader2, AlertTriangle, RefreshCw, Image } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import './SettingsPage.css';
@@ -172,6 +173,7 @@ const SettingsPage = () => {
   const tabs = [
     { id: 'barangay', label: 'Barangay Info', icon: Building2 },
     { id: 'system', label: 'System', icon: Settings },
+    { id: 'gallery', label: 'Gallery', icon: Image },
     { id: 'security', label: 'Security', icon: ShieldCheck } 
   ];
 
@@ -211,6 +213,12 @@ const SettingsPage = () => {
         {activeTab === 'system' && (
           <div className="tab-pane fade-in">
             <SystemSettings />
+          </div>
+        )}
+
+        {activeTab === 'gallery' && (
+          <div className="tab-pane fade-in">
+            <GallerySettings />
           </div>
         )}
 
